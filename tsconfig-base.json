@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "target": "ES2022",
+    "module": "ESNext",
+    "isolatedModules": true,
+    "moduleResolution": "node16",
+    "esModuleInterop": true,
+    "allowJs": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@metron/jsx",
+    "strictNullChecks": true,
+    "noUnusedLocals": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "composite": true
+  }
+}

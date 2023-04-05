@@ -1,0 +1,11 @@
+{
+  "cSpell.words": [
+    "esbenp",
+    "fedoraproject",
+    "Metron",
+    "NOPASSWD",
+    "tsbuildinfo",
+    "userns"
+  ],
+  "cSpell.enableFiletypes": ["dockerfile", "ignore", "shellscript"]
+}

@@ -1,0 +1,9 @@
+# Directories
+node_modules
+/coverage
+/.nyc_output
+/notes
+/packages/*/lib
+
+# Files
+tsconfig.tsbuildinfo
