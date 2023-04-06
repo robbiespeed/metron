@@ -11,19 +11,12 @@ export enum ListChangeType {
 }
 
 interface ListChangeSingle {
-  readonly t: (
-    ListChangeType.Set |
-    ListChangeType.Push |
-    ListChangeType.Pop
-  );
+  readonly t: ListChangeType.Set | ListChangeType.Push | ListChangeType.Pop;
   readonly i: number;
 }
 
 interface ListChangeMany {
-  readonly t: (
-    ListChangeType.Append |
-    ListChangeType.Splice
-  );
+  readonly t: ListChangeType.Append | ListChangeType.Splice;
   readonly s: number;
   readonly e: number;
 }
@@ -35,21 +28,21 @@ interface ListChangeAll {
 
 export type ListChange = ListChangeSingle | ListChangeMany | ListChangeAll;
 
-export class ParticleList <T> implements Particle {
+export class ParticleList<T> implements Particle {
   private _items: T[];
   private _sensor = createSensor<ListChange>();
-  constructor (items: T[] = []) {
+  constructor(items: T[] = []) {
     this._items = items;
 
     this.watch = this.watch.bind(this);
   }
-  get size () {
+  get size() {
     return this._items.length;
   }
-  get (index: number): T | undefined {
+  get(index: number): T | undefined {
     return this._items[index];
   }
-  getLast (): T | undefined {
+  getLast(): T | undefined {
     const { _items } = this;
     const index = _items.length - 1;
 
@@ -59,7 +52,7 @@ export class ParticleList <T> implements Particle {
 
     return _items[index];
   }
-  set (index: number, value: T) {
+  set(index: number, value: T) {
     const items = this._items;
 
     if (value === items[index]) {
@@ -69,24 +62,28 @@ export class ParticleList <T> implements Particle {
     items[index] = value;
 
     this._sensor.send({ t: ListChangeType.Set, i: index });
+
+    return value;
   }
-  push (item: T) {
+  push(item: T) {
     const items = this._items;
     const index = items.length;
     items.push(item);
 
     this._sensor.send({ t: ListChangeType.Push, i: index });
   }
-  append (items: T[]) {
+  append(items: T[]) {
     const { _items } = this;
     const start = _items.length;
     _items.push(...items);
 
-    this._sensor.send(
-      { t: ListChangeType.Append, s: start, e: _items.length - 1 }
-    );
+    this._sensor.send({
+      t: ListChangeType.Append,
+      s: start,
+      e: _items.length - 1,
+    });
   }
-  insert (index: number, item: T) {
+  insert(index: number, item: T) {
     const items = this._items;
     const end = items.length;
     if (index === end) {
@@ -97,7 +94,7 @@ export class ParticleList <T> implements Particle {
 
     this._sensor.send({ t: ListChangeType.Splice, s: index, e: end });
   }
-  splice (start: number, deleteCount: number, items?: T[]) {
+  splice(start: number, deleteCount: number, items?: T[]) {
     const { _items } = this;
     let end = _items.length;
     let answer: T[];
@@ -105,8 +102,7 @@ export class ParticleList <T> implements Particle {
     if (items) {
       end += items.length;
       answer = _items.splice(start, deleteCount, ...items);
-    }
-    else {
+    } else {
       answer = _items.splice(start, deleteCount);
     }
 
@@ -116,7 +112,7 @@ export class ParticleList <T> implements Particle {
 
     return answer;
   }
-  pop () {
+  pop() {
     const items = this._items;
 
     const result = items.pop();
@@ -125,43 +121,43 @@ export class ParticleList <T> implements Particle {
 
     return result;
   }
-  remove (index: number) {
+  remove(index: number) {
     const items = this._items;
     const end = items.length - 1;
     if (index === end) {
       return this.pop();
     }
 
-    const [ value ] = items.splice(index, 1);
+    const [value] = items.splice(index, 1);
 
     this._sensor.send({ t: ListChangeType.Splice, s: index, e: end });
 
     return value;
   }
-  indexOf (value: T, fromIndex?: number) {
+  indexOf(value: T, fromIndex?: number) {
     return this._items.indexOf(value, fromIndex);
   }
-  lastIndexOf (value: T, fromIndex?: number) {
+  lastIndexOf(value: T, fromIndex?: number) {
     return this._items.lastIndexOf(value, fromIndex);
   }
-  clear () {
+  clear() {
     const { size } = this;
     this._items = [];
     this._sensor.send({ t: ListChangeType.Clear, s: size });
   }
-  watch (callback: EmitterCallback<ListChange>) {
+  watch(callback: EmitterCallback<ListChange>) {
     return this._sensor.watch(callback);
   }
-  entries () {
+  entries() {
     return this._items.entries();
   }
-  keys () {
+  keys() {
     return this._items.keys();
   }
-  values () {
+  values() {
     return this._items.values();
   }
-  [Symbol.iterator] () {
+  [Symbol.iterator]() {
     return this._items.values();
   }
 }

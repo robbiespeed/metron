@@ -1,18 +1,17 @@
-import { createOrb, Orb } from './orb';
+import { createOrb, OrbContext } from './orb';
 
-export function createReactor (
-  callback: (watch: Orb['connect']) => void,
+export function createReactor(
+  callback: (context: OrbContext) => void,
   signalScheduler?: (callback: () => void) => void
 ) {
-  const { watch, connect, clearWatched } = createOrb({ signalScheduler });
+  const { watch, context, clearWatched } = createOrb({ signalScheduler });
 
-  const terminator = watch(callback);
+  const terminator = watch(() => callback(context));
 
   if (signalScheduler) {
-    signalScheduler(() => callback(connect));
-  }
-  else {
-    callback(connect);
+    signalScheduler(() => callback(context));
+  } else {
+    callback(context);
   }
 
   return () => {

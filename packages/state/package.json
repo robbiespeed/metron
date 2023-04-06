@@ -1,5 +1,5 @@
 {
-  "name": "@metron/core",
+  "name": "@metron/state",
   "version": "1.0.0",
   "description": "",
   "scripts": {
@@ -9,16 +9,15 @@
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
+  "type": "module",
   "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "import": "./lib/index.js",
-      "require": "./lib/index.cjs"
-    },
     "./*": {
       "types": "./src/*.ts",
-      "import": "./lib/*.js",
-      "require": "./lib/*.cjs"
+      "import": "./dist/*.js",
+      "require": "./dist/*.cjs"
     }
+  },
+  "dependencies": {
+    "@metron/core": "workspace:*"
   }
 }

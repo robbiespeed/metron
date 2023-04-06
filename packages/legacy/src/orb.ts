@@ -1,46 +1,21 @@
-import { createSensor, RawSensor } from './sensor';
-import { Emitter } from './emitter';
-import {
-  emitterKey,
-  Particle,
-  MaybeParticle,
-  valueOfKey,
-  ValueParticle,
-} from './particle';
+import { createSensor, SignalSensor } from "./sensor";
+import { Emitter, Particle } from "./types";
 
 export interface OrbConnector {
   (...particles: Particle[]): void;
   emitters(...emitters: Emitter[]): void;
 }
 
-type ValueFromParticles<T extends ValueParticle[]> = {
-  [key in keyof T]: ReturnType<T[key][typeof valueOfKey]>;
-};
-
-type ValueFromMaybeParticle<T> = T extends ValueParticle
-  ? ReturnType<T[typeof valueOfKey]>
-  : T;
-
-type ValueFromMaybeParticles<T extends MaybeParticle[]> = {
-  [key in keyof T]: ValueFromMaybeParticle<T[key]>;
-};
-
-export interface OrbContext {
-  get<T extends ValueParticle[]>(...particles: T): ValueFromParticles<T>;
-  versatileGet<T extends MaybeParticle[]>(
-    ...maybeParticles: T
-  ): ValueFromMaybeParticles<T>;
+export interface Orb extends Particle {
   /**
    * Connects the particle to the orb, triggering the orb to change when the
    * particle changes
    */
-  connect(...particles: Particle[]): void;
-  versatileConnect(...items: MaybeParticle[]): void;
-}
-
-export interface Orb extends Particle<undefined> {
-  context: OrbContext;
-  watch: Emitter<undefined>;
+  connect: OrbConnector;
+  /**
+   * Runs the callback when connected particles change
+   */
+  watch(callback: (connect: OrbConnector) => void): () => void;
   start(): void;
   stop(): void;
   clearWatched(): void;
@@ -88,11 +63,11 @@ export function createOrb(options?: OrbOptions): Orb {
   let onStart: (() => void) | undefined;
 
   const trackerMap: Map<Emitter, Tracker> = new Map();
-  const sensor: RawSensor = createSensor();
-  const stabilitySensor: RawSensor = createSensor();
+  const sensor: SignalSensor = createSensor();
+  const stabilitySensor: SignalSensor = createSensor();
 
   const sendStableSignal = stabilitySensor.send;
-  const stabilityEmitter = stabilitySensor[emitterKey];
+  const stabilityEmitter = stabilitySensor.watch;
 
   let isStable = true;
 
@@ -217,47 +192,20 @@ export function createOrb(options?: OrbOptions): Orb {
     trackerMap.set(emitter, tracker);
   }
 
-  function connect(...particles: Particle[]) {
-    for (const { [emitterKey]: emitter } of particles) {
+  function connectEmitters(...emitters: Emitter[]) {
+    for (const emitter of emitters) {
       connectEmitter(emitter);
     }
   }
 
-  function versatileConnect(...maybeParticles: MaybeParticle[]) {
-    for (const { [emitterKey]: emitter } of maybeParticles) {
-      if (emitter) {
-        connectEmitter(emitter);
-      }
+  function connectParticles(...particles: Particle[]) {
+    for (const { watch } of particles) {
+      connectEmitter(watch);
     }
   }
+  connectParticles.emitters = connectEmitters;
 
-  function get<T extends ValueParticle[]>(
-    ...particles: T
-  ): ValueFromParticles<T> {
-    return particles.map((p) => {
-      connectEmitter(p[emitterKey]);
-
-      return p[valueOfKey]();
-    }) as ValueFromParticles<T>;
-  }
-
-  function versatileGet<T extends MaybeParticle[]>(
-    ...maybeParticles: T
-  ): ValueFromMaybeParticles<T> {
-    return maybeParticles.map((p) => {
-      const emitter = p[emitterKey];
-      const valueOf = p[valueOfKey];
-
-      if (emitter) {
-        connectEmitter(emitter);
-      }
-      if (valueOf) {
-        return valueOf();
-      }
-
-      return p;
-    }) as ValueFromMaybeParticles<T>;
-  }
+  const connect = connectParticles;
 
   const addDependentEmitter = autoStabilize
     ? (emitter: Emitter) => {
@@ -296,17 +244,13 @@ export function createOrb(options?: OrbOptions): Orb {
       }
     : _removeDependentEmitter;
 
-  const orbEmitter = sensor[emitterKey];
-
   return {
-    context: {
-      connect,
-      get,
-      versatileConnect,
-      versatileGet,
+    connect,
+    watch(callback) {
+      return sensor.watch(() => {
+        callback(connect);
+      });
     },
-    [emitterKey]: orbEmitter,
-    watch: orbEmitter,
     start() {
       isOn = true;
       dispatchSignal = _dispatchSignal;

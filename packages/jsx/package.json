@@ -12,9 +12,9 @@
   "type": "module",
   "exports": {
     "./*": {
-      "types": "./dist/*.d.ts",
-      "import": "./dist/*.js",
-      "require": "./dist/*.cjs"
+      "types": "./src/*.ts",
+      "import": "./lib/*.js",
+      "require": "./lib/*.cjs"
     }
   },
   "devDependencies": {

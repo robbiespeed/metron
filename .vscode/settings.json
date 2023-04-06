@@ -1,5 +1,6 @@
 {
   "cSpell.words": [
+    "Computeds",
     "esbenp",
     "fedoraproject",
     "Metron",
@@ -7,5 +8,6 @@
     "tsbuildinfo",
     "userns"
   ],
-  "cSpell.enableFiletypes": ["dockerfile", "ignore", "shellscript"]
+  "cSpell.enableFiletypes": ["dockerfile", "ignore", "shellscript"],
+  "editor.tabSize": 2
 }
