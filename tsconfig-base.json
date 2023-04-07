@@ -2,7 +2,9 @@
   "compilerOptions": {
     "lib": ["ES2022"],
     "target": "ES2022",
-    "module": "ESNext",
+    "module": "CommonJS",
+    "noEmit": true,
+    "composite": true,
     "isolatedModules": true,
     "moduleResolution": "node16",
     "esModuleInterop": true,
@@ -13,7 +15,9 @@
     "noUnusedLocals": true,
     "strict": true,
     "noImplicitAny": true,
-    "noImplicitThis": true,
-    "composite": true
+    "noImplicitThis": true
   }
+  // "ts-node": {
+  //   "swc": true
+  // }
 }

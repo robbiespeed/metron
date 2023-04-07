@@ -1,0 +1,20 @@
+{
+  "test": ".*\\.tsx?$",
+  "exclude": [".*\\.js$", ".*\\.map$"],
+  "jsc": {
+    "target": "es2022",
+    "parser": {
+      "syntax": "typescript",
+      "tsx": true
+    },
+    "transform": {
+      "react": {
+        "runtime": "automatic",
+        "importSource": "@metron/jsx"
+      }
+    }
+  },
+  "module": {
+    "type": "es6"
+  }
+}

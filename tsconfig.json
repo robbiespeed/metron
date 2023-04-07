@@ -1,3 +1,10 @@
 {
-  "extends": "./tsconfig-base.json"
+  "extends": "./tsconfig-base.json",
+  "include": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/jsx" },
+    { "path": "packages/legacy" },
+    { "path": "packages/state" }
+  ]
 }
