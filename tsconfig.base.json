@@ -1,12 +1,15 @@
 {
+  "exclude": ["**/*.spec.ts", "**/*.spec.tsx"],
   "compilerOptions": {
     "lib": ["ES2022"],
+    "types": [],
     "target": "ES2022",
-    "module": "CommonJS",
-    "noEmit": true,
+    "module": "ES2022",
+    "emitDeclarationOnly": true,
+    "verbatimModuleSyntax": true,
     "composite": true,
     "isolatedModules": true,
-    "moduleResolution": "node16",
+    "moduleResolution": "node",
     "esModuleInterop": true,
     "allowJs": false,
     "jsx": "react-jsx",

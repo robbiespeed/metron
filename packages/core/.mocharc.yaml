@@ -1,7 +1,0 @@
-require:
-  - '@swc/register'
-spec:
-  - 'test/**/*.spec.ts'
-extension:
-  - 'ts'
-# loader: 'ts-node/esm'

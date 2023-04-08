@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { describe } from 'mocha';
-import { createSensor } from './sensor.js';
+import { createSensor } from './sensor';
 
 describe('RawSensor', () => {
   it('should create', () => {

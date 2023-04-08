@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "build:types": "tsc",
-    "build:types:watch": "tsc --watch",
+    "build:types": "tsc --build",
+    "build:types:watch": "tsc --build --watch",
     "test": "mocha",
     "test:watch": "mocha --watch"
   },
@@ -13,12 +13,12 @@
   "license": "UNLICENSED",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
+      "types": "./lib/index.d.ts",
       "import": "./lib/index.js",
       "require": "./lib/index.cjs"
     },
     "./*": {
-      "types": "./src/*.ts",
+      "types": "./lib/*.d.ts",
       "import": "./lib/*.js",
       "require": "./lib/*.cjs"
     }

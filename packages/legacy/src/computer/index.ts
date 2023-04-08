@@ -1,14 +1,14 @@
-import { createOrb, entangleOrbWithEmitter, Orb } from '../orb';
+import { createOrb, entangleOrbWithEmitter, type Orb } from '../orb';
 import { createSensor } from '../sensor';
-import { Particle } from '../types';
+import type { Particle } from '../types';
 
-export interface Computer <T> extends Particle<undefined> {
+export interface Computer<T> extends Particle<undefined> {
   readonly value: T;
   readonly cachedValue: T | undefined;
   readonly isComputed: boolean;
 }
 
-export function createComputer <T> (
+export function createComputer<T>(
   get: (watch: Orb['connect']) => T
 ): Computer<T> {
   const { watch, send } = createSensor();
@@ -29,17 +29,17 @@ export function createComputer <T> (
   const { connect } = orb;
 
   return {
-    get value () {
+    get value() {
       if (isNotComputed) {
         cachedValue = get(connect);
         isNotComputed = false;
       }
       return cachedValue!;
     },
-    get isComputed () {
+    get isComputed() {
       return !isNotComputed;
     },
-    get cachedValue () {
+    get cachedValue() {
       return cachedValue;
     },
     watch,

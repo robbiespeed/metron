@@ -1,5 +1,5 @@
 import { createSensor } from './sensor';
-import { EmitterCallback, Particle } from './types';
+import type { EmitterCallback, Particle } from './types';
 
 export enum ListChangeType {
   Set,

@@ -1,4 +1,4 @@
-import { createOrb, OrbContext } from './orb.js';
+import { createOrb, type OrbContext } from './orb';
 
 export function createReactor(
   callback: (context: OrbContext) => void,

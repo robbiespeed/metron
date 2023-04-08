@@ -1,12 +1,10 @@
 require:
-  - 'ts-node/register'
+  - '@swc-node/register'
 # - "source-map-support/register"
 # full-trace: true
 spec:
-  - 'packages/**/*.spec.ts'
-  - 'packages/**/*.spec.tsx'
-ignore:
-  - 'packages/*/node_modules/**/*'
+  - 'packages/*/src/**/*.spec.ts'
+  - 'packages/*/src/**/*.spec.tsx'
 extension:
   - 'ts'
   - 'tsx'

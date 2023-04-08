@@ -3,16 +3,17 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "build": "tsc",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:types": "tsc --build",
+    "build:types:watch": "tsc --build --watch",
+    "test": "mocha",
+    "test:watch": "mocha --watch"
   },
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
-  "type": "module",
   "exports": {
     "./*": {
-      "types": "./src/*.ts",
+      "types": "./lib/*.d.ts",
       "import": "./lib/*.js",
       "require": "./lib/*.cjs"
     }

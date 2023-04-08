@@ -1,4 +1,4 @@
-import { Emitter } from './emitter.js';
+import type { Emitter } from './emitter';
 
 export const emitterKey = Symbol('metron-emitter');
 

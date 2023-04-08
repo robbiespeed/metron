@@ -1,5 +1,5 @@
-import { Emitter, EmitterCallback } from './emitter.js';
-import { Particle, emitterKey } from './particle.js';
+import type { Emitter, EmitterCallback } from './emitter';
+import { type Particle, emitterKey } from './particle';
 
 export interface DataSensor<T> extends Particle<T> {
   emitter: Emitter<T>;

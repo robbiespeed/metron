@@ -1,12 +1,12 @@
 import {
   createOrb,
   entangleOrbWithEmitter,
-  OrbContext,
+  type OrbContext,
   createSensor,
   emitterKey,
   valueOfKey,
 } from '@metron/core';
-import { Atom } from './atom.js';
+import { type Atom } from './atom.js';
 
 export interface Computed<T> extends Atom<T> {
   readonly cachedValue: T | undefined;

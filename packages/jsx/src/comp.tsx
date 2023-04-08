@@ -3,10 +3,11 @@ export function Component({}: { foo?: boolean; bar: true }) {
 }
 
 export async function AsyncComponent({}: { foo?: boolean; bar: true }) {
-  const message = await Promise.resolve("hello");
+  const message = await Promise.resolve('hello');
   return <div>{message}</div>;
 }
 
+// @ts-expect-error
 const a = <AsyncComponent bar />;
 
 export function* GeneratorComponent({}: { foo?: boolean; bar: true }) {
@@ -19,4 +20,5 @@ export function* GeneratorComponent({}: { foo?: boolean; bar: true }) {
   return <div>Done</div>;
 }
 
+// @ts-expect-error
 const g = <GeneratorComponent bar foo />;

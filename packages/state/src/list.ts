@@ -1,5 +1,5 @@
 import {
-  ValueParticle,
+  type ValueParticle,
   createSensor,
   emitterKey,
   valueOfKey,

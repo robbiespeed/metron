@@ -1,5 +1,5 @@
 import { createSensor } from './sensor';
-import { EmitterCallback, Particle } from './types';
+import type { EmitterCallback, Particle } from './types';
 
 enum ChangeType {
   Set,
@@ -7,7 +7,7 @@ enum ChangeType {
   Clear,
 }
 
-interface ChangeSingle <K> {
+interface ChangeSingle<K> {
   t: ChangeType.Set | ChangeType.Delete;
   k: K;
 }
@@ -16,12 +16,14 @@ interface ChangeAll {
   t: ChangeType.Clear;
 }
 
-type Change <K> = ChangeSingle<K> | ChangeAll;
+type Change<K> = ChangeSingle<K> | ChangeAll;
 
-export class ParticleMap <K, V>
-extends Map<K, V> implements Particle<Change<K>> {
+export class ParticleMap<K, V>
+  extends Map<K, V>
+  implements Particle<Change<K>>
+{
   private _sensor = createSensor<Change<K>>();
-  constructor (entries?: [K, V][]) {
+  constructor(entries?: [K, V][]) {
     // We avoid passing entries to super here because the original map
     // constructor would call the new set method for each entry
     super();
@@ -32,10 +34,10 @@ extends Map<K, V> implements Particle<Change<K>> {
       }
     }
   }
-  watch (callback: EmitterCallback<Change<K>>) {
+  watch(callback: EmitterCallback<Change<K>>) {
     return this._sensor.watch(callback);
   }
-  set (key: K, value: V) {
+  set(key: K, value: V) {
     if (value === this.get(key)) {
       return this;
     }
@@ -46,7 +48,7 @@ extends Map<K, V> implements Particle<Change<K>> {
 
     return this;
   }
-  delete (key: K) {
+  delete(key: K) {
     if (!this.has(key)) {
       return false;
     }
@@ -57,7 +59,7 @@ extends Map<K, V> implements Particle<Change<K>> {
 
     return true;
   }
-  clear () {
+  clear() {
     super.clear();
 
     this._sensor.send({ t: ChangeType.Clear });

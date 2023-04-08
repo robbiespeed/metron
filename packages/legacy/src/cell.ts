@@ -1,12 +1,12 @@
 import { createSensor } from './sensor';
-import { Particle } from './types';
+import type { Particle } from './types';
 
-export interface Cell <T> extends Particle<undefined> {
+export interface Cell<T> extends Particle<undefined> {
   readonly value: T;
-  notify (): void;
+  notify(): void;
 }
 
-export function createCell <T> (value: T): Cell<T> {
+export function createCell<T>(value: T): Cell<T> {
   const { watch, send } = createSensor();
 
   return {

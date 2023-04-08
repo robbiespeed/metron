@@ -1,6 +1,6 @@
-import { createOrb, Orb } from './orb';
+import { createOrb, type Orb } from './orb';
 
-export function createReactor (
+export function createReactor(
   callback: (watch: Orb['connect']) => void,
   signalScheduler?: (callback: () => void) => void
 ) {
@@ -10,8 +10,7 @@ export function createReactor (
 
   if (signalScheduler) {
     signalScheduler(() => callback(connect));
-  }
-  else {
+  } else {
     callback(connect);
   }
 

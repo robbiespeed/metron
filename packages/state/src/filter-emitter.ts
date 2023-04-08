@@ -1,5 +1,5 @@
 import { createSensor } from '@metron/core';
-import { Emitter } from '@metron/core/emitter';
+import { type Emitter } from '@metron/core/emitter';
 
 // TODO: move this to @metron/core
 export function filterEmitter<T, O extends T>(

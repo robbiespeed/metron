@@ -1,6 +1,12 @@
 {
-  "extends": "./tsconfig-base.json",
-  "include": [],
+  "extends": "./tsconfig.build.json",
+  "include": ["packages/*/src/**/*.spec.ts", "packages/*/src/**/*.spec.tsx"],
+  "exclude": [],
+  "compilerOptions": {
+    "paths": {
+      "@metron/jsx/*": ["./packages/jsx/src/*"]
+    }
+  },
   "references": [
     { "path": "packages/core" },
     { "path": "packages/jsx" },

@@ -1,15 +1,15 @@
-import { ListChange, ListChangeType, ParticleList } from '../list';
-import { OrbConnector } from '../orb';
+import { type ListChange, ListChangeType, ParticleList } from '../list';
+import type { OrbConnector } from '../orb';
 import { createSensor } from '../sensor';
-import { Emitter } from '../types';
-import { Computer, createComputer } from '.';
+import type { Emitter } from '../types';
+import { type Computer, createComputer } from '.';
 
-export interface ComputerList <T> {
+export interface ComputerList<T> {
   readonly size: number;
-  get (index: number): T | undefined;
+  get(index: number): T | undefined;
   watch: Emitter<ListChange>;
-  entries (): IterableIterator<[number, T]>;
-  values (): IterableIterator<T>;
+  entries(): IterableIterator<[number, T]>;
+  values(): IterableIterator<T>;
   [Symbol.iterator](): IterableIterator<T>;
 }
 
@@ -17,7 +17,7 @@ export interface ComputerList <T> {
 // TODO:
 // Computer list needs a base orb and all sub computers need to depend on it.
 // Or don't use multiple computers for items, and use only one main orb instead
-export function createComputerList <T, U> (
+export function createComputerList<T, U>(
   list: ParticleList<U>,
   getItem: (item: U, connect: OrbConnector) => T
 ): ComputerList<T> {
@@ -38,8 +38,7 @@ export function createComputerList <T, U> (
 
     if (oldBICount > 1) {
       countMap.set(oldBaseItem, oldBICount - 1);
-    }
-    else {
+    } else {
       countMap.delete(oldBaseItem);
       computerMap.delete(oldBaseItem);
     }
@@ -105,7 +104,7 @@ export function createComputerList <T, U> (
     return computer.value;
   };
 
-  function * values () {
+  function* values() {
     const { length } = baseItems;
     let i = 0;
     while (i < length) {
@@ -115,12 +114,12 @@ export function createComputerList <T, U> (
   }
 
   return {
-    get size () {
+    get size() {
       return list.size;
     },
     get,
     watch,
-    * entries () {
+    *entries() {
       const { length } = baseItems;
       let i = 0;
       while (i < length) {
@@ -129,7 +128,7 @@ export function createComputerList <T, U> (
       }
     },
     values,
-    [Symbol.iterator] () {
+    [Symbol.iterator]() {
       return values();
     },
   };

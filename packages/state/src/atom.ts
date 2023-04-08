@@ -1,6 +1,6 @@
 import {
   createSensor,
-  ValueParticle,
+  type ValueParticle,
   emitterKey,
   valueOfKey,
 } from '@metron/core';

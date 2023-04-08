@@ -1,12 +1,12 @@
-import { createSensor, RawSensor } from './sensor.js';
-import { Emitter } from './emitter.js';
+import { createSensor, type RawSensor } from './sensor';
+import type { Emitter } from './emitter';
 import {
   emitterKey,
-  Particle,
-  MaybeParticle,
+  type Particle,
+  type MaybeParticle,
   valueOfKey,
-  ValueParticle,
-} from './particle.js';
+  type ValueParticle,
+} from './particle';
 
 export interface OrbConnector {
   (...particles: Particle[]): void;

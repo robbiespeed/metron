@@ -1,5 +1,5 @@
 import { createSensor } from './sensor';
-import { EmitterCallback, Particle } from './types';
+import type { EmitterCallback, Particle } from './types';
 
 enum ChangeType {
   Add,
@@ -7,22 +7,22 @@ enum ChangeType {
   Clear,
 }
 
-interface ChangeSingle <V> {
+interface ChangeSingle<V> {
   type: ChangeType.Add | ChangeType.Delete;
   value: V;
 }
 
-interface ChangeAll <V> {
+interface ChangeAll<V> {
   type: ChangeType.Clear;
   values: Set<V>;
 }
 
-type Change <V> = ChangeSingle<V> | ChangeAll<V>;
+type Change<V> = ChangeSingle<V> | ChangeAll<V>;
 
 export const ParticleSetChangeType = ChangeType;
-export class ParticleSet <V> extends Set<V> implements Particle<Change<V>> {
+export class ParticleSet<V> extends Set<V> implements Particle<Change<V>> {
   private _sensor = createSensor<Change<V>>();
-  constructor (values?: V[]) {
+  constructor(values?: V[]) {
     // We avoid passing values to super here because the original set
     // constructor would call the new add method for each entry
     super();
@@ -33,10 +33,10 @@ export class ParticleSet <V> extends Set<V> implements Particle<Change<V>> {
       }
     }
   }
-  watch (callback: EmitterCallback<Change<V>>) {
+  watch(callback: EmitterCallback<Change<V>>) {
     return this._sensor.watch(callback);
   }
-  add (value: V) {
+  add(value: V) {
     if (this.has(value)) {
       return this;
     }
@@ -47,7 +47,7 @@ export class ParticleSet <V> extends Set<V> implements Particle<Change<V>> {
 
     return this;
   }
-  delete (value: V) {
+  delete(value: V) {
     if (!this.has(value)) {
       return false;
     }
@@ -58,7 +58,7 @@ export class ParticleSet <V> extends Set<V> implements Particle<Change<V>> {
 
     return true;
   }
-  clear () {
+  clear() {
     const values = new Set(this);
     super.clear();
 

@@ -4,10 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "typecheck": "tsc",
-    "typecheck:watch": "tsc --watch",
-    "test": "mocha",
-    "test:watch": "mocha --watch",
+    "build:types": "tsc --build tsconfig.build.json",
+    "build:types:watch": "tsc --build tsconfig.build.json --watch",
+    "test": "SWC_NODE_PROJECT=./tsconfig.test.json mocha",
+    "test:watch": "SWC_NODE_PROJECT=./tsconfig.test.json mocha --watch",
     "test:cov": "c8 mocha"
   },
   "keywords": [],
