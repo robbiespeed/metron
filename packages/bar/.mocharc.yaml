@@ -1,0 +1,7 @@
+require:
+  - 'ts-node/register'
+spec:
+  - '**/*.spec.ts'
+extension:
+  - 'ts'
+# loader: 'ts-node/esm'

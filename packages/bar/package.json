@@ -1,5 +1,5 @@
 {
-  "name": "@metron/core",
+  "name": "bar",
   "version": "1.0.0",
   "description": "",
   "scripts": {
@@ -22,5 +22,8 @@
       "import": "./lib/*.js",
       "require": "./lib/*.cjs"
     }
+  },
+  "dependencies": {
+    "foo": "workspace:*"
   }
 }

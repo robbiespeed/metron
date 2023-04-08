@@ -4,11 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build:types": "tsc",
-    "build:types:watch": "tsc --watch",
+    "typecheck": "tsc",
+    "typecheck:watch": "tsc --watch",
     "test": "mocha",
     "test:watch": "mocha --watch",
-    "test:coverage": "c8 mocha"
+    "test:cov": "c8 mocha"
   },
   "keywords": [],
   "author": "",

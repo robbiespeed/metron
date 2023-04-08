@@ -8,6 +8,7 @@
     "mocharc",
     "NOPASSWD",
     "tsbuildinfo",
+    "typecheck",
     "userns"
   ],
   "cSpell.enableFiletypes": ["dockerfile", "ignore", "shellscript"],

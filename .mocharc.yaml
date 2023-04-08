@@ -1,21 +1,14 @@
 require:
-  # - '@swc-node/register'
   - 'ts-node/register'
 # - "source-map-support/register"
 # full-trace: true
 spec:
-  # - 'dist/**/*.spec.js'
   - 'packages/**/*.spec.ts'
   - 'packages/**/*.spec.tsx'
 ignore:
   - 'packages/*/node_modules/**/*'
-# Specify "require" for CommonJS
-# Specify "loader" for native ESM
-# loader: 'ts-node/esm'
 extension:
-  - 'js'
   - 'ts'
   - 'tsx'
-# watch-files:
-#   - "packages/*/src"
-# package: './package.json'
+watch-files:
+  - 'packages/*/src'

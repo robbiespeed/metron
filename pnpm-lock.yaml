@@ -38,7 +38,15 @@ importers:
         specifier: ^5.0.3
         version: 5.0.3
 
+  packages/bar:
+    dependencies:
+      foo:
+        specifier: workspace:*
+        version: link:../foo
+
   packages/core: {}
+
+  packages/foo: {}
 
   packages/jsx:
     devDependencies:

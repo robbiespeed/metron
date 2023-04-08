@@ -15,9 +15,10 @@
     "noUnusedLocals": true,
     "strict": true,
     "noImplicitAny": true,
-    "noImplicitThis": true
+    "noImplicitThis": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "ts-node": {
+    "swc": true
   }
-  // "ts-node": {
-  //   "swc": true
-  // }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "@metron/core",
+  "name": "@metron/legacy",
   "version": "1.0.0",
   "description": "",
   "scripts": {
@@ -9,6 +9,7 @@
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
+  "type": "module",
   "exports": {
     "./*": {
       "types": "./lib/*.d.ts",
