@@ -1,5 +1,4 @@
 {
-  "exclude": ["**/*.spec.ts", "**/*.spec.tsx"],
   "compilerOptions": {
     "lib": ["ES2022"],
     "types": [],

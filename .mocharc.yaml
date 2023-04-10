@@ -2,6 +2,7 @@ require:
   - '@swc-node/register'
 # - "source-map-support/register"
 # full-trace: true
+# enable-source-maps: true
 spec:
   - 'packages/*/src/**/*.spec.ts'
   - 'packages/*/src/**/*.spec.tsx'

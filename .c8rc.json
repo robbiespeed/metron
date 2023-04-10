@@ -1,0 +1,7 @@
+{
+  "include": ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"],
+  "exclude": ["packages/*/src/**/*.spec.ts", "packages/*/src/**/*.spec.tsx"],
+  "extension": [".ts", ".tsx"],
+  "sourceMap": true,
+  "instrument": true
+}

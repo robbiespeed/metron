@@ -3,6 +3,8 @@
   "include": ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"],
   "exclude": [],
   "compilerOptions": {
-    "module": "CommonJS"
+    "module": "CommonJS",
+    "sourceMap": true,
+    "inlineSourceMap": true
   }
 }
