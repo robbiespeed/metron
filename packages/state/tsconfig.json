@@ -9,5 +9,5 @@
       "@metron/core/*": ["../core/src/*"]
     }
   },
-  "references": [{ "path": "../core" }]
+  "references": [{ "path": "../core/tsconfig.build.json" }]
 }

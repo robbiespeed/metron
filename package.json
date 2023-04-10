@@ -7,6 +7,7 @@
     "build:types": "tsc --build tsconfig.build.json",
     "build:types:watch": "tsc --build tsconfig.build.json --watch",
     "test": "SWC_NODE_PROJECT=./tsconfig.test.json mocha --v8-expose-gc",
+    "test:no-gc": "SWC_NODE_PROJECT=./tsconfig.test.json mocha",
     "test:watch": "SWC_NODE_PROJECT=./tsconfig.test.json mocha --watch",
     "test:cov": "SWC_NODE_PROJECT=./tsconfig.test.json c8 --exclude-after-remap mocha"
   },

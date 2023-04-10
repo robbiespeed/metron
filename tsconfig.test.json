@@ -1,7 +1,7 @@
 {
-  "extends": "./tsconfig.build.json",
-  "include": ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"],
+  "extends": "./tsconfig.base.json",
   "exclude": [],
+  "include": ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"],
   "compilerOptions": {
     "module": "CommonJS",
     "sourceMap": true,
