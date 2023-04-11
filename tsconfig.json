@@ -1,14 +1,18 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": [],
+  "include": ["**/*.spec.ts", "**/*.spec.tsx"],
+  "exclude": [],
+  "compilerOptions": {
+    "types": ["chai", "mocha", "node"]
+  },
   "references": [
     { "path": "packages/core/tsconfig.build.json" },
-    { "path": "packages/core/tsconfig.spec.json" },
+    // { "path": "packages/core/tsconfig.spec.json" },
     { "path": "packages/jsx" },
     { "path": "packages/legacy" },
     { "path": "packages/state" },
-    { "path": "packages/test-utils/tsconfig.build.json" },
-    { "path": "packages/test-utils/tsconfig.spec.json" }
+    { "path": "packages/test-utils/tsconfig.build.json" }
+    // { "path": "packages/test-utils/tsconfig.spec.json" }
   ],
   "ts-node": {
     "swc": true,
