@@ -6,10 +6,6 @@ describe('core: Sensor', () => {
   it('should create', () => {
     expect(createSensor()).to.exist;
   });
-  it('should send', () => {
-    const sensor = createSensor();
-    sensor.send();
-  });
   it('should send and emit', () => {
     const sensor = createSensor();
     let count = 0;
@@ -18,6 +14,20 @@ describe('core: Sensor', () => {
     });
     sensor.send();
     expect(count).to.equal(1);
+  });
+  it('should send and emit multiple', () => {
+    const sensor = createSensor();
+    let countA = 0;
+    let countB = 0;
+    sensor.emitter(() => {
+      countA++;
+    });
+    sensor.emitter(() => {
+      countB++;
+    });
+    sensor.send();
+    expect(countA).to.equal(1);
+    expect(countB).to.equal(1);
   });
   it('should send data', () => {
     const sensor = createSensor<string>();

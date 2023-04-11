@@ -9,5 +9,16 @@
     { "path": "packages/state" },
     { "path": "packages/test-utils/tsconfig.build.json" },
     { "path": "packages/test-utils/tsconfig.spec.json" }
-  ]
+  ],
+  "ts-node": {
+    "swc": true,
+    "require": ["tsconfig-paths/register"],
+    "transpileOnly": true,
+    "compilerOptions": {
+      "module": "CommonJS",
+      "verbatimModuleSyntax": false,
+      "isolatedModules": true,
+      "sourceMap": true
+    }
+  }
 }
