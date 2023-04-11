@@ -1,12 +1,16 @@
 import { expect } from 'chai';
-import { describe } from 'mocha';
 import { createSensor } from './sensor';
+import { garbageCollect } from '@metron/test-utils';
 
-describe('Sensor', () => {
+describe('core: Sensor', () => {
   it('should create', () => {
     expect(createSensor()).to.exist;
   });
   it('should send', () => {
+    const sensor = createSensor();
+    sensor.send();
+  });
+  it('should send and emit', () => {
     const sensor = createSensor();
     let count = 0;
     sensor.emitter(() => {
@@ -33,5 +37,24 @@ describe('Sensor', () => {
     clear();
     sensor.send();
     expect(count).to.equal(0);
+  });
+
+  function createActiveWeakSensor() {
+    const sensor = createSensor();
+    const box = { count: 0 };
+    sensor.emitter(() => {
+      box.count++;
+    });
+    sensor.send();
+    return new WeakRef(sensor);
+  }
+  it('should collect active unreachable sensor', async function () {
+    if (!garbageCollect) {
+      this.skip();
+    }
+
+    const weakSensor = createActiveWeakSensor();
+    await garbageCollect();
+    expect(weakSensor.deref()).to.be.undefined;
   });
 });

@@ -1,6 +1,12 @@
 {
   "extends": "./tsconfig.build.json",
-  "exclude": ["./src/**/*.node.spec.ts", "./src/**/*.node.spec.tsx"],
+  "exclude": [],
   "include": ["./src/**/*.spec.ts", "./src/**/*.spec.tsx"],
-  "references": [{ "path": "tsconfig.build.json" }]
+  "compilerOptions": {
+    "types": ["chai", "mocha", "node"]
+  },
+  "references": [
+    { "path": "tsconfig.build.json" },
+    { "path": "../test-utils/tsconfig.build.json" }
+  ]
 }

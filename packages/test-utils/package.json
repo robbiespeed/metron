@@ -1,0 +1,27 @@
+{
+  "name": "@metron/test-utils",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "build:types": "tsc --build",
+    "build:types:watch": "tsc --build --watch",
+    "test": "mocha",
+    "test:watch": "mocha --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./lib/index.js",
+      "require": "./lib/index.cjs"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "import": "./lib/*.js",
+      "require": "./lib/*.cjs"
+    }
+  }
+}

@@ -19,6 +19,12 @@
     "strict": true,
     "noImplicitAny": true,
     "noImplicitThis": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@metron/core": ["./packages/core/src/index.ts"],
+      "@metron/core/*": ["./packages/core/src/*"],
+      "@metron/test-utils": ["./packages/test-utils/src/index.ts"],
+      "@metron/test-utils/*": ["./packages/test-utils/src/*"]
+    }
   }
 }

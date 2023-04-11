@@ -1,9 +1,8 @@
 import { expect } from 'chai';
-import { describe } from 'mocha';
 import { createReactor } from './reactor';
 import { createSensor } from './sensor';
 
-describe('Reactor', () => {
+describe('core: Reactor', () => {
   it('should create', () => {
     expect(createReactor(() => {})).to.exist;
   });
