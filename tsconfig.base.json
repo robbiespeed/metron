@@ -9,7 +9,7 @@
     "emitDeclarationOnly": true,
     "verbatimModuleSyntax": true,
     "composite": true,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "esModuleInterop": true,
     "allowJs": false,
     "jsx": "react-jsx",

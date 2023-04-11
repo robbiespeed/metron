@@ -1,1 +1,1 @@
-export { garbageCollect } from './garbage-collect';
+export { garbageCollect } from './garbage-collect.js';

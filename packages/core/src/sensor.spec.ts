@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { createSensor } from './sensor';
+import { createSensor } from './sensor.js';
 import { garbageCollect } from '@metron/test-utils';
 
 describe('core: Sensor', () => {

@@ -1,7 +1,7 @@
-export { createSensor } from './sensor';
-export type { DataSensor, RawSensor } from './sensor';
-export type { Emitter, EmitterCallback } from './emitter';
-export { emitterKey, valueOfKey } from './particle';
-export type { Particle, MaybeParticle, ValueParticle } from './particle';
-export { createOrb, entangleOrbWithEmitter } from './orb';
-export type { Orb, OrbConnector, OrbContext, OrbOptions } from './orb';
+export { createSensor } from './sensor.js';
+export type { DataSensor, RawSensor } from './sensor.js';
+export type { Emitter, EmitterCallback } from './emitter.js';
+export { emitterKey, valueOfKey } from './particle.js';
+export type { Particle, MaybeParticle, ValueParticle } from './particle.js';
+export { createOrb, entangleOrbWithEmitter } from './orb.js';
+export type { Orb, OrbConnector, OrbContext, OrbOptions } from './orb.js';

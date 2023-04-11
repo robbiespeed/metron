@@ -1,5 +1,4 @@
-require:
-  - 'ts-node/register'
+loader: 'tsx'
 # full-trace: true
 enable-source-maps: true
 spec:

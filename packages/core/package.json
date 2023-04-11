@@ -11,16 +11,17 @@
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
+  "type": "module",
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
-      "import": "./lib/index.mjs",
-      "require": "./lib/index.js"
+      "import": "./lib/index.js",
+      "require": "./lib/index.cjs"
     },
     "./*": {
       "types": "./lib/*.d.ts",
-      "import": "./lib/*.mjs",
-      "require": "./lib/*.js"
+      "import": "./lib/*.js",
+      "require": "./lib/*.cjs"
     }
   }
 }

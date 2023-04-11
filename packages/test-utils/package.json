@@ -12,16 +12,17 @@
   "author": "",
   "license": "UNLICENSED",
   "private": true,
+  "type": "module",
   "exports": {
     ".": {
       "types": "./src/index.ts",
-      "import": "./lib/index.mjs",
-      "require": "./lib/index.js"
+      "import": "./lib/index.js",
+      "require": "./lib/index.cjs"
     },
     "./*": {
       "types": "./src/*.ts",
-      "import": "./lib/*.mjs",
-      "require": "./lib/*.js"
+      "import": "./lib/*.js",
+      "require": "./lib/*.cjs"
     }
   }
 }

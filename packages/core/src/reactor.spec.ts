@@ -1,6 +1,6 @@
 import { expect } from 'chai';
-import { createReactor } from './reactor';
-import { createSensor } from './sensor';
+import { createReactor } from './reactor.js';
+import { createSensor } from './sensor.js';
 
 describe('core: Reactor', () => {
   it('should create', () => {
