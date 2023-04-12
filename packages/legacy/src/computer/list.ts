@@ -1,8 +1,8 @@
-import { type ListChange, ListChangeType, ParticleList } from '../list';
-import type { OrbConnector } from '../orb';
-import { createSensor } from '../sensor';
-import type { Emitter } from '../types';
-import { type Computer, createComputer } from '.';
+import { type ListChange, ListChangeType, ParticleList } from '../list.js';
+import type { OrbConnector } from '../orb.js';
+import { createSensor } from '../sensor.js';
+import type { Emitter } from '../types.js';
+import { type Computer, createComputer } from './index.js';
 
 export interface ComputerList<T> {
   readonly size: number;

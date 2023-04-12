@@ -1,16 +1,25 @@
-export function Component({}: { foo?: boolean; bar: true }) {
+type Props = { foo?: boolean; bar: true; children?: string };
+
+export function Component({}: Props) {
   return <div>hello</div>;
 }
 
-export async function AsyncComponent({}: { foo?: boolean; bar: true }) {
+<Component bar key="1">
+  foo
+</Component>;
+
+export async function AsyncComponent({}: Props) {
   const message = await Promise.resolve('hello');
   return <div>{message}</div>;
 }
 
-// @ts-expect-error
-const a = <AsyncComponent bar />;
+const a = (
+  <AsyncComponent bar key="1">
+    {'foo'}
+  </AsyncComponent>
+);
 
-export function* GeneratorComponent({}: { foo?: boolean; bar: true }) {
+export function* GeneratorComponent({}: Props) {
   let i = 100;
   while (i) {
     yield <div>${i}</div>;
@@ -20,5 +29,4 @@ export function* GeneratorComponent({}: { foo?: boolean; bar: true }) {
   return <div>Done</div>;
 }
 
-// @ts-expect-error
-const g = <GeneratorComponent bar foo />;
+<GeneratorComponent bar foo key={undefined} />;

@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "build:types": "tsc --build tsconfig.build.json --clean && tsc --build tsconfig.build.json",
-    "build:types:watch": "tsc --build tsconfig.build.json --watch",
+    "build:types": "tsc --build tsconfig.build.json --emitDeclarationOnly",
+    "build:types:watch": "tsc --build tsconfig.build.json --emitDeclarationOnly --watch",
     "test": "mocha",
     "test:watch": "mocha --watch"
   },

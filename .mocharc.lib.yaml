@@ -1,6 +1,0 @@
-spec:
-  - 'packages/*/lib/**/*.spec.js'
-extension:
-  - 'js'
-watch-files:
-  - 'packages/*/lib'

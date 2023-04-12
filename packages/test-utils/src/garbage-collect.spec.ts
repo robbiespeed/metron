@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { garbageCollect } from './garbage-collect';
+import { garbageCollect } from './garbage-collect.js';
 
 describe('test-utils: garbageCollect', () => {
   it('should collect a unreachable object', async function () {

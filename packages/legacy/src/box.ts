@@ -1,5 +1,5 @@
-import { createSensor } from './sensor';
-import type { Particle } from './types';
+import { createSensor } from './sensor.js';
+import type { Particle } from './types.js';
 
 export interface Box<T> extends Particle<undefined> {
   readonly value: T;

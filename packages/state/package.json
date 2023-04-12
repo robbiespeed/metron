@@ -3,14 +3,15 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "build:types": "tsc --build",
-    "build:types:watch": "tsc --build --watch",
+    "build:types": "tsc --build tsconfig.build.json --emitDeclarationOnly",
+    "build:types:watch": "tsc --build tsconfig.build.json --emitDeclarationOnly --watch",
     "test": "mocha",
     "test:watch": "mocha --watch"
   },
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
+  "type": "module",
   "exports": {
     "./*": {
       "types": "./lid/*.d.ts",

@@ -1,5 +1,5 @@
-import { createSensor } from './sensor';
-import type { EmitterCallback, Particle } from './types';
+import { createSensor } from './sensor.js';
+import type { EmitterCallback, Particle } from './types.js';
 
 enum ChangeType {
   Set,
@@ -37,7 +37,7 @@ export class ParticleMap<K, V>
   watch(callback: EmitterCallback<Change<K>>) {
     return this._sensor.watch(callback);
   }
-  set(key: K, value: V) {
+  override set(key: K, value: V) {
     if (value === this.get(key)) {
       return this;
     }
@@ -48,7 +48,7 @@ export class ParticleMap<K, V>
 
     return this;
   }
-  delete(key: K) {
+  override delete(key: K) {
     if (!this.has(key)) {
       return false;
     }
@@ -59,7 +59,7 @@ export class ParticleMap<K, V>
 
     return true;
   }
-  clear() {
+  override clear() {
     super.clear();
 
     this._sensor.send({ t: ChangeType.Clear });

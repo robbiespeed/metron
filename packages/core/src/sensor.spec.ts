@@ -56,15 +56,16 @@ describe('core: Sensor', () => {
       box.count++;
     });
     sensor.send();
-    return new WeakRef(sensor);
+    return [new WeakRef(sensor), new WeakRef(box)] as const;
   }
-  it('should collect active unreachable sensor', async function () {
+  it('should garbage collect when unreachable', async function () {
     if (!garbageCollect) {
       this.skip();
     }
 
-    const weakSensor = createActiveWeakSensor();
+    const [weakSensor, weakBox] = createActiveWeakSensor();
     await garbageCollect();
     expect(weakSensor.deref()).to.be.undefined;
+    expect(weakBox.deref()).to.be.undefined;
   });
 });

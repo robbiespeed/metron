@@ -1,4 +1,4 @@
-import { createOrb, type Orb } from './orb';
+import { createOrb, type Orb } from './orb.js';
 
 export function createReactor(
   callback: (watch: Orb['connect']) => void,

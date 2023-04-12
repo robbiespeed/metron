@@ -1,4 +1,4 @@
-import type { EmitterCallback, Particle } from './types';
+import type { EmitterCallback, Particle } from './types.js';
 
 export interface DataSensor<T> extends Particle<T> {
   send(data: T): void;

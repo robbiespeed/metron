@@ -1,9 +1,17 @@
+export interface _Element {
+  tag: unknown;
+  props: unknown;
+}
+
 declare namespace JSX {
   interface IntrinsicElements {
     [tagName: string]: {};
   }
   interface ElementChildrenAttribute {
-    childrenB: {}; // specify children name to use
+    children: {}; // specify children name to use
+  }
+  interface IntrinsicAttributes {
+    key?: {};
   }
   interface Element {}
 }

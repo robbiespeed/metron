@@ -4,8 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build:types": "tsc --build tsconfig.lib.json",
-    "build:types:watch": "tsc --build tsconfig.lib.json --watch",
+    "build": "tsc -b tsconfig.build.json",
+    "build:watch": "tsc -b tsconfig.build.json --watch",
+    "build:clean": "tsc -b tsconfig.build.json --clean",
+    "build:types": "tsc -b tsconfig.build.json --emitDeclarationOnly",
+    "build:types:watch": "tsc -b tsconfig.build.json --emitDeclarationOnly --watch",
     "test": "mocha --v8-expose-gc",
     "test:no-gc": "mocha",
     "test:watch": "mocha --v8-expose-gc --watch",

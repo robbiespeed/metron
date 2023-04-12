@@ -1,7 +1,0 @@
-{
-  "include": ["packages/*/lib/**/*.js"],
-  "exclude": ["packages/*/lib/**/*.spec.js"],
-  "extension": [".js"],
-  "reporter": ["text"],
-  "sourceMap": true
-}

@@ -1,6 +1,6 @@
-import { createOrb, entangleOrbWithEmitter, type Orb } from '../orb';
-import { createSensor } from '../sensor';
-import type { Particle } from '../types';
+import { createOrb, entangleOrbWithEmitter, type Orb } from '../orb.js';
+import { createSensor } from '../sensor.js';
+import type { Particle } from '../types.js';
 
 export interface Computer<T> extends Particle<undefined> {
   readonly value: T;

@@ -59,6 +59,7 @@ interface Tracker<T = unknown> {
 }
 
 export interface OrbOptions {
+  // TODO: This may not be needed if the only use is for reactor
   signalScheduler?: (callback: () => void) => void;
   autoStabilize?: boolean;
   autoStart?: boolean;
