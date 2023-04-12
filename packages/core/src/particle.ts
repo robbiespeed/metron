@@ -2,14 +2,15 @@ import type { Emitter } from './emitter.js';
 
 export const emitterKey = Symbol('metron-emitter');
 
-export interface Particle<T = unknown> {
-  readonly [emitterKey]: Emitter<T>;
+export interface Particle<TEmitData = unknown> {
+  readonly [emitterKey]: Emitter<TEmitData>;
 }
 
 export const valueOfKey = Symbol('metron-value-of');
 
-export interface ValueParticle<V = unknown, T = unknown> extends Particle<T> {
-  [valueOfKey](): V;
+export interface ValueParticle<TValue = unknown, TEmitData = unknown>
+  extends Particle<TEmitData> {
+  [valueOfKey](): TValue;
 }
 
 export interface MaybeValueParticle extends Particle {

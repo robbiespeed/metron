@@ -1,5 +1,5 @@
-export type EmitterCallback<T> = (data: T) => void;
+export type EmitterCallback<TEmitData> = (data: TEmitData) => void;
 
-export interface Emitter<T = unknown> {
-  (callback: (data: T) => void): () => void;
+export interface Emitter<TEmitData = unknown> {
+  (callback: (data: TEmitData) => void): () => void;
 }

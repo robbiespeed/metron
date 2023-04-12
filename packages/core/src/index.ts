@@ -1,5 +1,5 @@
 export { createSensor } from './sensor.js';
-export type { DataSensor, RawSensor } from './sensor.js';
+export type { DataSensor, Sensor } from './sensor.js';
 export type { Emitter, EmitterCallback } from './emitter.js';
 export { emitterKey, valueOfKey } from './particle.js';
 export type { Particle, MaybeParticle, ValueParticle } from './particle.js';

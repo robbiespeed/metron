@@ -1,4 +1,4 @@
-import { createSensor, type RawSensor } from './sensor.js';
+import { createSensor, type Sensor } from './sensor.js';
 import type { Emitter } from './emitter.js';
 import {
   emitterKey,
@@ -89,8 +89,8 @@ export function createOrb(options?: OrbOptions): Orb {
   let onStart: (() => void) | undefined;
 
   const trackerMap: Map<Emitter, Tracker> = new Map();
-  const sensor: RawSensor = createSensor();
-  const stabilitySensor: RawSensor = createSensor();
+  const sensor: Sensor = createSensor();
+  const stabilitySensor: Sensor = createSensor();
 
   const sendStableSignal = stabilitySensor.send;
   const stabilityEmitter = stabilitySensor[emitterKey];
