@@ -14,6 +14,8 @@ export function Component({}: Props) {
   );
 }
 
+export const f = <>foo</>;
+
 <Component bar key="1">
   foo
 </Component>;

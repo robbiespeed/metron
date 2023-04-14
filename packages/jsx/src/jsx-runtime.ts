@@ -21,68 +21,147 @@ declare namespace JSX {
 
   // type IntrinsicChild = Node | string | number | bigint | boolean;
 
-  enum NodeType {
+  enum NodeTagType {
     Intrinsic,
+    Fragment,
     Component,
     ListComponent,
   }
 
+  enum NodeType {
+    Branch,
+    UnaryBranch,
+    Leaf,
+  }
+
   interface BaseNode {
-    readonly type: NodeType;
-  }
-
-  type Node = IntrinsicNode | ComponentNode;
-
-  interface IntrinsicNode {
-    readonly tagName: string;
-    readonly props: {
-      readonly children?: readonly Node[];
-    };
-    // Ref extracted from props
-    readonly children?: readonly Node[];
+    // parent?: Node;
     readonly key?: {};
-    parent?: Node;
   }
 
-  interface ComponentNode {
-    readonly component: ComponentFunction;
-    readonly props: object;
-    // Ref extracted from props
-    readonly children?: readonly Node[];
-    readonly key?: {};
-    parent?: Node;
+  interface UnaryBranchNode {
+    readonly type: NodeType.UnaryBranch;
+    readonly child: Node;
   }
+
+  interface BranchNode {
+    readonly type: NodeType.Branch;
+    readonly children: readonly Node[];
+  }
+
+  interface LeafNode {
+    readonly type: NodeType.Leaf;
+  }
+
+  interface FragmentNode extends BaseNode {
+    readonly tagType: NodeTagType.Fragment;
+  }
+
+  interface IntrinsicNode extends BaseNode {
+    readonly tagType: NodeTagType.Intrinsic;
+    readonly tag: string;
+  }
+
+  interface ComponentNode extends BaseNode {
+    readonly tagType: NodeTagType.Component;
+    readonly tag: ComponentFunction;
+  }
+
+  interface ListComponentNode extends BaseNode, BranchNode {
+    readonly tagType: NodeTagType.ListComponent;
+    readonly tag: ListComponentFunction;
+  }
+
+  interface BranchFragmentNode extends BranchNode, FragmentNode {}
+  interface BranchComponentNode extends BranchNode, ComponentNode {}
+  interface BranchIntrinsicNode extends BranchNode, IntrinsicNode {}
+  interface LeafFragmentNode extends LeafNode, FragmentNode {}
+  interface LeafComponentNode extends LeafNode, ComponentNode {}
+  interface LeafIntrinsicNode extends LeafNode, IntrinsicNode {}
+  interface UnaryBranchFragmentNode extends UnaryBranchNode, FragmentNode {}
+  interface UnaryBranchComponentNode extends UnaryBranchNode, ComponentNode {}
+  interface UnaryBranchIntrinsicNode extends UnaryBranchNode, IntrinsicNode {}
+
+  type Node =
+    | ListComponentNode
+    | BranchFragmentNode
+    | BranchComponentNode
+    | BranchIntrinsicNode
+    | LeafFragmentNode
+    | LeafComponentNode
+    | LeafIntrinsicNode
+    | UnaryBranchFragmentNode
+    | UnaryBranchComponentNode
+    | UnaryBranchIntrinsicNode;
 
   interface ComponentContext {}
 
   interface ComponentFunction {
-    type?: NodeType.Component;
+    type?: NodeTagType.Component;
     (props: object, context: ComponentContext): Element;
   }
 
   interface ListComponentFunction {
-    type: NodeType.ListComponent;
+    type: NodeTagType.ListComponent;
     (props: object, context: ComponentContext): Element[];
   }
 }
 
+export const Fragment = Symbol('Fragment');
+
 export function jsx(
-  tag: JSX.ComponentFunction | string,
+  tag: JSX.ComponentFunction | string | typeof Fragment,
   props: Record<string, unknown>,
   key?: {}
 ): JSX.Node {
-  if (typeof tag === 'function') {
-    const child = tag(props, {});
+  if (tag === Fragment) {
+    const { children } = props;
+
+    if (children === undefined) {
+      return {
+        type: JSX.NodeType.Leaf as const,
+        tagType: JSX.NodeTagType.Fragment as const,
+        key,
+      };
+    }
+
     return {
-      component: tag,
-      props,
+      tagType: JSX.NodeTagType.Fragment as const,
       children: [],
+      key,
+    };
+  } else if (typeof tag === 'function') {
+    const element = tag(props, {});
+
+    if (element === undefined) {
+      return {
+        type: JSX.NodeType.Leaf as const,
+        tagType: JSX.NodeTagType.Component as const,
+        tag,
+        key,
+      };
+    }
+
+    if (element.tagType === JSX.NodeTagType.Fragment) {
+      return {
+        ...element,
+        tagType: JSX.NodeTagType.Component as const,
+        tag,
+        key,
+      };
+    }
+
+    return {
+      type: JSX.NodeType.UnaryBranch as const,
+      tagType: JSX.NodeTagType.Component as const,
+      child: element,
+      tag,
       key,
     };
   } else {
     return {
-      tagName: tag,
-      props,
+      tagType: JSX.NodeTagType.Intrinsic as const,
+      tag,
       children: [],
       key,
     };
