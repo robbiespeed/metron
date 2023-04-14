@@ -15,8 +15,7 @@
   "exports": {
     "./*": {
       "types": "./lib/*.d.ts",
-      "import": "./lib/*.js",
-      "require": "./lib/*.cjs"
+      "import": "./lib/*.js"
     }
   }
 }

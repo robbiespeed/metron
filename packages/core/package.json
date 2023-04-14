@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
+    "build": "tsc --build tsconfig.build.json",
+    "build:watch": "tsc --build tsconfig.build.json",
     "build:types": "tsc --build tsconfig.build.json --emitDeclarationOnly",
     "build:types:watch": "tsc --build tsconfig.build.json --emitDeclarationOnly --watch",
     "test": "mocha",
@@ -14,14 +16,12 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./lib/index.d.ts",
-      "import": "./lib/index.js",
-      "require": "./lib/index.cjs"
+      "types": "./lib/mod.d.ts",
+      "import": "./lib/mod.js"
     },
     "./*": {
       "types": "./lib/*.d.ts",
-      "import": "./lib/*.js",
-      "require": "./lib/*.cjs"
+      "import": "./lib/*.js"
     }
   }
 }

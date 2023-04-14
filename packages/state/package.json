@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
+    "build": "tsc --build tsconfig.build.json",
+    "build:watch": "tsc --build tsconfig.build.json",
     "build:types": "tsc --build tsconfig.build.json --emitDeclarationOnly",
     "build:types:watch": "tsc --build tsconfig.build.json --emitDeclarationOnly --watch",
     "test": "mocha",
@@ -15,8 +17,7 @@
   "exports": {
     "./*": {
       "types": "./lid/*.d.ts",
-      "import": "./lib/*.js",
-      "require": "./lib/*.cjs"
+      "import": "./lib/*.js"
     }
   },
   "dependencies": {
