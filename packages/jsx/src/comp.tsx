@@ -1,6 +1,6 @@
 type Props = { foo?: boolean; bar: true; children?: unknown };
 
-export function Component({}: Props) {
+export function Component({}: Props, s: string) {
   return (
     <div foo bar>
       <span>hello</span>
@@ -18,6 +18,7 @@ export const f = <>foo</>;
 
 <Component bar key="1">
   foo
+  <test />
 </Component>;
 
 <Component bar key="1" {...{ test: 'foo' }}>

@@ -1,13 +1,14 @@
+import type { JSX } from '@metron/jsx/jsx-runtime';
 import { expect } from 'chai';
 
 describe('jsx', () => {
   it('should output a intrinsic jsx node', () => {
-    const node = <test />;
+    const node = <test foo bar={1} />;
 
-    expect(node).to.equal({
+    expect(node).to.deep.contain({
       tag: 'test',
-      props: {},
-      children: [],
-    });
+      props: { foo: true, bar: 1 },
+      children: undefined,
+    } satisfies Partial<JSX.IntrinsicNode>);
   });
 });
