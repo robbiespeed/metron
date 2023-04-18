@@ -1,3 +1,5 @@
+import type { JSX } from '@metron/jsx/jsx-runtime';
+
 type Props = { foo?: boolean; bar: true; children?: unknown };
 
 export function Component({}: Props, s: string) {
@@ -51,5 +53,21 @@ export const f = <>foo</>;
 export function StringComponent({}: Props) {
   return 'hello';
 }
+
+class ContextComponentC {
+  contextStore: Record<string, unknown> = {};
+}
+
+<ContextComponentC />;
+
+function ContextComponent(): JSX.ElementClass {
+  return {
+    contextStore: {
+      foo: '',
+    },
+  };
+}
+
+<ContextComponent />;
 
 // const s = <StringComponent bar />;

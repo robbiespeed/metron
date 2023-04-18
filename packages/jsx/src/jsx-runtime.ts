@@ -20,6 +20,9 @@ declare namespace JSX {
   interface IntrinsicAttributes {
     key?: {};
   }
+  interface ElementClass {
+    contextStore: Record<string, unknown>;
+  }
 
   // TODO: Maybe avoid number to prevent unintended string representations?
   // Actually it seems better that the DOM lib handle by using number.toLocaleString()
