@@ -29,7 +29,7 @@
     "chai": "^4.3.7",
     "mocha": "^10.2.0",
     "tsx": "^3.12.6",
-    "typescript": "^5.0.3"
+    "typescript": "5.1.0-dev.20230424"
   },
   "engines": {
     "node": ">=18.15.0"

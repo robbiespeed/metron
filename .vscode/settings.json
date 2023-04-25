@@ -20,5 +20,6 @@
     ".git",
     ".vscode"
   ],
-  "editor.tabSize": 2
+  "editor.tabSize": 2,
+  "typescript.tsdk": "node_modules/typescript/lib"
 }

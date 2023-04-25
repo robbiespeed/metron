@@ -1,11 +1,9 @@
 const nodeBrandKey = Symbol('nodeBrandKey');
 
-enum NodeTagType {
-  ContextProvider,
+enum NodeType {
   Intrinsic,
   Fragment,
   Component,
-  ListComponent,
 }
 
 declare namespace JSX {
@@ -14,89 +12,87 @@ declare namespace JSX {
       [propName: string]: unknown;
     };
   }
-  interface ElementChildrenAttribute {
-    children: {}; // specify children name to use
-  }
+  // interface ElementChildrenAttribute {
+  //   children: {}; // specify children name to use
+  // }
   interface IntrinsicAttributes {
     key?: {};
   }
-  interface ElementClass {
-    contextStore: Record<string, unknown>;
-  }
+
+  type ElementType = ComponentFunction<any> | string;
 
   // TODO: Maybe avoid number to prevent unintended string representations?
   // Actually it seems better that the DOM lib handle by using number.toLocaleString()
   // type Element = Node | string | number | bigint | boolean | undefined;
-  type Element = Node | undefined;
+  type Element = Node;
 
   // TODO:
   // Extract below to separate namespace to avoid conflict with future TS changes
 
+  // interface ElementProps {
+  //   readonly [key: string | number | symbol]: unknown;
+  // }
+
+  // TODO: turn these into classes and convert nodeBrandKey to a #branded = true
+  // Then use Node.isNode() instead of isNode
   interface BaseNode {
-    // parent?: Node;
-    [nodeBrandKey]: true;
+    readonly nodeType: NodeType;
+    readonly isInitialized: boolean;
     readonly key?: {};
     readonly children?: unknown;
-  }
-
-  interface ContextProviderNode extends BaseNode {
-    readonly tagType: NodeTagType.ContextProvider;
-    readonly tag: ContextProvider;
-    readonly value: unknown;
+    readonly createContext?: (
+      parentContext: ComponentContext
+    ) => ComponentContext;
   }
 
   interface FragmentNode extends BaseNode {
-    readonly tagType: NodeTagType.Fragment;
+    readonly nodeType: NodeType.Fragment;
+    readonly createContext?: undefined;
   }
 
   interface IntrinsicNode extends BaseNode {
-    readonly tagType: NodeTagType.Intrinsic;
+    readonly nodeType: NodeType.Intrinsic;
     readonly tag: string;
     readonly props: object;
   }
 
   interface ComponentNode extends BaseNode {
-    readonly tagType: NodeTagType.Component;
-    readonly tag: ComponentFunction;
+    readonly nodeType: NodeType.Component;
+    readonly tag: ComponentFunction<object>;
     readonly props: object;
   }
 
-  // interface ListComponentNode extends BaseNode {
-  //   readonly tagType: NodeTagType.ListComponent;
-  //   readonly tag: ListComponentFunction;
-  // }
-
-  type Node =
-    | FragmentNode
-    | IntrinsicNode
-    | ComponentNode
-    | ContextProviderNode;
+  type Node = FragmentNode | IntrinsicNode | ComponentNode;
 
   interface ComponentContext {
-    [key: string]: unknown;
+    readonly [key: string]: unknown;
   }
 
-  interface ContextProvider {
-    isProvider: true;
-    id: string;
-  }
-
-  interface ComponentFunction {
-    type?: NodeTagType.Component;
-    (props: object, context: ComponentContext): Element;
-  }
-
-  interface ListComponentFunction {
-    type: NodeTagType.ListComponent;
-    (props: object, context: ComponentContext): Element[];
+  interface ComponentFunction<Props> {
+    (props: Props, context: ComponentContext): Element | Element[] | undefined;
   }
 }
 
-// TODO: define args, have an ID, message, err (optional on warn, required on error)
+enum LogInfoId {
+  generic = 1000,
+}
+
+enum LogWarnId {
+  generic = 2000,
+  fragmentFlatten = 2200,
+}
+
+enum LogErrorId {
+  generic = 3000,
+  reInit,
+  fragmentCall = 3200,
+}
+
+// TODO: define args: message, id?, err (optional on warn, required on error)
 export interface Logger {
-  info?: (...args: unknown[]) => void;
-  warn?: (...args: unknown[]) => void;
-  error?: (...args: unknown[]) => void;
+  info?: (message: string, id: LogInfoId) => void;
+  warn?: (message: string, id: LogWarnId, err?: unknown) => void;
+  error?: (message: string, id: LogErrorId, err: unknown) => void;
 }
 
 let logger: Logger | undefined = undefined;
@@ -107,129 +103,127 @@ export function setLogger(logger: Logger) {
   logger = logger;
 }
 
-export const Fragment = Symbol('Fragment');
+export const Fragment = () => {
+  const err = new Error('Fragment should never be called');
+  if (logger) {
+    logger.error?.(err.message, LogErrorId.fragmentCall, err);
+  }
+  throw err;
+};
+
+const nodeRegistry = new WeakSet();
+
+export function createNode(node: JSX.Node) {
+  nodeRegistry.add(node);
+  return node;
+}
 
 export function jsx(
-  tag: JSX.ComponentFunction | string | typeof Fragment | JSX.ContextProvider,
+  tag: JSX.ElementType,
   props: Record<string, unknown>,
   key?: {}
 ): JSX.Node {
   if (tag === Fragment) {
     const { children } = props;
 
-    if (
-      logger &&
-      isNode(children) &&
-      children.tagType === NodeTagType.Fragment
-    ) {
+    if (logger && isNode(children) && children.nodeType === NodeType.Fragment) {
       logger.warn?.(
-        'A Fragment child will not flatten when inside another Fragment'
+        'A Fragment child will not flatten when inside another Fragment',
+        LogWarnId.fragmentFlatten
       );
     }
 
-    return {
-      [nodeBrandKey]: true,
-      tagType: NodeTagType.Fragment,
+    return createNode({
+      nodeType: NodeType.Fragment,
+      isInitialized: false,
       children,
       key,
-    };
+    });
   } else if (typeof tag === 'function') {
-    return {
-      [nodeBrandKey]: true,
-      tagType: NodeTagType.Component,
+    return createNode({
+      nodeType: NodeType.Component,
+      isInitialized: false,
       props,
       tag,
       key,
-    };
-  } else if (typeof tag === 'string') {
+    });
+  } else {
     const { children } = props;
 
-    if (
-      logger &&
-      isNode(children) &&
-      children.tagType === NodeTagType.Fragment
-    ) {
+    if (logger && isNode(children) && children.nodeType === NodeType.Fragment) {
       logger.warn?.(
-        'A Fragment child will not flatten when inside jsx literals'
+        'A Fragment child will not flatten when inside jsx literals',
+        LogWarnId.fragmentFlatten
       );
     }
 
-    return {
-      [nodeBrandKey]: true,
-      tagType: NodeTagType.Intrinsic,
+    return createNode({
+      nodeType: NodeType.Intrinsic,
+      isInitialized: false,
       tag,
       props,
       children,
       key,
-    };
-  } else {
-    const { children, value } = props;
-
-    if (
-      logger &&
-      isNode(children) &&
-      children.tagType === NodeTagType.Fragment
-    ) {
-      logger.warn?.(
-        'A Fragment child will not flatten when inside a Context Provider'
-      );
-    }
-
-    return {
-      [nodeBrandKey]: true,
-      tagType: NodeTagType.ContextProvider,
-      tag,
-      children,
-      value,
-      key,
-    };
+    });
   }
 }
 
 interface WritableNode extends JSX.BaseNode {
+  isInitialized: boolean;
   children?: unknown;
 }
 
-export function isNode(node: unknown): node is JSX.Node {
-  // return typeof node === 'object' && node !== null && nodeBrandKey in node;
-  return typeof node === 'object' && node !== null && 'tagType' in node;
+export function isNode(maybeNode: unknown): maybeNode is JSX.Node {
+  return !!maybeNode && nodeRegistry.has(maybeNode);
 }
 
-export function updateNodeContext(
+export function initNode(
   node: JSX.Node,
-  context: JSX.ComponentContext
+  parentContext: JSX.ComponentContext = {}
 ) {
+  if (node.isInitialized) {
+    const err = new Error('Cannot initialize node that is initialized');
+    if (logger) {
+      logger.error?.(
+        'Cannot initialize node that is initialized',
+        LogErrorId.reInit,
+        err
+      );
+    }
+    throw err;
+  }
+
+  const { createContext } = node;
+
+  const context = createContext ? createContext(parentContext) : parentContext;
+
   // When a component node and children have not been set the component must be initialized
-  if (node.tagType === NodeTagType.Component && 'children' in node) {
+  if (node.nodeType === NodeType.Component) {
     const { tag, props } = node;
     const child = tag(props, context);
-    if (isNode(child) && child.tagType === NodeTagType.Fragment) {
+    if (isNode(child) && child.nodeType === NodeType.Fragment) {
       (node as WritableNode).children = child.children;
     } else {
       (node as WritableNode).children = child;
     }
   }
+
   // TODO: Add support for pre update hook
-
-  let nextContext = context;
-
-  if (node.tagType === NodeTagType.ContextProvider) {
-    const { tag, value } = node;
-    nextContext = { ...context, [tag.id]: value };
-  }
 
   const { children } = node;
   if (children) {
     if (Array.isArray(children)) {
       for (const child of children) {
         if (isNode(child)) {
-          updateNodeContext(child, nextContext);
+          initNode(child, context);
         }
       }
     } else if (isNode(children)) {
-      updateNodeContext(children, nextContext);
+      initNode(children, context);
     }
   }
+
+  (node as WritableNode).isInitialized = true;
 
   // TODO: Add support for post update hook
 }

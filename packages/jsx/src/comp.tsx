@@ -1,8 +1,8 @@
-import type { JSX } from '@metron/jsx/jsx-runtime';
+import { jsx, type JSX } from '@metron/jsx/jsx-runtime';
 
 type Props = { foo?: boolean; bar: true; children?: unknown };
 
-export function Component({}: Props, s: string) {
+export function Component({ bar }: Props, ctx: JSX.ComponentContext) {
   return (
     <div foo bar>
       <span>hello</span>
@@ -17,6 +17,8 @@ export function Component({}: Props, s: string) {
 }
 
 export const f = <>foo</>;
+
+jsx(Component, {});
 
 <Component bar key="1">
   foo
@@ -60,14 +62,19 @@ class ContextComponentC {
 
 <ContextComponentC />;
 
-function ContextComponent(): JSX.ElementClass {
-  return {
-    contextStore: {
-      foo: '',
-    },
-  };
-}
+// function ContextComponent(): JSX.ComponentContext {
+//   return {
+//     contextStore: {
+//       foo: '',
+//     },
+//   };
+// }
 
-<ContextComponent />;
+const ContextProvider = {
+  id: '',
+  isProvider: true,
+};
+
+<ContextProvider />;
 
 // const s = <StringComponent bar />;

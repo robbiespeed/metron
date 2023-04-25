@@ -29,8 +29,8 @@ importers:
         specifier: ^3.12.6
         version: 3.12.6
       typescript:
-        specifier: ^5.0.3
-        version: 5.0.3
+        specifier: 5.1.0-dev.20230424
+        version: 5.1.0-dev.20230424
 
   packages/core: {}
 
@@ -1002,9 +1002,9 @@ packages:
     engines: {node: '>=4'}
     dev: true
 
-  /typescript@5.0.3:
-    resolution: {integrity: sha512-xv8mOEDnigb/tN9PSMTwSEqAnUvkoXMQlicOb0IUVDBSQCgBSaAAROUZYy2IcUy5qU6XajK5jjjO7TMWqBTKZA==}
-    engines: {node: '>=12.20'}
+  /typescript@5.1.0-dev.20230424:
+    resolution: {integrity: sha512-yhQpzzjyLCyXORVY8AgJYaWpm235ZzG/boelYvgloE7v+kCucAdegsBf7duLJzXc/8+wABR2diYMbjPpd5c3Ww==}
+    engines: {node: '>=14.17'}
     hasBin: true
     dev: true
 
