@@ -71,9 +71,9 @@ class ContextComponentC {
 // }
 
 const ContextProvider = {
-  id: '',
+  id: 'foo',
   isProvider: true,
-};
+} as JSX.ContextProvider;
 
 <ContextProvider />;
 

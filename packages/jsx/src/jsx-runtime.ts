@@ -3,14 +3,13 @@ const nodeBrandKey = Symbol('nodeBrandKey');
 enum NodeType {
   Intrinsic,
   Fragment,
+  Context,
   Component,
 }
 
 declare namespace JSX {
   interface IntrinsicElements {
-    [tagName: string]: {
-      [propName: string]: unknown;
-    };
+    [tagName: string]: {};
   }
   // interface ElementChildrenAttribute {
   //   children: {}; // specify children name to use
@@ -40,20 +39,32 @@ declare namespace JSX {
     readonly isInitialized: boolean;
     readonly key?: {};
     readonly children?: unknown;
-    readonly createContext?: (
-      parentContext: ComponentContext
-    ) => ComponentContext;
+  }
+
+  type FragmentCreateChildContext = (
+    tag: string,
+    props: object,
+    parentContext: ComponentContext
+  ) => ComponentContext;
+
+  interface ContextNode extends BaseNode {
+    readonly nodeType: NodeType.Context;
+    readonly contextUpdate: ComponentContext;
   }
 
   interface FragmentNode extends BaseNode {
     readonly nodeType: NodeType.Fragment;
-    readonly createContext?: undefined;
   }
+
+  type IntrinsicCreateChildContext = (
+    node: IntrinsicNode,
+    parentContext: ComponentContext
+  ) => ComponentContext;
 
   interface IntrinsicNode extends BaseNode {
     readonly nodeType: NodeType.Intrinsic;
-    readonly tag: string;
     readonly props: object;
+    readonly tag: string;
   }
 
   interface ComponentNode extends BaseNode {
@@ -62,7 +73,7 @@ declare namespace JSX {
     readonly props: object;
   }
 
-  type Node = FragmentNode | IntrinsicNode | ComponentNode;
+  type Node = ContextNode | FragmentNode | IntrinsicNode | ComponentNode;
 
   interface ComponentContext {
     readonly [key: string]: unknown;
@@ -111,9 +122,20 @@ export const Fragment = () => {
   throw err;
 };
 
+const intrinsicContextOverrides: Record<
+  string,
+  JSX.IntrinsicCreateChildContext | undefined
+> = {};
+
+export function setIntrinsicContextOverrides(
+  overrides: Record<string, JSX.IntrinsicCreateChildContext | undefined>
+) {
+  Object.assign(intrinsicContextOverrides, overrides);
+}
+
 const nodeRegistry = new WeakSet();
 
-export function createNode(node: JSX.Node) {
+export function makeNode(node: JSX.Node) {
   nodeRegistry.add(node);
   return node;
 }
@@ -133,14 +155,14 @@ export function jsx(
       );
     }
 
-    return createNode({
+    return makeNode({
       nodeType: NodeType.Fragment,
       isInitialized: false,
       children,
       key,
     });
   } else if (typeof tag === 'function') {
-    return createNode({
+    return makeNode({
       nodeType: NodeType.Component,
       isInitialized: false,
       props,
@@ -157,7 +179,7 @@ export function jsx(
       );
     }
 
-    return createNode({
+    return makeNode({
       nodeType: NodeType.Intrinsic,
       isInitialized: false,
       tag,
@@ -177,55 +199,59 @@ export function isNode(maybeNode: unknown): maybeNode is JSX.Node {
   return !!maybeNode && nodeRegistry.has(maybeNode);
 }
 
-export function initNode(
-  node: JSX.Node,
-  parentContext: JSX.ComponentContext = {}
-) {
+export function initNode(node: JSX.Node, context: JSX.ComponentContext = {}) {
   if (node.isInitialized) {
     const err = new Error('Cannot initialize node that is initialized');
     if (logger) {
-      logger.error?.(
-        'Cannot initialize node that is initialized',
-        LogErrorId.reInit,
-        err
-      );
+      logger.error?.(err.message, LogErrorId.reInit, err);
     }
     throw err;
   }
 
-  const { createContext } = node;
-
-  const context = createContext ? createContext(parentContext) : parentContext;
-
-  // When a component node and children have not been set the component must be initialized
-  if (node.nodeType === NodeType.Component) {
-    const { tag, props } = node;
-    const child = tag(props, context);
-    if (isNode(child) && child.nodeType === NodeType.Fragment) {
-      (node as WritableNode).children = child.children;
-    } else {
-      (node as WritableNode).children = child;
+  let childContext = context;
+  switch (node.nodeType) {
+    case NodeType.Component: {
+      const { tag, props } = node;
+      const child = tag(props, context);
+      if (isNode(child) && child.nodeType === NodeType.Fragment) {
+        (node as WritableNode).children = child.children;
+      } else {
+        (node as WritableNode).children = child;
+      }
+      break;
+    }
+    case NodeType.Context: {
+      childContext = { ...context, ...node.contextUpdate };
+      break;
+    }
+    case NodeType.Intrinsic: {
+      // TODO: throw here and instead provide a separate extension jsx lib with init that handles dom context overrides
+      // the base lib does not allow initializing intrinsics and instead suggests only using them with template functions
+      // perhaps base lib should disallow even creating intrinsic nodes to avoid confusion
+      const deriveContextUpdate = intrinsicContextOverrides[node.tag];
+      if (deriveContextUpdate) {
+        childContext = { ...context, ...deriveContextUpdate(node, context) };
+      }
+      break;
     }
   }
-
-  // TODO: Add support for pre update hook
 
   const { children } = node;
   if (children) {
     if (Array.isArray(children)) {
       for (const child of children) {
         if (isNode(child)) {
-          initNode(child, context);
+          initNode(child, childContext);
         }
       }
     } else if (isNode(children)) {
-      initNode(children, context);
+      initNode(children, childContext);
     }
   }
 
   (node as WritableNode).isInitialized = true;
 
-  // TODO: Add support for post update hook
+  // TODO: Add support for post init hook
 }
 
 // TODO:
