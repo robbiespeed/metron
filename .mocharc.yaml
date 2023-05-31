@@ -1,4 +1,4 @@
-loader: 'tsx'
+loader: '@esbuild-kit/esm-loader'
 # full-trace: true
 enable-source-maps: true
 spec:

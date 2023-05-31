@@ -1,9 +1,5 @@
-import {
-  createSensor,
-  type ValueParticle,
-  emitterKey,
-  valueOfKey,
-} from '@metron/core';
+import { emitterKey, valueOfKey, type ValueParticle } from './particle.js';
+import { createSensor } from './sensor.js';
 
 export interface Atom<T> extends ValueParticle<T> {
   readonly untracked: T;

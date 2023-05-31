@@ -12,8 +12,7 @@
     "test": "mocha --v8-expose-gc",
     "test:no-gc": "mocha",
     "test:watch": "mocha --v8-expose-gc --watch",
-    "test:cov": "c8 mocha --v8-expose-gc",
-    "test:lib:cov": "c8 --config .c8rc.lib.json mocha --config .mocharc.lib.yaml --v8-expose-gc"
+    "test:cov": "c8 mocha --v8-expose-gc"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +20,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@esbuild-kit/esm-loader": "^2.5.5",
     "@metron/test-utils": "workspace:*",
     "@types/chai": "^4.3.4",
     "@types/mocha": "^10.0.1",
@@ -28,6 +28,7 @@
     "c8": "^7.13.0",
     "chai": "^4.3.7",
     "mocha": "^10.2.0",
+    "ts-node": "^10.9.1",
     "tsx": "^3.12.6",
     "typescript": "5.1.0-dev.20230424"
   },

@@ -1,4 +1,4 @@
-import type { JSX } from '@metron/jsx/jsx-runtime';
+import type { IntrinsicNode } from '@metron/jsx/jsx-runtime';
 import { expect } from 'chai';
 
 describe('jsx', () => {
@@ -9,6 +9,6 @@ describe('jsx', () => {
       tag: 'test',
       props: { foo: true, bar: 1 },
       children: undefined,
-    } satisfies Partial<JSX.IntrinsicNode>);
+    } satisfies Partial<IntrinsicNode>);
   });
 });

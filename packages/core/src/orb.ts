@@ -1,4 +1,4 @@
-import { createSensor, type Sensor } from './sensor.js';
+import { createSensor } from './sensor.js';
 import type { Emitter } from './emitter.js';
 import {
   emitterKey,
@@ -8,26 +8,35 @@ import {
   type ValueParticle,
 } from './particle.js';
 
+const orbEmitterKey = Symbol('orb');
+
 export interface OrbConnector {
   (...particles: Particle[]): void;
   emitters(...emitters: Emitter[]): void;
 }
 
-type ValueFromParticles<T extends ValueParticle[]> = {
-  [key in keyof T]: ReturnType<T[key][typeof valueOfKey]>;
+export interface OrbEmitter<TEmitData = unknown> extends Emitter<TEmitData> {
+  [orbEmitterKey]?: Orb;
+}
+
+// TODO: derived has similar types, they could be shared
+type ValueFromParticles<T extends readonly ValueParticle[]> = {
+  [K in keyof T]: ReturnType<T[K][typeof valueOfKey]>;
 };
 
 type ValueFromMaybeParticle<T> = T extends ValueParticle
   ? ReturnType<T[typeof valueOfKey]>
   : T;
 
-type ValueFromMaybeParticles<T extends MaybeParticle[]> = {
-  [key in keyof T]: ValueFromMaybeParticle<T[key]>;
+type ValueFromMaybeParticles<T extends readonly MaybeParticle[]> = {
+  [K in keyof T]: ValueFromMaybeParticle<T[K]>;
 };
 
 export interface OrbContext {
-  get<T extends ValueParticle[]>(...particles: T): ValueFromParticles<T>;
-  versatileGet<T extends MaybeParticle[]>(
+  get<const T extends readonly ValueParticle[]>(
+    ...particles: T
+  ): ValueFromParticles<T>;
+  versatileGet<const T extends readonly MaybeParticle[]>(
     ...maybeParticles: T
   ): ValueFromMaybeParticles<T>;
   /**
@@ -50,12 +59,11 @@ export interface Orb extends Particle<undefined> {
   stabilize(): void;
 }
 
-interface Tracker<T = unknown> {
+interface Tracker {
   terminator: () => void;
-  emitter: Emitter<T>;
+  emitter: OrbEmitter;
   isActive: boolean;
   entangledOrb?: Orb;
-  data?: T;
 }
 
 export interface OrbOptions {
@@ -69,8 +77,6 @@ const defaultOptions = {
   autoStabilize: true,
   autoStart: true,
 };
-
-const entangledOrbEmitterMap = new WeakMap<Emitter, Orb>();
 
 export function createOrb(options?: OrbOptions): Orb {
   const { signalScheduler, autoStart, autoStabilize } = {
@@ -88,9 +94,9 @@ export function createOrb(options?: OrbOptions): Orb {
   let isOn = autoStart;
   let onStart: (() => void) | undefined;
 
-  const trackerMap: Map<Emitter, Tracker> = new Map();
-  const sensor: Sensor = createSensor();
-  const stabilitySensor: Sensor = createSensor();
+  const trackerMap = new Map<Emitter, Tracker>();
+  const sensor = createSensor();
+  const stabilitySensor = createSensor();
 
   const sendStableSignal = stabilitySensor.send;
   const stabilityEmitter = stabilitySensor[emitterKey];
@@ -181,28 +187,27 @@ export function createOrb(options?: OrbOptions): Orb {
     dispatchSignal();
   }
 
-  function connectEmitter<T>(emitter: Emitter<T>): T | undefined {
+  function connectEmitter(emitter: OrbEmitter) {
     const existingTracker = trackerMap.get(emitter);
     if (existingTracker) {
+      if (existingTracker.isActive) {
+        return;
+      }
+
       existingTracker.isActive = true;
       activeTrackerCount++;
 
-      const data = existingTracker.data as T | undefined;
-
-      existingTracker.data = undefined;
-
-      return data;
+      return;
     }
 
-    const entangledOrb = entangledOrbEmitterMap.get(emitter);
+    const entangledOrb = emitter[orbEmitterKey];
 
     if (entangledOrb) {
       entangledOrb.addDependentEmitter(stabilityEmitter);
     }
 
-    const tracker: Tracker<T> = {
-      terminator: emitter((data) => {
-        tracker.data = data;
+    const tracker: Tracker = {
+      terminator: emitter(() => {
         if (tracker.isActive) {
           watchUpdate();
         }
@@ -232,7 +237,7 @@ export function createOrb(options?: OrbOptions): Orb {
     }
   }
 
-  function get<T extends ValueParticle[]>(
+  function get<const T extends readonly ValueParticle[]>(
     ...particles: T
   ): ValueFromParticles<T> {
     return particles.map((p) => {
@@ -242,7 +247,7 @@ export function createOrb(options?: OrbOptions): Orb {
     }) as ValueFromParticles<T>;
   }
 
-  function versatileGet<T extends MaybeParticle[]>(
+  function versatileGet<const T extends readonly MaybeParticle[]>(
     ...maybeParticles: T
   ): ValueFromMaybeParticles<T> {
     return maybeParticles.map((p) => {
@@ -323,22 +328,22 @@ export function createOrb(options?: OrbOptions): Orb {
     clearWatched() {
       for (const tracker of trackers) {
         tracker.terminator();
-        trackerMap.delete(tracker.emitter);
 
         const { entangledOrb } = tracker;
         if (entangledOrb) {
           entangledOrb.removeDependentEmitter(stabilityEmitter);
         }
       }
+      trackerMap.clear();
       trackers = [];
     },
     stabilize,
-    stabilityEmitter: stabilityEmitter,
-    addDependentEmitter: addDependentEmitter,
-    removeDependentEmitter: removeDependentEmitter,
+    stabilityEmitter,
+    addDependentEmitter,
+    removeDependentEmitter,
   };
 }
 
-export function entangleOrbWithEmitter(orb: Orb, emitter: Emitter) {
-  entangledOrbEmitterMap.set(emitter, orb);
+export function entangleOrbWithEmitter(orb: Orb, emitter: OrbEmitter) {
+  emitter[orbEmitterKey] = orb;
 }

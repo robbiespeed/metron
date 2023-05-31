@@ -1,17 +1,18 @@
-import {
-  createOrb,
-  entangleOrbWithEmitter,
-  type OrbContext,
-  createSensor,
-  emitterKey,
-  valueOfKey,
-} from '@metron/core';
-import { type Atom } from './atom.js';
+import type { Atom } from './atom.js';
+import { createOrb, entangleOrbWithEmitter, type OrbContext } from './orb.js';
+import { emitterKey, valueOfKey } from './particle.js';
+import { createSensor } from './sensor.js';
 
 export interface Computed<T> extends Atom<T> {
   readonly cachedValue: T | undefined;
-  readonly isComputed: boolean;
+  readonly isCacheValid: boolean;
 }
+
+const dependencyCleanupRegistry = new FinalizationRegistry(
+  (cleanup: () => void) => {
+    cleanup();
+  }
+);
 
 export function createComputed<T>(
   get: (context: OrbContext) => T
@@ -23,30 +24,33 @@ export function createComputed<T>(
   entangleOrbWithEmitter(orb, emitter);
 
   let cachedValue: T | undefined;
-  let isNotComputed = true;
+  let isCacheInvalid = true;
 
   orb.watch(() => {
     cachedValue = undefined;
-    isNotComputed = true;
+    isCacheInvalid = true;
     send();
   });
 
   const { context } = orb;
 
   function getValue() {
-    if (isNotComputed) {
+    if (isCacheInvalid) {
       cachedValue = get(context);
-      isNotComputed = false;
+      isCacheInvalid = false;
     }
     return cachedValue!;
   }
 
+  dependencyCleanupRegistry.register(emitter, orb.clearWatched);
+
   return {
     get untracked() {
+      // TODO: this could be broken since the orb is still doing tracking work
       return getValue();
     },
-    get isComputed() {
-      return !isNotComputed;
+    get isCacheValid() {
+      return !isCacheInvalid;
     },
     get cachedValue() {
       return cachedValue;
