@@ -3,9 +3,7 @@
   "include": ["./src/**/*"],
   "compilerOptions": {
     "rootDir": "./src",
-    "outDir": "./lib",
-    "paths": {
-      "@metron/jsx/jsx-runtime": ["./src/jsx-runtime.ts"]
-    }
-  }
+    "outDir": "./lib"
+  },
+  "references": [{ "path": "../core/tsconfig.build.json" }]
 }

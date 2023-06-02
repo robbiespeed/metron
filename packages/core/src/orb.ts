@@ -3,9 +3,9 @@ import type { Emitter } from './emitter.js';
 import {
   emitterKey,
   type Particle,
-  type MaybeParticle,
+  type ParticleOrNonParticle,
   valueOfKey,
-  type ValueParticle,
+  type Atom,
 } from './particle.js';
 
 const orbEmitterKey = Symbol('orb');
@@ -20,23 +20,21 @@ export interface OrbEmitter<TEmitData = unknown> extends Emitter<TEmitData> {
 }
 
 // TODO: derived has similar types, they could be shared
-type ValueFromParticles<T extends readonly ValueParticle[]> = {
+type ValueFromParticles<T extends readonly Atom[]> = {
   [K in keyof T]: ReturnType<T[K][typeof valueOfKey]>;
 };
 
-type ValueFromMaybeParticle<T> = T extends ValueParticle
+type ValueFromMaybeParticle<T> = T extends Atom
   ? ReturnType<T[typeof valueOfKey]>
   : T;
 
-type ValueFromMaybeParticles<T extends readonly MaybeParticle[]> = {
+type ValueFromMaybeParticles<T extends readonly ParticleOrNonParticle[]> = {
   [K in keyof T]: ValueFromMaybeParticle<T[K]>;
 };
 
 export interface OrbContext {
-  get<const T extends readonly ValueParticle[]>(
-    ...particles: T
-  ): ValueFromParticles<T>;
-  versatileGet<const T extends readonly MaybeParticle[]>(
+  get<const T extends readonly Atom[]>(...particles: T): ValueFromParticles<T>;
+  versatileGet<const T extends readonly ParticleOrNonParticle[]>(
     ...maybeParticles: T
   ): ValueFromMaybeParticles<T>;
   /**
@@ -44,7 +42,7 @@ export interface OrbContext {
    * particle changes
    */
   connect(...particles: Particle[]): void;
-  versatileConnect(...items: MaybeParticle[]): void;
+  versatileConnect(...items: ParticleOrNonParticle[]): void;
 }
 
 export interface Orb extends Particle<undefined> {
@@ -229,7 +227,7 @@ export function createOrb(options?: OrbOptions): Orb {
     }
   }
 
-  function versatileConnect(...maybeParticles: MaybeParticle[]) {
+  function versatileConnect(...maybeParticles: ParticleOrNonParticle[]) {
     for (const { [emitterKey]: emitter } of maybeParticles) {
       if (emitter) {
         connectEmitter(emitter);
@@ -237,7 +235,7 @@ export function createOrb(options?: OrbOptions): Orb {
     }
   }
 
-  function get<const T extends readonly ValueParticle[]>(
+  function get<const T extends readonly Atom[]>(
     ...particles: T
   ): ValueFromParticles<T> {
     return particles.map((p) => {
@@ -247,7 +245,7 @@ export function createOrb(options?: OrbOptions): Orb {
     }) as ValueFromParticles<T>;
   }
 
-  function versatileGet<const T extends readonly MaybeParticle[]>(
+  function versatileGet<const T extends readonly ParticleOrNonParticle[]>(
     ...maybeParticles: T
   ): ValueFromMaybeParticles<T> {
     return maybeParticles.map((p) => {

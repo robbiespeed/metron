@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { createDerived } from './derived.js';
 import { createSensor } from './sensor.js';
-import { emitterKey } from './particle.js';
+import { emitterKey, untracked } from './particle.js';
 import type { Emitter, EmitterCallback } from './emitter.js';
 import { garbageCollect } from '@metron/test-utils';
 
@@ -13,7 +13,7 @@ describe('core: Derived', () => {
     const derived = createDerived([], () => 1);
     expect(derived.cachedValue).to.equal(undefined);
     expect(derived.isCacheValid).to.equal(false);
-    expect(derived.untracked).to.equal(1);
+    expect(untracked(derived)).to.equal(1);
     expect(derived.cachedValue).to.equal(1);
     expect(derived.isCacheValid).to.equal(true);
   });
@@ -26,12 +26,12 @@ describe('core: Derived', () => {
     });
     expect(derived.cachedValue).to.equal(undefined);
     expect(derived.isCacheValid).to.equal(false);
-    expect(derived.untracked).to.equal(1);
+    expect(untracked(derived)).to.equal(1);
     expect(derived.cachedValue).to.equal(1);
     expect(derived.isCacheValid).to.equal(true);
     sensor.send();
     expect(derived.isCacheValid).to.equal(false);
-    expect(derived.untracked).to.equal(2);
+    expect(untracked(derived)).to.equal(2);
     expect(derived.isCacheValid).to.equal(true);
   });
   function createWeakDerived() {
@@ -59,7 +59,7 @@ describe('core: Derived', () => {
       computeCount++;
       return computeCount;
     });
-    derived.untracked;
+    untracked(derived);
     return [mockSensor, new WeakRef(derived)] as const;
   }
   it('should cleanup sensor when garbage collected', async function () {

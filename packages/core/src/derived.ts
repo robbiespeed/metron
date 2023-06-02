@@ -1,10 +1,5 @@
 import type { Atom } from './atom.js';
-import {
-  emitterKey,
-  valueOfKey,
-  type MaybeValueParticle,
-  type ValueParticle,
-} from './particle.js';
+import { emitterKey, valueOfKey, type MaybeAtomParticle } from './particle.js';
 import { createSensor } from './sensor.js';
 
 export interface DerivedAtom<T> extends Atom<T> {
@@ -12,8 +7,9 @@ export interface DerivedAtom<T> extends Atom<T> {
   readonly isCacheValid: boolean;
 }
 
-type ExtractParticleValue<T> = T extends ValueParticle<infer U> ? U : undefined;
-type ExtractParticleValues<T extends readonly MaybeValueParticle[]> = {
+// TODO: move to particle.ts and rename for Atom
+type ExtractParticleValue<T> = T extends Atom<infer U> ? U : undefined;
+type ExtractParticleValues<T extends readonly MaybeAtomParticle[]> = {
   [K in keyof T]: ExtractParticleValue<T[K]>;
 };
 
@@ -25,7 +21,7 @@ const dependencyCleanupRegistry = new FinalizationRegistry(
   }
 );
 
-export function createDerived<const D extends readonly MaybeValueParticle[], T>(
+export function createDerived<const D extends readonly MaybeAtomParticle[], T>(
   dependencies: D,
   derive: (...values: ExtractParticleValues<D>) => T
 ): DerivedAtom<T> {
@@ -58,9 +54,6 @@ export function createDerived<const D extends readonly MaybeValueParticle[], T>(
   dependencyCleanupRegistry.register(emitter, terminators);
 
   return {
-    get untracked() {
-      return getValue();
-    },
     get isCacheValid() {
       return !isCacheInvalid;
     },

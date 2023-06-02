@@ -1,13 +1,11 @@
-import { emitterKey, valueOfKey, type ValueParticle } from './particle.js';
+import { emitterKey, valueOfKey, type Atom } from './particle.js';
 import { createSensor } from './sensor.js';
-
-export interface Atom<T> extends ValueParticle<T> {
-  readonly untracked: T;
-}
 
 export interface AtomSetter<T> {
   (value: T): T;
 }
+
+export type { Atom };
 
 export function createAtom<T>(
   value: T
@@ -17,9 +15,6 @@ export function createAtom<T>(
   let storedValue = value;
 
   const atom: Atom<T> = {
-    get untracked() {
-      return storedValue;
-    },
     [valueOfKey]() {
       return storedValue;
     },

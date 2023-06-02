@@ -8,12 +8,12 @@ export interface Particle<TEmitData = unknown> {
 
 export const valueOfKey = Symbol('metron-value-of');
 
-export interface ValueParticle<TValue = unknown, TEmitData = unknown>
+export interface Atom<TValue = unknown, TEmitData = unknown>
   extends Particle<TEmitData> {
   [valueOfKey](): TValue;
 }
 
-export interface MaybeValueParticle extends Particle {
+export interface MaybeAtomParticle extends Particle {
   [valueOfKey]?: () => unknown;
 }
 
@@ -24,6 +24,18 @@ interface AntiParticle {
   [valueOfKey]?: never;
 }
 
-export type NotParticle = AntiParticle | (AntiParticle & Primitive);
+export type NonParticle = AntiParticle | (AntiParticle & Primitive);
 
-export type MaybeParticle = MaybeValueParticle | NotParticle;
+export type ParticleOrNonParticle = MaybeAtomParticle | NonParticle;
+
+export function isParticle(value: unknown): value is Particle {
+  return (value as any)?.[emitterKey] !== undefined;
+}
+
+export function isAtom(value: unknown): value is Atom {
+  return (value as any)?.[valueOfKey] !== undefined;
+}
+
+export function untracked<T>(atom: Atom<T>): T {
+  return atom[valueOfKey]();
+}

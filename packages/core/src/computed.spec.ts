@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { createComputed } from './computed.js';
 import { createSensor } from './sensor.js';
-import { emitterKey } from './particle.js';
+import { emitterKey, untracked } from './particle.js';
 import type { Emitter, EmitterCallback } from './emitter.js';
 import { garbageCollect } from '@metron/test-utils';
 
@@ -13,7 +13,7 @@ describe('core: Computed', () => {
     const computed = createComputed(() => 1);
     expect(computed.cachedValue).to.equal(undefined);
     expect(computed.isCacheValid).to.equal(false);
-    expect(computed.untracked).to.equal(1);
+    expect(untracked(computed)).to.equal(1);
     expect(computed.cachedValue).to.equal(1);
     expect(computed.isCacheValid).to.equal(true);
   });
@@ -27,12 +27,12 @@ describe('core: Computed', () => {
     });
     expect(computed.cachedValue).to.equal(undefined);
     expect(computed.isCacheValid).to.equal(false);
-    expect(computed.untracked).to.equal(1);
+    expect(untracked(computed)).to.equal(1);
     expect(computed.cachedValue).to.equal(1);
     expect(computed.isCacheValid).to.equal(true);
     sensor.send();
     expect(computed.isCacheValid).to.equal(false);
-    expect(computed.untracked).to.equal(2);
+    expect(untracked(computed)).to.equal(2);
     expect(computed.isCacheValid).to.equal(true);
   });
   function createWeakComputed() {
@@ -61,7 +61,7 @@ describe('core: Computed', () => {
       computeCount++;
       return computeCount;
     });
-    computed.untracked;
+    untracked(computed);
     return [mockSensor, new WeakRef(computed)] as const;
   }
   it('should cleanup sensor when garbage collected', async function () {

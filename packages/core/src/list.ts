@@ -1,10 +1,10 @@
-import {
-  type ValueParticle,
-  createSensor,
-  emitterKey,
-  valueOfKey,
-} from '@metron/core';
+import { type Atom, createSensor, emitterKey, valueOfKey } from '@metron/core';
 import { filterEmitter } from './filter-emitter.js';
+import {
+  atomIteratorKey,
+  type AtomIterable,
+  type AtomIterator,
+} from './iterable.js';
 
 export enum AtomListChangeType {
   Index,
@@ -43,19 +43,19 @@ export type AtomListChange =
   | AtomListChangeAll;
 
 export interface AtomList<T>
-  extends ValueParticle<RawAtomList<T>, AtomListChange> {
-  readonly size: ValueParticle<number>;
-  readonly untracked: RawAtomList<T>;
-  at(index: number): ValueParticle<T | undefined>;
-  /* TODO: Implement these methods.
-  slice(start?: number, end?: number): AtomIterator<T>;
-  sliceReversed(start?: number, end?: number): AtomIterator<T>;
-  entriesReversed(): AtomIterator<[number, T]>;
+  extends Atom<RawAtomList<T>, AtomListChange>,
+    AtomIterable<T> {
+  readonly size: Atom<number>;
+  at(index: number): Atom<T | undefined>;
   entries(): AtomIterator<[number, T]>;
-  keysReversed(): AtomIterator<number>;
   keys(): AtomIterator<number>;
-  valuesReversed(): AtomIterator<T>;
   values(): AtomIterator<T>;
+  /* TODO: Implement these methods.
+  slice(start?: number, end?: number): DerivedAtomList<T>;
+  sliceReversed(start?: number, end?: number): DerivedAtomList<T>;
+  entriesReversed(): AtomIterator<[number, T]>;
+  keysReversed(): AtomIterator<number>;
+  valuesReversed(): AtomIterator<T>;
   */
 }
 
@@ -82,6 +82,7 @@ export interface RawAtomList<T> {
   includes(searchElement: T): boolean;
   join(separator?: string): string;
   */
+  [Symbol.iterator](): IterableIterator<T>;
   entries(): IterableIterator<[number, T]>;
   keys(): IterableIterator<number>;
   values(): IterableIterator<T>;
@@ -123,6 +124,9 @@ export function createAtomList<T>(
     toArray() {
       return innerValues.slice();
     },
+    [Symbol.iterator]() {
+      return innerValues.values();
+    },
     entries() {
       return innerValues.entries();
     },
@@ -142,23 +146,20 @@ export function createAtomList<T>(
   AtomMap and AtomSet.
   Try without memoizing (always fresh particle), and with lifetime management
 */
-  const weakParticles = new Map<
-    number,
-    WeakRef<ValueParticle<T | undefined>>
-  >();
+  const weakAtoms = new Map<number, WeakRef<Atom<T | undefined>>>();
 
   const finalizationRegistry = new FinalizationRegistry((index: number) => {
-    weakParticles.delete(index);
+    weakAtoms.delete(index);
   });
 
   function getKeyedParticle(key: number) {
-    const weakParticle = weakParticles.get(key);
-    let particle: ValueParticle<T | undefined> | undefined;
-    if (weakParticle) {
-      particle = weakParticle.deref();
+    const weakAtom = weakAtoms.get(key);
+    let atom: Atom<T | undefined> | undefined;
+    if (weakAtom) {
+      atom = weakAtom.deref();
     }
 
-    if (!particle) {
+    if (!atom) {
       let emitterFilter =
         key < 0
           ? (change: AtomListChange) => {
@@ -210,35 +211,53 @@ export function createAtomList<T>(
                   return false;
               }
             };
-      particle = {
+      atom = {
         [valueOfKey]() {
           return rawList.at(key);
         },
         [emitterKey]: filterEmitter(listEmitter, emitterFilter),
       };
-      const freshWeakParticle = new WeakRef(particle);
+      const freshWeakAtom = new WeakRef(atom);
 
-      finalizationRegistry.register(particle, key);
+      finalizationRegistry.register(atom, key);
 
-      weakParticles.set(key, freshWeakParticle);
+      weakAtoms.set(key, freshWeakAtom);
     }
 
-    return particle;
+    return atom;
   }
 
-  const sizeParticle: ValueParticle<number> = {
+  const sizeAtom: Atom<number> = {
     [valueOfKey]() {
       return rawList.size;
     },
     [emitterKey]: filterEmitter(listEmitter, (change) => change.sizeChanged),
   };
 
+  const iteratorAtom: AtomIterator<T> = {
+    [valueOfKey]() {
+      return rawList.values();
+    },
+    [emitterKey]: listEmitter,
+  };
+
+  const entriesIteratorAtom: AtomIterator<[number, T]> = {
+    [valueOfKey]() {
+      return rawList.entries();
+    },
+    [emitterKey]: listEmitter,
+  };
+
+  const keysIteratorAtom: AtomIterator<number> = {
+    [valueOfKey]() {
+      return rawList.keys();
+    },
+    [emitterKey]: listEmitter,
+  };
+
   const list: AtomList<T> = {
     get size() {
-      return sizeParticle;
-    },
-    get untracked() {
-      return rawList;
+      return sizeAtom;
     },
     at(index) {
       return getKeyedParticle(Math.trunc(index));
@@ -247,6 +266,18 @@ export function createAtomList<T>(
       return rawList;
     },
     [emitterKey]: listEmitter,
+    [atomIteratorKey]() {
+      return iteratorAtom;
+    },
+    entries() {
+      return entriesIteratorAtom;
+    },
+    keys() {
+      return keysIteratorAtom;
+    },
+    values() {
+      return iteratorAtom;
+    },
   };
 
   const listUpdater: AtomListWriter<T> = {

@@ -44,11 +44,8 @@ export function createComputed<T>(
 
   dependencyCleanupRegistry.register(emitter, orb.clearWatched);
 
+  // TODO: untracked could be broken since the orb is still doing tracking work
   return {
-    get untracked() {
-      // TODO: this could be broken since the orb is still doing tracking work
-      return getValue();
-    },
     get isCacheValid() {
       return !isCacheInvalid;
     },
