@@ -1,55 +1,17 @@
 import { type Atom, createSensor, emitterKey, valueOfKey } from '@metron/core';
 import { filterEmitter } from './filter-emitter.js';
+import { atomIteratorKey, type AtomIterator } from './iterable.js';
 import {
-  atomIteratorKey,
-  type AtomIterable,
-  type AtomIterator,
-} from './iterable.js';
+  COLLECTION_EMIT_TYPE_ALL_CHANGE,
+  type AtomCollection,
+  type AtomCollectionEmitChange,
+  COLLECTION_EMIT_TYPE_SLICE_CHANGE,
+  COLLECTION_EMIT_TYPE_KEY_CHANGE,
+  type RawAtomCollection,
+  collectionBrandKey,
+} from './collection.js';
 
-export enum AtomListChangeType {
-  Index,
-  Range,
-  All,
-}
-
-// TODO: Add more data to change events, so as to not require use of rawList
-// or innerValues when filtering emitter for key changes.
-// Move shared data into base interface.
-// Put inside a namespace?
-interface AtomListChangeSingle {
-  readonly type: AtomListChangeType.Index;
-  readonly index: number;
-  readonly oldSize: number;
-  readonly sizeChanged: boolean;
-}
-
-interface AtomListChangeMany {
-  readonly type: AtomListChangeType.Range;
-  readonly start: number;
-  readonly end: number;
-  readonly oldSize: number;
-  readonly sizeChanged: boolean;
-}
-
-interface AtomListChangeAll {
-  readonly type: AtomListChangeType.All;
-  readonly oldSize: number;
-  readonly sizeChanged: boolean;
-}
-
-export type AtomListChange =
-  | AtomListChangeSingle
-  | AtomListChangeMany
-  | AtomListChangeAll;
-
-export interface AtomList<T>
-  extends Atom<RawAtomList<T>, AtomListChange>,
-    AtomIterable<T> {
-  readonly size: Atom<number>;
-  at(index: number): Atom<T | undefined>;
-  entries(): AtomIterator<[number, T]>;
-  keys(): AtomIterator<number>;
-  values(): AtomIterator<T>;
+export interface AtomList<T> extends AtomCollection<T, number, RawAtomList<T>> {
   /* TODO: Implement these methods.
   slice(start?: number, end?: number): DerivedAtomList<T>;
   sliceReversed(start?: number, end?: number): DerivedAtomList<T>;
@@ -59,9 +21,7 @@ export interface AtomList<T>
   */
 }
 
-export interface RawAtomList<T> {
-  readonly size: number;
-  at(index: number): T | undefined;
+export interface RawAtomList<T> extends RawAtomCollection<T, number> {
   toArray(): T[];
   /* TODO: Implement these methods.
   slice(start?: number, end?: number): IterableIterator<T>;
@@ -82,14 +42,10 @@ export interface RawAtomList<T> {
   includes(searchElement: T): boolean;
   join(separator?: string): string;
   */
-  [Symbol.iterator](): IterableIterator<T>;
-  entries(): IterableIterator<[number, T]>;
-  keys(): IterableIterator<number>;
-  values(): IterableIterator<T>;
 }
 
 export interface AtomListWriter<T> {
-  setAt(index: number, value: T): T;
+  set(index: number, value: T): T;
   push(value: T): void;
   append(...values: T[]): void;
   insert(index: number, item: T): void;
@@ -114,7 +70,7 @@ export function createAtomList<T>(
     get size() {
       return innerValues.length;
     },
-    at(index) {
+    get(index) {
       const size = innerValues.length;
       let normalizedIndex = Math.trunc(index);
       normalizedIndex =
@@ -138,7 +94,8 @@ export function createAtomList<T>(
     },
   };
 
-  const { emitter: listEmitter, send } = createSensor<AtomListChange>();
+  const { emitter: listEmitter, send } =
+    createSensor<AtomCollectionEmitChange<number>>();
 
   /* TODO:
   Abstract this finalization logic into a reusable keyed memo function
@@ -162,7 +119,7 @@ export function createAtomList<T>(
     if (!atom) {
       let emitterFilter =
         key < 0
-          ? (change: AtomListChange) => {
+          ? (change: AtomCollectionEmitChange<number>) => {
               const oldIndex = change.oldSize + key;
               const index = innerValues.length + key;
               const isOldIndexOutOfBounds = oldIndex < 0;
@@ -174,24 +131,24 @@ export function createAtomList<T>(
               }
 
               // Handles within bounds size changes when size has changed
-              if (change.sizeChanged) {
+              if (change.newSize !== change.oldSize) {
                 return !isOldIndexOutOfBounds || !isIndexOutOfBounds;
               }
 
               // Handles within bounds size changes when size has not changed
               // meaning old index and index are the same
               switch (change.type) {
-                case AtomListChangeType.Index:
-                  return change.index === index;
-                case AtomListChangeType.Range:
-                  return change.start <= index && index <= change.end;
-                case AtomListChangeType.All:
+                case COLLECTION_EMIT_TYPE_KEY_CHANGE:
+                  return change.key === index;
+                case COLLECTION_EMIT_TYPE_SLICE_CHANGE:
+                  return change.keyStart <= index && index <= change.keyEnd;
+                case COLLECTION_EMIT_TYPE_ALL_CHANGE:
                   return true;
                 default:
                   return false;
               }
             }
-          : (change: AtomListChange) => {
+          : (change: AtomCollectionEmitChange<number>) => {
               const isIndexOutOfOldSizeBounds = key >= change.oldSize;
               const isIndexOutOfSizeBounds = key >= innerValues.length;
 
@@ -201,11 +158,11 @@ export function createAtomList<T>(
               }
 
               switch (change.type) {
-                case AtomListChangeType.Index:
-                  return change.index === key;
-                case AtomListChangeType.Range:
-                  return change.start <= key && key <= change.end;
-                case AtomListChangeType.All:
+                case COLLECTION_EMIT_TYPE_KEY_CHANGE:
+                  return change.key === key;
+                case COLLECTION_EMIT_TYPE_SLICE_CHANGE:
+                  return change.keyStart <= key && key <= change.keyEnd;
+                case COLLECTION_EMIT_TYPE_ALL_CHANGE:
                   return true;
                 default:
                   return false;
@@ -213,7 +170,7 @@ export function createAtomList<T>(
             };
       atom = {
         [valueOfKey]() {
-          return rawList.at(key);
+          return rawList.get(key);
         },
         [emitterKey]: filterEmitter(listEmitter, emitterFilter),
       };
@@ -231,24 +188,33 @@ export function createAtomList<T>(
     [valueOfKey]() {
       return rawList.size;
     },
-    [emitterKey]: filterEmitter(listEmitter, (change) => change.sizeChanged),
+    [emitterKey]: filterEmitter(
+      listEmitter,
+      (change) => change.newSize !== change.oldSize
+    ),
   };
 
-  const iteratorAtom: AtomIterator<T> = {
+  const iteratorAtom: AtomIterator<T, AtomCollectionEmitChange<number>> = {
     [valueOfKey]() {
       return rawList.values();
     },
     [emitterKey]: listEmitter,
   };
 
-  const entriesIteratorAtom: AtomIterator<[number, T]> = {
+  const entriesIteratorAtom: AtomIterator<
+    [number, T],
+    AtomCollectionEmitChange<number>
+  > = {
     [valueOfKey]() {
       return rawList.entries();
     },
     [emitterKey]: listEmitter,
   };
 
-  const keysIteratorAtom: AtomIterator<number> = {
+  const keysIteratorAtom: AtomIterator<
+    number,
+    AtomCollectionEmitChange<number>
+  > = {
     [valueOfKey]() {
       return rawList.keys();
     },
@@ -256,10 +222,11 @@ export function createAtomList<T>(
   };
 
   const list: AtomList<T> = {
+    [collectionBrandKey]: true,
     get size() {
       return sizeAtom;
     },
-    at(index) {
+    get(index) {
       return getKeyedParticle(Math.trunc(index));
     },
     [valueOfKey]() {
@@ -281,7 +248,7 @@ export function createAtomList<T>(
   };
 
   const listUpdater: AtomListWriter<T> = {
-    setAt(index, value) {
+    set(index, value) {
       const oldSize = innerValues.length;
       let normalizedIndex = Math.trunc(index);
       normalizedIndex =
@@ -293,36 +260,38 @@ export function createAtomList<T>(
       if (value !== innerValues[index]) {
         innerValues[index] = value;
 
-        const nowSize = innerValues.length;
-
         send({
-          type: AtomListChangeType.Index,
-          index: index,
+          type: COLLECTION_EMIT_TYPE_KEY_CHANGE,
+          key: index,
           oldSize,
-          sizeChanged: oldSize !== nowSize,
+          newSize: innerValues.length,
         });
       }
       return value;
     },
     push(value) {
       innerValues.push(value);
-      const index = innerValues.length - 1;
+      const oldSize = innerValues.length - 1;
       send({
-        type: AtomListChangeType.Index,
-        index,
-        oldSize: index,
-        sizeChanged: true,
+        type: COLLECTION_EMIT_TYPE_KEY_CHANGE,
+        key: oldSize,
+        oldSize,
+        newSize: innerValues.length,
       });
     },
     append(...values) {
-      const start = innerValues.length;
+      const oldSize = innerValues.length;
+
       innerValues.push(...values);
+
+      const newSize = innerValues.length;
+
       send({
-        type: AtomListChangeType.Range,
-        start,
-        end: innerValues.length - 1,
-        oldSize: start,
-        sizeChanged: true,
+        type: COLLECTION_EMIT_TYPE_SLICE_CHANGE,
+        keyStart: oldSize,
+        keyEnd: newSize - 1,
+        oldSize,
+        newSize,
       });
     },
     insert(index, item) {
@@ -333,24 +302,26 @@ export function createAtomList<T>(
 
       innerValues.splice(index, 0, item);
 
+      const newSize = innerValues.length;
+
       send({
-        type: AtomListChangeType.Range,
-        start: index,
-        end: innerValues.length - 1,
+        type: COLLECTION_EMIT_TYPE_SLICE_CHANGE,
+        keyStart: index,
+        keyEnd: newSize - 1,
         oldSize,
-        sizeChanged: true,
+        newSize,
       });
     },
     splice(start, deleteCount, items = []) {
       const oldSize = innerValues.length;
       const deletedItems = innerValues.splice(start, deleteCount, ...items);
-      const nowSize = innerValues.length;
+      const newSize = innerValues.length;
       send({
-        type: AtomListChangeType.Range,
-        start,
-        end: nowSize - 1,
+        type: COLLECTION_EMIT_TYPE_SLICE_CHANGE,
+        keyStart: start,
+        keyEnd: newSize - 1,
         oldSize,
-        sizeChanged: oldSize !== nowSize,
+        newSize,
       });
       return deletedItems;
     },
@@ -364,10 +335,10 @@ export function createAtomList<T>(
       const deletedItem = innerValues.pop();
 
       send({
-        type: AtomListChangeType.Index,
-        index: oldSize,
+        type: COLLECTION_EMIT_TYPE_KEY_CHANGE,
+        key: oldSize,
         oldSize,
-        sizeChanged: true,
+        newSize: innerValues.length,
       });
 
       return deletedItem;
@@ -376,9 +347,9 @@ export function createAtomList<T>(
       const oldSize = innerValues.length;
       innerValues = values;
       send({
-        type: AtomListChangeType.All,
+        type: COLLECTION_EMIT_TYPE_ALL_CHANGE,
         oldSize,
-        sizeChanged: oldSize !== innerValues.length,
+        newSize: innerValues.length,
       });
     },
     clear() {
@@ -388,9 +359,9 @@ export function createAtomList<T>(
       }
       innerValues = [];
       send({
-        type: AtomListChangeType.All,
+        type: COLLECTION_EMIT_TYPE_ALL_CHANGE,
         oldSize,
-        sizeChanged: true,
+        newSize: 0,
       });
     },
   };

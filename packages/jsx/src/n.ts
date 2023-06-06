@@ -7,7 +7,7 @@ import {
   NODE_TYPE_INTRINSIC,
   NODE_TYPE_FRAGMENT,
   NODE_TYPE_CONTEXT_PROVIDER,
-  NODE_TYPE_RENDER_ENGINE_CONTEXT,
+  NODE_TYPE_RENDER_CONTEXT,
 } from './node.js';
 
 const nodeBrandKey = Symbol('metron-jsx-node');
@@ -56,7 +56,7 @@ abstract class Node {
         this.context = childContext;
         break;
       }
-      case NODE_TYPE_RENDER_ENGINE_CONTEXT: {
+      case NODE_TYPE_RENDER_CONTEXT: {
         this.render = renderStore[this.renderContextKey];
         break;
       }

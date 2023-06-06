@@ -62,7 +62,7 @@ export interface RenderContext {
     node: IntrinsicNode,
     contextStore: ComponentContextStore
   ): unknown;
-  renderElement(element: unknown, contextStore: ComponentContextStore): unknown;
+  renderOther(element: unknown, contextStore: ComponentContextStore): unknown;
   // moveElement
   // moveComponent
   // moveIntrinsic
@@ -73,9 +73,9 @@ export const NODE_TYPE_CONTEXT_PROVIDER = 'ContextProvider';
 export const NODE_TYPE_INTRINSIC = 'Intrinsic';
 export const NODE_TYPE_RENDER_CONTEXT = 'RenderContext';
 
-export const nodeBrandKey = Symbol('metron-jsx-node');
+export const nodeBrandKey = Symbol('MetronJSXNodeBrand');
 
-const setContextKey = Symbol('metron-jsx-set-context');
+const setContextKey = Symbol('MetronJSXSetContext');
 
 export function createContext(
   record: ComponentContextStore = {}
@@ -97,7 +97,7 @@ export function render(
   renderContext?: RenderContext
 ): unknown {
   if (!isNode(element)) {
-    return renderContext?.renderElement(element, contextStore);
+    return renderContext?.renderOther(element, contextStore);
   }
 
   let childContextStore = contextStore;
