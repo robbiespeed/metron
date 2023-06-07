@@ -1,0 +1,29 @@
+{
+  "name": "@metron/web-examples",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "build": "tsc --build tsconfig.build.json",
+    "build:watch": "tsc --build tsconfig.build.json",
+    "build:types": "tsc --build tsconfig.build.json --emitDeclarationOnly",
+    "build:types:watch": "tsc --build tsconfig.build.json --emitDeclarationOnly --watch",
+    "test": "mocha",
+    "test:watch": "mocha --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": {
+      "types": "./lib/*.d.ts",
+      "import": "./lib/*.js"
+    }
+  },
+  "dependencies": {
+    "@metron/core": "workspace:*",
+    "@metron/jsx": "workspace:*"
+  },
+  "devDependencies": {}
+}
