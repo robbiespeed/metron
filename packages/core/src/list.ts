@@ -1,4 +1,4 @@
-import { type Atom, createSensor, emitterKey, valueOfKey } from '@metron/core';
+import { type Atom, createSensor, emitterKey, toValueKey } from '@metron/core';
 import { filterEmitter } from './filter-emitter.js';
 import { atomIteratorKey, type AtomIterator } from './iterable.js';
 import {
@@ -169,7 +169,7 @@ export function createAtomList<T>(
               }
             };
       atom = {
-        [valueOfKey]() {
+        [toValueKey]() {
           return rawList.get(key);
         },
         [emitterKey]: filterEmitter(listEmitter, emitterFilter),
@@ -185,7 +185,7 @@ export function createAtomList<T>(
   }
 
   const sizeAtom: Atom<number> = {
-    [valueOfKey]() {
+    [toValueKey]() {
       return rawList.size;
     },
     [emitterKey]: filterEmitter(
@@ -195,7 +195,7 @@ export function createAtomList<T>(
   };
 
   const iteratorAtom: AtomIterator<T, AtomCollectionEmitChange<number>> = {
-    [valueOfKey]() {
+    [toValueKey]() {
       return rawList.values();
     },
     [emitterKey]: listEmitter,
@@ -205,7 +205,7 @@ export function createAtomList<T>(
     [number, T],
     AtomCollectionEmitChange<number>
   > = {
-    [valueOfKey]() {
+    [toValueKey]() {
       return rawList.entries();
     },
     [emitterKey]: listEmitter,
@@ -215,7 +215,7 @@ export function createAtomList<T>(
     number,
     AtomCollectionEmitChange<number>
   > = {
-    [valueOfKey]() {
+    [toValueKey]() {
       return rawList.keys();
     },
     [emitterKey]: listEmitter,
@@ -229,7 +229,7 @@ export function createAtomList<T>(
     get(index) {
       return getKeyedParticle(Math.trunc(index));
     },
-    [valueOfKey]() {
+    [toValueKey]() {
       return rawList;
     },
     [emitterKey]: listEmitter,

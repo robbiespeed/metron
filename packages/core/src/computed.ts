@@ -1,6 +1,6 @@
 import type { Atom } from './atom.js';
 import { createOrb, entangleOrbWithEmitter, type OrbContext } from './orb.js';
-import { emitterKey, valueOfKey } from './particle.js';
+import { emitterKey, toValueKey } from './particle.js';
 import { createSensor } from './sensor.js';
 
 export interface Computed<T> extends Atom<T> {
@@ -52,7 +52,7 @@ export function createComputed<T>(
     get cachedValue() {
       return cachedValue;
     },
-    [valueOfKey]: getValue,
+    [toValueKey]: getValue,
     [emitterKey]: emitter,
   };
 }

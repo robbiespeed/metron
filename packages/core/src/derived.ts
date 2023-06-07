@@ -1,5 +1,5 @@
 import type { Atom } from './atom.js';
-import { emitterKey, valueOfKey, type MaybeAtomParticle } from './particle.js';
+import { emitterKey, toValueKey, type MaybeAtomParticle } from './particle.js';
 import { createSensor } from './sensor.js';
 
 export interface DerivedAtom<T> extends Atom<T> {
@@ -43,7 +43,7 @@ export function createDerived<const D extends readonly MaybeAtomParticle[], T>(
   function getValue() {
     if (isCacheInvalid) {
       const values = dependencies.map((atom) =>
-        atom[valueOfKey]?.()
+        atom[toValueKey]?.()
       ) as ExtractParticleValues<D>;
       cachedValue = derive(...values);
       isCacheInvalid = false;
@@ -60,7 +60,7 @@ export function createDerived<const D extends readonly MaybeAtomParticle[], T>(
     get cachedValue() {
       return cachedValue;
     },
-    [valueOfKey]: getValue,
+    [toValueKey]: getValue,
     [emitterKey]: emitter,
   };
 }

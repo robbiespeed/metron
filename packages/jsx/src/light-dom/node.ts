@@ -1,13 +1,15 @@
-import type { ReadonlyUnknownRecord } from '../node.js';
-
-export interface LightDomElement {
-  readonly tag: string;
-  readonly children: readonly unknown[];
-  readonly attributes: ReadonlyUnknownRecord;
+export class LightDomNode {
+  readonly children: readonly unknown[] = [];
 }
 
-export interface LightDomFragment {
+export class LightDomElement extends LightDomNode {
   readonly tag: string;
-  readonly children: readonly unknown[];
-  readonly attributes: ReadonlyUnknownRecord;
+  readonly attributes: {
+    readonly [key: string]: string;
+  } = {};
+
+  constructor(tag: string) {
+    super();
+    this.tag = tag;
+  }
 }

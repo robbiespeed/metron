@@ -1,5 +1,13 @@
 import { emitterKey, isAtom, untracked } from '@metron/core/particle.js';
-import { COLLECTION_EMIT_TYPE_ALL_CHANGE, COLLECTION_EMIT_TYPE_KEY_CHANGE, COLLECTION_EMIT_TYPE_SLICE_CHANGE, isAtomCollection, type AtomCollection, type AtomCollectionEmitChange, type RawAtomCollection } from '@metron/core/collection.js';
+import {
+  COLLECTION_EMIT_TYPE_ALL_CHANGE,
+  COLLECTION_EMIT_TYPE_KEY_CHANGE,
+  COLLECTION_EMIT_TYPE_SLICE_CHANGE,
+  isAtomCollection,
+  type AtomCollection,
+  type AtomCollectionEmitChange,
+  type RawAtomCollection,
+} from '@metron/core/collection.js';
 import {
   createContext,
   render,
@@ -8,86 +16,34 @@ import {
   type RenderContext,
   type ReadonlyUnknownRecord,
 } from '../node.js';
-import { isIterable, type Writable } from '../utils.js';
-import type { LightDomElement } from './node.js';
+import { isIterable, type WritableDeep } from '../utils.js';
+import { LightDomNode, LightDomElement } from './node.js';
 
-export const dynamicLightDom: RenderContext = {
-  renderComponent(element, contextStore) {
+export const dynamicLightDom = {
+  renderComponent(element, contextStore): LightDomNode {
     const { tag, props } = element as ComponentNode;
     const componentContext = createContext(contextStore);
 
     const children = tag(props, componentContext);
 
-    // TODO: convert to fragment and consolidate with renderIntrinsic
-    const renderedChildren: unknown[] = [];
-    if (isAtom(children)) {
-      if (isAtomCollection(children)) {
-        const keyIndexMap = new Map<unknown, number>();
+    const renderedFragment = new LightDomNode() as WritableDeep<LightDomNode>;
 
-        renderAtomCollection(this, children, keyIndexMap, renderedChildren, contextStore);
+    renderChildrenIntoNode(children, renderedFragment, contextStore, this);
 
-        children[emitterKey]((msg) => {
-          switch (msg.type) {
-            case COLLECTION_EMIT_TYPE_KEY_CHANGE:
-              const { key } = msg;
-              const index = keyIndexMap.get(key);
-
-              if (index === undefined) {
-                return;
-              }
-
-              renderedChildren[index] = render(
-                untracked(children).get(key),
-                contextStore,
-                this
-              );
-
-              return;
-            case COLLECTION_EMIT_TYPE_SLICE_CHANGE:
-              // TODO
-            case COLLECTION_EMIT_TYPE_ALL_CHANGE:
-              renderedChildren.splice(0, Infinity);
-              renderAtomCollection(this, children, keyIndexMap, renderedChildren, contextStore);
-              return;
-          }
-        });
-      } else if (isIterable(children)) {
-        renderIterable(this, children, renderedChildren as unknown[], contextStore);
-
-        children[emitterKey](() => {
-          renderedChildren.splice(0, Infinity);
-          renderIterable(this, children, renderedChildren as unknown[], contextStore);
-        });
-      } else {
-        renderedChildren[0] = render(untracked(children), contextStore, this);
-
-        children[emitterKey](() => {
-          renderedChildren[0] = render(untracked(children), contextStore, this);
-        });
-      }
-    } else if (isIterable(children)) {
-      renderIterable(this, children, renderedChildren as unknown[], contextStore);
-    } else {
-      return render(children, contextStore, this);
-    }
-
-    return renderedChildren;
+    return renderedFragment;
   },
-  renderOther(element) {
+  renderOther(element): string {
     return String(element);
   },
   renderIntrinsic(element, contextStore): LightDomElement {
     const { tag, props } = element as IntrinsicNode;
     const { children, ...restProps } = props;
 
-    const attributes: Writable<LightDomElement["attributes"]> = {};
+    const renderedElement = new LightDomElement(
+      tag
+    ) as WritableDeep<LightDomElement>;
 
-    const renderedNode: Writable<LightDomElement> = {
-      tag,
-      attributes,
-      children: [],
-    };
-
+    const { attributes } = renderedElement;
 
     for (const [key, value] of Object.entries(restProps)) {
       if (isAtom(value)) {
@@ -101,73 +57,151 @@ export const dynamicLightDom: RenderContext = {
       }
     }
 
-    if (isAtom(children)) {
-      if (isAtomCollection(children)) {
-        let renderedChildren: unknown[] = [];
-        renderedNode.children = renderedChildren;
-        const keyIndexMap = new Map<unknown, number>();
+    renderChildrenIntoNode(children, renderedElement, contextStore, this);
 
-        renderAtomCollection(this, children, keyIndexMap, renderedChildren, contextStore);
+    return renderedElement;
+  },
+} satisfies RenderContext;
 
-        children[emitterKey]((msg) => {
-          switch (msg.type) {
-            case COLLECTION_EMIT_TYPE_KEY_CHANGE:
-              const { key } = msg;
-              const index = keyIndexMap.get(key);
+function renderChildrenIntoNode(
+  children: unknown,
+  renderedNode: { children: unknown[] },
+  contextStore: ReadonlyUnknownRecord,
+  renderContext: RenderContext
+) {
+  if (isAtom(children)) {
+    if (isAtomCollection(children)) {
+      const keyIndexMap = new Map<unknown, number>();
 
-              if (index === undefined) {
+      pushRenderAtomCollection(
+        children,
+        keyIndexMap,
+        renderedNode.children,
+        contextStore,
+        renderContext
+      );
+
+      children[emitterKey]((msg) => {
+        switch (msg.type) {
+          case COLLECTION_EMIT_TYPE_KEY_CHANGE:
+            const { key } = msg;
+            let index = keyIndexMap.get(key);
+
+            const newChild = untracked(children).get(key);
+
+            if (index === undefined) {
+              if (newChild == null) {
                 return;
               }
 
-              renderedChildren[index] = render(
-                untracked(children).get(key),
-                contextStore,
-                this
+              index = renderedNode.children.length;
+              keyIndexMap.set(key, index);
+
+              renderedNode.children.push(
+                render(newChild, contextStore, renderContext)
               );
 
               return;
-            case COLLECTION_EMIT_TYPE_SLICE_CHANGE:
-              // TODO
-            case COLLECTION_EMIT_TYPE_ALL_CHANGE:
-              renderedNode.children = renderedChildren = [];
-              renderAtomCollection(this, children, keyIndexMap, renderedChildren, contextStore);
-              return;
-        });
-      } else if (isIterable(children)) {
-        renderedNode.children = [];
+            }
 
-        renderIterable(this, children, renderedNode.children as unknown[], contextStore);
+            const oldRenderedChild = renderedNode.children[index];
 
-        children[emitterKey](() => {
-          renderedNode.children = [];
+            if (oldRenderedChild) {
+              if (newChild == null) {
+                keyIndexMap.delete(key);
+                renderedNode.children.pop();
+                return;
+              }
 
-          renderIterable(this, children, renderedNode.children as unknown[], contextStore);
-        });
-      } else {
-        renderedNode.children = [render(untracked(children), contextStore, this)];
+              renderedNode.children[index] = render(
+                newChild,
+                contextStore,
+                renderContext
+              );
+            }
 
-        children[emitterKey](() => {
-          renderedNode.children = [render(untracked(children), contextStore, this)];
-        });
-      }
+            return;
+          case COLLECTION_EMIT_TYPE_SLICE_CHANGE:
+          // TODO
+          case COLLECTION_EMIT_TYPE_ALL_CHANGE:
+            renderedNode.children = [];
+            pushRenderAtomCollection(
+              children,
+              keyIndexMap,
+              renderedNode.children,
+              contextStore,
+              renderContext
+            );
+            return;
+        }
+      });
     } else if (isIterable(children)) {
-      renderedNode.children = [];
-      renderIterable(this, children, renderedNode.children as unknown[], contextStore);
+      pushRenderIterable(
+        children,
+        renderedNode.children,
+        contextStore,
+        renderContext
+      );
+
+      children[emitterKey](() => {
+        renderedNode.children = [];
+        pushRenderIterable(
+          children,
+          renderedNode.children,
+          contextStore,
+          renderContext
+        );
+      });
     } else {
-      renderedNode.children = [render(children, contextStore, this)];
+      renderedNode.children[0] = render(
+        untracked(children),
+        contextStore,
+        renderContext
+      );
+
+      children[emitterKey](() => {
+        renderedNode.children[0] = render(
+          untracked(children),
+          contextStore,
+          renderContext
+        );
+      });
     }
+  } else if (isIterable(children)) {
+    pushRenderIterable(
+      children,
+      renderedNode.children,
+      contextStore,
+      renderContext
+    );
+  } else {
+    renderedNode.children[0] = render(children, contextStore, renderContext);
+  }
+}
 
-    return renderedNode;
-  },
-};
-
-function renderIterable(renderContext: RenderContext, children: Iterable<unknown>, renderedChildren: unknown[], contextStore: ReadonlyUnknownRecord) {
+function pushRenderIterable(
+  children: Iterable<unknown>,
+  renderedChildren: unknown[],
+  contextStore: ReadonlyUnknownRecord,
+  renderContext: RenderContext
+) {
   for (const child of children) {
     renderedChildren.push(render(child, contextStore, renderContext));
   }
 }
 
-function renderAtomCollection(renderContext: RenderContext, children: AtomCollection<unknown, unknown, RawAtomCollection<unknown, unknown>, AtomCollectionEmitChange<unknown>>, keyIndexMap: Map<unknown, number>, renderedChildren: unknown[], contextStore: ReadonlyUnknownRecord) {
+function pushRenderAtomCollection(
+  children: AtomCollection<
+    unknown,
+    unknown,
+    RawAtomCollection<unknown, unknown>,
+    AtomCollectionEmitChange<unknown>
+  >,
+  keyIndexMap: Map<unknown, number>,
+  renderedChildren: unknown[],
+  contextStore: ReadonlyUnknownRecord,
+  renderContext: RenderContext
+) {
   let i = 0;
   for (const [key, child] of untracked(children).entries()) {
     keyIndexMap.set(key, i);
@@ -175,4 +209,3 @@ function renderAtomCollection(renderContext: RenderContext, children: AtomCollec
     i++;
   }
 }
-

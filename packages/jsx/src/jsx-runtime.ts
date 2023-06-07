@@ -1,4 +1,3 @@
-import { logger } from './env.js';
 import {
   NODE_TYPE_COMPONENT,
   NODE_TYPE_INTRINSIC,
@@ -24,8 +23,8 @@ declare namespace JSX {
 
 export type { JSX };
 
-export const Fragment = () => {
-  throw new Error('Fragment should never be called');
+export const Fragment: ComponentFunction = ({ children }) => {
+  return children;
 };
 
 export function jsx(

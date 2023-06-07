@@ -4,7 +4,7 @@ import {
   emitterKey,
   type Particle,
   type ParticleOrNonParticle,
-  valueOfKey,
+  toValueKey,
   type Atom,
 } from './particle.js';
 
@@ -21,11 +21,11 @@ export interface OrbEmitter<TEmitData = unknown> extends Emitter<TEmitData> {
 
 // TODO: derived has similar types, they could be shared
 type ValueFromParticles<T extends readonly Atom[]> = {
-  [K in keyof T]: ReturnType<T[K][typeof valueOfKey]>;
+  [K in keyof T]: ReturnType<T[K][typeof toValueKey]>;
 };
 
 type ValueFromMaybeParticle<T> = T extends Atom
-  ? ReturnType<T[typeof valueOfKey]>
+  ? ReturnType<T[typeof toValueKey]>
   : T;
 
 type ValueFromMaybeParticles<T extends readonly ParticleOrNonParticle[]> = {
@@ -241,7 +241,7 @@ export function createOrb(options?: OrbOptions): Orb {
     return particles.map((p) => {
       connectEmitter(p[emitterKey]);
 
-      return p[valueOfKey]();
+      return p[toValueKey]();
     }) as ValueFromParticles<T>;
   }
 
@@ -250,7 +250,7 @@ export function createOrb(options?: OrbOptions): Orb {
   ): ValueFromMaybeParticles<T> {
     return maybeParticles.map((p) => {
       const emitter = p[emitterKey];
-      const valueOf = p[valueOfKey];
+      const valueOf = p[toValueKey];
 
       if (emitter) {
         connectEmitter(emitter);

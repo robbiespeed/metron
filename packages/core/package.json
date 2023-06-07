@@ -4,7 +4,7 @@
   "description": "",
   "scripts": {
     "build": "tsc --build tsconfig.build.json",
-    "build:watch": "tsc --build tsconfig.build.json",
+    "build:watch": "tsc --build tsconfig.build.json --watch",
     "build:types": "tsc --build tsconfig.build.json --emitDeclarationOnly",
     "build:types:watch": "tsc --build tsconfig.build.json --emitDeclarationOnly --watch",
     "test": "mocha",

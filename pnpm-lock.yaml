@@ -41,18 +41,16 @@ importers:
   packages/core: {}
 
   packages/jsx:
+    dependencies:
+      '@metron/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@metron/jsx':
         specifier: workspace:*
         version: 'link:'
 
   packages/legacy: {}
-
-  packages/state:
-    dependencies:
-      '@metron/core':
-        specifier: workspace:*
-        version: link:../core
 
   packages/test-utils: {}
 

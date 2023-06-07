@@ -1,8 +1,4 @@
-import {
-  atomIteratorKey,
-  type AtomIterator,
-  type AtomIterable,
-} from './iterable.js';
+import { atomIteratorKey, type AtomIterator } from './iterable.js';
 import type { Atom } from './particle.js';
 
 export const collectionBrandKey = Symbol('MetronAtomCollectionBrand');

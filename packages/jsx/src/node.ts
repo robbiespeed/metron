@@ -63,7 +63,7 @@ export interface RenderContext {
     contextStore: ComponentContextStore
   ): unknown;
   renderOther(element: unknown, contextStore: ComponentContextStore): unknown;
-  // moveElement
+  // moveOther
   // moveComponent
   // moveIntrinsic
 }

@@ -6,40 +6,67 @@ import {
   type IntrinsicNode,
   type RenderContext,
 } from '../node.js';
-import { isIterable } from '../utils.js';
+import { isIterable, type WritableDeep } from '../utils.js';
+import { LightDomElement, LightDomNode } from './node.js';
 
-export const staticLightDom: RenderContext = {
-  renderComponent(element, contextStore) {
+export const staticLightDom = {
+  renderComponent(element, contextStore): LightDomNode {
     const { tag, props } = element as ComponentNode;
     const componentContext = createContext(contextStore);
 
     const children = tag(props, componentContext);
 
-    return render(children, contextStore, this);
-  },
-  renderElement(element, contextStore) {
-    if (isAtom(element)) {
-      return render(untracked(element), contextStore, this);
-    }
-    if (isIterable(element)) {
-      const elementArray = Array.isArray(element)
-        ? element
-        : Array.from(element);
+    const renderedFragment = new LightDomNode() as WritableDeep<LightDomNode>;
 
-      return elementArray.map((child) => render(child, contextStore, this));
+    const childrenUnwrapped = isAtom(children) ? untracked(children) : children;
+
+    if (isIterable(childrenUnwrapped)) {
+      for (const child of childrenUnwrapped) {
+        renderedFragment.children.push(render(child, contextStore, this));
+      }
+    } else {
+      renderedFragment.children[0] = render(
+        childrenUnwrapped,
+        contextStore,
+        this
+      );
     }
-    return element;
+
+    return renderedFragment;
   },
-  renderIntrinsic(element, contextStore) {
+  renderOther(element): string {
+    return String(element);
+  },
+  renderIntrinsic(element, contextStore): LightDomElement {
     const { tag, props } = element as IntrinsicNode;
-    const children = props.children;
+    const { children, ...restProps } = props;
 
-    return {
-      tag,
-      props: {
-        ...props,
-        children: render(children, contextStore),
-      },
-    };
+    const renderedElement = new LightDomElement(
+      tag
+    ) as WritableDeep<LightDomElement>;
+
+    const { attributes } = renderedElement;
+
+    for (const [key, value] of Object.entries(restProps)) {
+      attributes[key] = isAtom(value)
+        ? String(untracked(value))
+        : String(value);
+    }
+
+    const childrenUnwrapped = isAtom(children) ? untracked(children) : children;
+
+    if (isIterable(childrenUnwrapped)) {
+      for (const child of childrenUnwrapped) {
+        renderedElement.children.push(render(child, contextStore, this));
+      }
+    } else {
+      renderedElement.children[0] = render(
+        childrenUnwrapped,
+        contextStore,
+        this
+      );
+    }
+
+    return renderedElement;
   },
-};
+} satisfies RenderContext;

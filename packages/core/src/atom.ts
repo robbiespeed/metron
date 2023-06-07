@@ -1,4 +1,4 @@
-import { emitterKey, valueOfKey, type Atom } from './particle.js';
+import { emitterKey, toValueKey, type Atom } from './particle.js';
 import { createSensor } from './sensor.js';
 
 export interface AtomSetter<T> {
@@ -15,7 +15,7 @@ export function createAtom<T>(
   let storedValue = value;
 
   const atom: Atom<T> = {
-    [valueOfKey]() {
+    [toValueKey]() {
       return storedValue;
     },
     [emitterKey]: emitter,
