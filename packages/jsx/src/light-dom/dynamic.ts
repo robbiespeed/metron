@@ -10,11 +10,10 @@ import {
 } from '@metron/core/collection.js';
 import {
   createContext,
-  render,
+  renderNode,
   type ComponentNode,
   type IntrinsicNode,
   type RenderContext,
-  type ReadonlyUnknownRecord,
 } from '../node.js';
 import { isIterable, type WritableDeep } from '../utils.js';
 import { LightDomNode, LightDomElement } from './node.js';
@@ -32,7 +31,7 @@ export const dynamicLightDom = {
 
     return renderedFragment;
   },
-  renderOther(element): string {
+  render(element): string {
     return String(element);
   },
   renderIntrinsic(element, contextStore): LightDomElement {
@@ -98,7 +97,7 @@ function renderChildrenIntoNode(
               keyIndexMap.set(key, index);
 
               renderedNode.children.push(
-                render(newChild, contextStore, renderContext)
+                renderNode(newChild, contextStore, renderContext)
               );
 
               return;
@@ -113,7 +112,7 @@ function renderChildrenIntoNode(
                 return;
               }
 
-              renderedNode.children[index] = render(
+              renderedNode.children[index] = renderNode(
                 newChild,
                 contextStore,
                 renderContext
@@ -153,14 +152,14 @@ function renderChildrenIntoNode(
         );
       });
     } else {
-      renderedNode.children[0] = render(
+      renderedNode.children[0] = renderNode(
         untracked(children),
         contextStore,
         renderContext
       );
 
       children[emitterKey](() => {
-        renderedNode.children[0] = render(
+        renderedNode.children[0] = renderNode(
           untracked(children),
           contextStore,
           renderContext
@@ -175,7 +174,11 @@ function renderChildrenIntoNode(
       renderContext
     );
   } else {
-    renderedNode.children[0] = render(children, contextStore, renderContext);
+    renderedNode.children[0] = renderNode(
+      children,
+      contextStore,
+      renderContext
+    );
   }
 }
 
@@ -186,7 +189,7 @@ function pushRenderIterable(
   renderContext: RenderContext
 ) {
   for (const child of children) {
-    renderedChildren.push(render(child, contextStore, renderContext));
+    renderedChildren.push(renderNode(child, contextStore, renderContext));
   }
 }
 
@@ -205,7 +208,7 @@ function pushRenderAtomCollection(
   let i = 0;
   for (const [key, child] of untracked(children).entries()) {
     keyIndexMap.set(key, i);
-    renderedChildren.push(render(child, contextStore, renderContext));
+    renderedChildren.push(renderNode(child, contextStore, renderContext));
     i++;
   }
 }

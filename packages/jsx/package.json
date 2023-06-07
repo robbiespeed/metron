@@ -15,7 +15,11 @@
   "license": "UNLICENSED",
   "type": "module",
   "exports": {
-    "./*": {
+    "./jsx-runtime": {
+      "types": "./lib/jsx-runtime.d.ts",
+      "import": "./lib/jsx-runtime.js"
+    },
+    "./*.js": {
       "types": "./lib/*.d.ts",
       "import": "./lib/*.js"
     }

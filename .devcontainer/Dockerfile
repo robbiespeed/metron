@@ -24,9 +24,3 @@ USER $USERNAME
 
 # Install pnpm
 RUN curl -fsSL https://get.pnpm.io/install.sh | sh -
-
-# Install Deno
-RUN curl -fsSL https://deno.land/install.sh | sh
-
-# Add Deno to PATH
-RUN printf "export DENO_INSTALL=\"\$HOME/.deno\"\nexport PATH=\"\$DENO_INSTALL/bin:\$PATH\"\n" >> $HOME/.bashrc

@@ -19,7 +19,7 @@
       "types": "./lib/mod.d.ts",
       "import": "./lib/mod.js"
     },
-    "./*": {
+    "./*.js": {
       "types": "./lib/*.d.ts",
       "import": "./lib/*.js"
     }

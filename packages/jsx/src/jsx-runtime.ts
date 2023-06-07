@@ -2,9 +2,12 @@ import {
   NODE_TYPE_COMPONENT,
   NODE_TYPE_INTRINSIC,
   nodeBrandKey,
-  type ComponentFunction,
+  type Component,
   type ComponentNode,
   type IntrinsicNode,
+  type ContextlessComponent,
+  createContextlessComponent,
+  isContextlessComponent,
 } from './node.js';
 
 declare namespace JSX {
@@ -16,27 +19,26 @@ declare namespace JSX {
     key?: {};
   }
 
-  type ElementType = ComponentFunction<object> | string;
+  type ElementType = Component | string;
 
   type Element = unknown;
 }
 
 export type { JSX };
 
-export const Fragment: ComponentFunction = ({ children }) => {
+export const Fragment = createContextlessComponent(({ children }) => {
   return children;
-};
+});
 
 export function jsx(
-  tag: ComponentFunction<object> | string,
+  tag: Component | ContextlessComponent | string,
   props: Record<string, unknown>,
   key?: {}
 ): unknown {
-  if (tag === Fragment && key === undefined) {
-    const { children } = props;
-
-    return children;
-  } else if (typeof tag === 'function') {
+  if (typeof tag === 'function') {
+    if (isContextlessComponent(tag)) {
+      return props.children;
+    }
     return {
       [nodeBrandKey]: true,
       key,
@@ -54,3 +56,5 @@ export function jsx(
     } satisfies IntrinsicNode;
   }
 }
+
+export const jsxs = jsx;

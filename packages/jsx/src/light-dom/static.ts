@@ -1,7 +1,7 @@
 import { isAtom, untracked } from '@metron/core/particle.js';
 import {
   createContext,
-  render,
+  renderNode,
   type ComponentNode,
   type IntrinsicNode,
   type RenderContext,
@@ -22,10 +22,10 @@ export const staticLightDom = {
 
     if (isIterable(childrenUnwrapped)) {
       for (const child of childrenUnwrapped) {
-        renderedFragment.children.push(render(child, contextStore, this));
+        renderedFragment.children.push(renderNode(child, contextStore, this));
       }
     } else {
-      renderedFragment.children[0] = render(
+      renderedFragment.children[0] = renderNode(
         childrenUnwrapped,
         contextStore,
         this
@@ -34,7 +34,7 @@ export const staticLightDom = {
 
     return renderedFragment;
   },
-  renderOther(element): string {
+  render(element): string {
     return String(element);
   },
   renderIntrinsic(element, contextStore): LightDomElement {
@@ -57,10 +57,10 @@ export const staticLightDom = {
 
     if (isIterable(childrenUnwrapped)) {
       for (const child of childrenUnwrapped) {
-        renderedElement.children.push(render(child, contextStore, this));
+        renderedElement.children.push(renderNode(child, contextStore, this));
       }
     } else {
-      renderedElement.children[0] = render(
+      renderedElement.children[0] = renderNode(
         childrenUnwrapped,
         contextStore,
         this
