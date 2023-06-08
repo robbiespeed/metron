@@ -1,9 +1,10 @@
-import { render } from '@metron/jsx/node.js';
-import { domRender } from '@metron/jsx/web-dom/render.js';
+import { Node as JsxNode, renderNode } from '@metron/jsx/node.js';
+import { domRenderContext } from '@metron/jsx/web-dom/render.js';
 import './style.css';
 import typescriptLogo from './typescript.svg';
 import viteLogo from '/vite.svg';
 import { Counter } from './counter.tsx';
+import { List } from './list.tsx';
 
 const App = (
   <div>
@@ -17,6 +18,9 @@ const App = (
     <div class="card">
       <Counter />
     </div>
+    <div class="card">
+      <List />
+    </div>
     <p class="read-the-docs">
       Click on the Vite and TypeScript logos to learn more
     </p>
@@ -25,4 +29,10 @@ const App = (
 
 document
   .querySelector<HTMLDivElement>('#app')!
-  .appendChild(render(App, {}, domRender) as Node);
+  .appendChild(
+    renderNode<undefined | Node | Node[]>(
+      App as JsxNode,
+      {},
+      domRenderContext
+    ) as Node
+  );

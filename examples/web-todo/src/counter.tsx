@@ -7,7 +7,8 @@ export function Counter() {
   return (
     <button
       type="button"
-      onClick={() => {
+      on:click={() => {
+        // TODO: untracked is very verbose, what about count.$, count.v, or $(count)?
         setCount(untracked(count) + 1);
       }}
     >
