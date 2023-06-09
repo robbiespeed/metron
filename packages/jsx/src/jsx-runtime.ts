@@ -3,57 +3,66 @@ import {
   NODE_TYPE_INTRINSIC,
   nodeBrandKey,
   type Component,
-  type ComponentNode,
-  type IntrinsicNode,
-  type ContextlessComponent,
-  createContextlessComponent,
-  isContextlessComponent,
+  type JsxComponentNode,
+  type JsxIntrinsicNode,
+  createStaticComponent,
+  type StaticComponent,
+  isStaticComponent,
+  type JsxNodeProps,
+  NODE_TYPE_FRAGMENT,
+  type JsxNode,
 } from './node.js';
 
 declare namespace JSX {
   interface IntrinsicElements {
-    [tagName: string]: Record<string, unknown>;
+    [tagName: string]: JsxNodeProps;
   }
 
-  interface IntrinsicAttributes {
-    key?: {};
-  }
+  interface IntrinsicAttributes {}
 
-  type ElementType = Component | string;
+  type ElementType = Component | StaticComponent | string;
 
   type Element = unknown;
 }
 
 export type { JSX };
 
-export const Fragment = createContextlessComponent(({ children }) => {
-  return children;
+export const Fragment = createStaticComponent(({ children }) => {
+  return {
+    [nodeBrandKey]: true,
+    nodeType: NODE_TYPE_FRAGMENT,
+    children,
+  } as const;
 });
 
+export type PropsFromTag<TTag extends JSX.ElementType> = TTag extends string
+  ? JSX.IntrinsicElements[TTag]
+  : TTag extends (props: infer TProps) => unknown
+  ? TProps
+  : never;
+
 export function jsx(
-  tag: Component | ContextlessComponent | string,
-  props: Record<string, unknown>,
-  key?: {}
-): unknown {
+  tag: JSX.ElementType,
+  props: JsxNodeProps,
+  key?: undefined
+): JsxNode {
   if (typeof tag === 'function') {
-    if (isContextlessComponent(tag)) {
-      return props.children;
+    if (isStaticComponent(tag)) {
+      return tag(props);
     }
     return {
       [nodeBrandKey]: true,
-      key,
       nodeType: NODE_TYPE_COMPONENT,
       props,
       tag,
-    } satisfies ComponentNode;
+    } satisfies JsxComponentNode;
   } else {
     return {
       [nodeBrandKey]: true,
-      key,
       nodeType: NODE_TYPE_INTRINSIC,
       props,
       tag,
-    } satisfies IntrinsicNode;
+    } satisfies JsxIntrinsicNode;
   }
 }
 

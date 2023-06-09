@@ -1,4 +1,4 @@
-import { Node as JsxNode, renderNode } from '@metron/jsx/node.js';
+import { JsxNode, renderNode } from '@metron/jsx/node.js';
 import { domRenderContext } from '@metron/jsx/web-dom/render.js';
 import './style.css';
 import typescriptLogo from './typescript.svg';
@@ -29,10 +29,4 @@ const App = (
 
 document
   .querySelector<HTMLDivElement>('#app')!
-  .appendChild(
-    renderNode<undefined | Node | Node[]>(
-      App as JsxNode,
-      {},
-      domRenderContext
-    ) as Node
-  );
+  .appendChild(renderNode(App as JsxNode, {}, domRenderContext) as Node);

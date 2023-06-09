@@ -1,42 +1,47 @@
 import { createAtom, type AtomSetter } from '@metron/core/atom.js';
 import { type Atom } from '@metron/core/particle.js';
 
-export interface BaseNode {
+export interface JsxBaseNode {
   readonly [nodeBrandKey]: true;
-  readonly key?: {};
 }
 
-export interface ComponentNode extends BaseNode {
+export interface JsxComponentNode extends JsxBaseNode {
   readonly nodeType: typeof NODE_TYPE_COMPONENT;
   readonly tag: Component;
-  readonly props: NodeProps;
+  readonly props: JsxNodeProps;
 }
 
-export interface ContextProviderNode extends BaseNode {
+export interface JsxContextProviderNode extends JsxBaseNode {
   readonly nodeType: typeof NODE_TYPE_CONTEXT_PROVIDER;
   readonly contextStoreUpdate: ComponentContextStore;
   readonly children: unknown;
 }
 
-export interface IntrinsicNode extends BaseNode {
+export interface JsxFragmentNode extends JsxBaseNode {
+  readonly nodeType: typeof NODE_TYPE_FRAGMENT;
+  readonly children: unknown;
+}
+
+export interface JsxIntrinsicNode extends JsxBaseNode {
   readonly nodeType: typeof NODE_TYPE_INTRINSIC;
-  readonly props: NodeProps;
+  readonly props: JsxNodeProps;
   readonly tag: string;
 }
 
-export interface RenderContextNode extends BaseNode {
+export interface JsxRenderContextNode extends JsxBaseNode {
   readonly nodeType: typeof NODE_TYPE_RENDER_CONTEXT;
   readonly renderContextKey: symbol;
   readonly children: unknown;
 }
 
-export type Node =
-  | ComponentNode
-  | ContextProviderNode
-  | IntrinsicNode
-  | RenderContextNode;
+export type JsxNode =
+  | JsxComponentNode
+  | JsxContextProviderNode
+  | JsxFragmentNode
+  | JsxIntrinsicNode
+  | JsxRenderContextNode;
 
-export interface NodeProps {
+export interface JsxNodeProps {
   readonly [key: string]: unknown;
 }
 
@@ -45,18 +50,18 @@ export interface ComponentContextStore {
 }
 
 export interface Component<
-  TProps extends NodeProps = NodeProps,
+  TProps extends JsxNodeProps = JsxNodeProps,
   TReturn = unknown
 > {
   (props: TProps, context: ComponentContext): TReturn;
 }
 
-export interface ContextlessComponent<
-  TProps extends NodeProps = NodeProps,
-  TReturn = unknown
+export interface StaticComponent<
+  TProps extends JsxNodeProps = JsxNodeProps,
+  TReturn extends JsxNode = JsxNode
 > {
-  (props: TProps, context?: undefined): TReturn;
-  [contextlessComponentBrandKey]: true;
+  (props: TProps): TReturn;
+  [staticComponentBrandKey]: true;
 }
 
 // TODO: switch from atom to custom particle type without valueOf/untracked access
@@ -67,12 +72,15 @@ export interface ComponentContext extends Atom<ComponentContextStore> {
 
 export interface RenderContext<TRendered = unknown> {
   renderComponent(
-    node: ComponentNode,
+    node: JsxComponentNode,
     contextStore: ComponentContextStore
   ): TRendered;
-  // renderKeyedFragment (element: ComponentNode, contextStore: ComponentContextStore): unknown;
+  renderFragment(
+    node: JsxFragmentNode,
+    contextStore: ComponentContextStore
+  ): TRendered;
   renderIntrinsic(
-    node: IntrinsicNode,
+    node: JsxIntrinsicNode,
     contextStore: ComponentContextStore
   ): TRendered;
   render(element: unknown, contextStore: ComponentContextStore): TRendered;
@@ -83,6 +91,7 @@ export interface RenderContext<TRendered = unknown> {
 
 export const NODE_TYPE_COMPONENT = 'Component';
 export const NODE_TYPE_CONTEXT_PROVIDER = 'ContextProvider';
+export const NODE_TYPE_FRAGMENT = 'Fragment';
 export const NODE_TYPE_INTRINSIC = 'Intrinsic';
 export const NODE_TYPE_RENDER_CONTEXT = 'RenderContext';
 
@@ -98,34 +107,32 @@ export function createContext(
   return context as ComponentContext;
 }
 
-const contextlessComponentBrandKey = Symbol(
-  'MetronJSXContextlessComponentBrand'
-);
+const staticComponentBrandKey = Symbol('MetronJSXStaticComponentBrand');
 
-export function createContextlessComponent<
-  TProps extends NodeProps,
-  TReturn = unknown
->(
-  component: (props: TProps, context?: undefined) => TReturn
-): ContextlessComponent<TProps, TReturn> {
-  (component as ContextlessComponent)[contextlessComponentBrandKey] = true;
-  return component as ContextlessComponent<TProps, TReturn>;
+export function isStaticComponent(
+  component: unknown
+): component is StaticComponent {
+  return (component as any)?.[staticComponentBrandKey] === true;
 }
 
-export function isContextlessComponent(
-  component: unknown
-): component is ContextlessComponent {
-  return (component as any)?.[contextlessComponentBrandKey] === true;
+export function createStaticComponent<
+  TProps extends JsxNodeProps = JsxNodeProps,
+  TReturn extends JsxNode = JsxNode
+>(
+  component: (props: TProps, context?: undefined) => TReturn
+): StaticComponent<TProps, TReturn> {
+  (component as any)[staticComponentBrandKey] = true;
+  return component as any;
 }
 
 const renderContextStore: Record<symbol, RenderContext | undefined> = {};
 
 export function createRenderContext(
   renderContext: RenderContext
-): ContextlessComponent<{ readonly children?: unknown }, RenderContextNode> {
+): StaticComponent<{ readonly children?: unknown }, JsxRenderContextNode> {
   const renderContextKey = Symbol();
   renderContextStore[renderContextKey] = renderContext;
-  return createContextlessComponent(({ children }) => ({
+  return createStaticComponent(({ children }) => ({
     [nodeBrandKey]: true,
     nodeType: NODE_TYPE_RENDER_CONTEXT,
     renderContextKey,
@@ -133,32 +140,41 @@ export function createRenderContext(
   }));
 }
 
-export function isNode(maybeNode: unknown): maybeNode is Node {
+export function isJsxNode(maybeNode: unknown): maybeNode is JsxNode {
   return (maybeNode as any)?.[nodeBrandKey] === true;
 }
 
+type RenderReturnFromContext<TContext extends RenderContext> =
+  TContext extends RenderContext<infer TReturn> ? TReturn : never;
+
 export function renderNode<
-  TRendered = unknown,
-  TRenderContext extends RenderContext<TRendered> = RenderContext<TRendered>
+  TRenderContext extends RenderContext = RenderContext,
+  TReturn extends RenderReturnFromContext<TRenderContext> = RenderReturnFromContext<TRenderContext>
 >(
-  element: Node,
+  element: JsxNode,
   contextStore: ComponentContextStore = {},
   renderContext?: TRenderContext
-): undefined | TRendered {
+): undefined | TReturn {
   let childContextStore = contextStore;
   switch (element.nodeType) {
     case NODE_TYPE_COMPONENT: {
-      return renderContext?.renderComponent(element, contextStore);
+      return renderContext?.renderComponent(element, contextStore) as TReturn;
+    }
+    case NODE_TYPE_FRAGMENT: {
+      return renderContext?.renderFragment(element, contextStore) as TReturn;
     }
     case NODE_TYPE_INTRINSIC: {
-      return renderContext?.renderIntrinsic(element, contextStore);
+      return renderContext?.renderIntrinsic(element, contextStore) as TReturn;
     }
     case NODE_TYPE_CONTEXT_PROVIDER: {
       childContextStore = {
         ...contextStore,
         ...element.contextStoreUpdate,
       };
-      return renderContext?.render(element.children, childContextStore);
+      return renderContext?.render(
+        element.children,
+        childContextStore
+      ) as TReturn;
     }
     case NODE_TYPE_RENDER_CONTEXT: {
       const renderContext = renderContextStore[element.renderContextKey];

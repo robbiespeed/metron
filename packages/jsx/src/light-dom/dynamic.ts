@@ -5,7 +5,7 @@
 //   COLLECTION_EMIT_TYPE_SLICE_CHANGE,
 //   isAtomCollection,
 //   type AtomCollection,
-//   type AtomCollectionEmitChange,
+//   type AtomCollectionEmit,
 //   type RawAtomCollection,
 // } from '@metron/core/collection.js';
 // import {
@@ -198,7 +198,7 @@
 //     unknown,
 //     unknown,
 //     RawAtomCollection<unknown, unknown>,
-//     AtomCollectionEmitChange<unknown>
+//     AtomCollectionEmit<unknown>
 //   >,
 //   keyIndexMap: Map<unknown, number>,
 //   renderedChildren: unknown[],

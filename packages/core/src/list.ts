@@ -1,17 +1,85 @@
-import { type Atom, createSensor, emitterKey, toValueKey } from '@metron/core';
+import {
+  ATOM_COLLECTION_EMIT_SIZED_TYPES,
+  COLLECTION_EMIT_TYPE_ALL_CHANGE,
+  COLLECTION_EMIT_TYPE_KEY,
+  collectionValueAtKey,
+  type AtomCollection,
+  type AtomCollectionEmitMap,
+  type AtomCollectionSizedEmit,
+  type RawAtomCollection,
+} from './collection.js';
 import { filterEmitter } from './filter-emitter.js';
 import { atomIteratorKey, type AtomIterator } from './iterable.js';
-import {
-  COLLECTION_EMIT_TYPE_ALL_CHANGE,
-  type AtomCollection,
-  type AtomCollectionEmitChange,
-  COLLECTION_EMIT_TYPE_SLICE_CHANGE,
-  COLLECTION_EMIT_TYPE_KEY_CHANGE,
-  type RawAtomCollection,
-  collectionBrandKey,
-} from './collection.js';
+import { emitterKey, toValueKey, type Atom } from './particle.js';
+import { createSensor } from './sensor.js';
 
-export interface AtomList<T> extends AtomCollection<T, number, RawAtomList<T>> {
+export const LIST_EMIT_TYPE_SLICE = 'ListSliceEmit';
+export const LIST_EMIT_TYPE_SLICE_SWAP = 'ListSliceSwapEmit';
+export const LIST_EMIT_TYPE_SORT = 'ListSortEmit';
+export const LIST_EMIT_TYPE_REVERSE = 'ListReverseEmit';
+
+export interface AtomListSliceRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+export interface AtomListEmitSlice extends AtomListSliceRange {
+  readonly type: typeof LIST_EMIT_TYPE_SLICE;
+  readonly newSize: number;
+  readonly oldSize: number;
+}
+
+export interface AtomListEmitSliceSwap {
+  readonly type: typeof LIST_EMIT_TYPE_SLICE_SWAP;
+  readonly swap: readonly [AtomListSliceRange, AtomListSliceRange];
+}
+
+export interface AtomListEmitSort {
+  readonly type: typeof LIST_EMIT_TYPE_SORT;
+  readonly keyMapping: number[];
+}
+
+export interface AtomListEmitReverse {
+  readonly type: typeof LIST_EMIT_TYPE_REVERSE;
+}
+
+export interface AtomListEmitMap extends AtomCollectionEmitMap<number> {
+  slice: AtomListEmitSlice;
+  sliceSwap: AtomListEmitSliceSwap;
+  sort: AtomListEmitSort;
+  reverse: AtomListEmitReverse;
+}
+
+export type AtomListEmit = AtomListEmitMap[keyof AtomListEmitMap];
+
+export type AtomListSizedEmit =
+  | AtomCollectionSizedEmit<number>
+  | AtomListEmitSlice;
+
+export const ATOM_LIST_EMIT_SIZED_TYPES = {
+  ...ATOM_COLLECTION_EMIT_SIZED_TYPES,
+  [LIST_EMIT_TYPE_SLICE]: true,
+  [LIST_EMIT_TYPE_SLICE_SWAP]: false,
+  [LIST_EMIT_TYPE_SORT]: false,
+  [LIST_EMIT_TYPE_REVERSE]: false,
+} as const;
+
+export function isAtomListSizeEmit(
+  emit: AtomListEmit
+): emit is AtomListSizedEmit {
+  return (ATOM_LIST_EMIT_SIZED_TYPES as any)[emit.type] === true;
+}
+
+const atomListBrandKey = Symbol('MetronAtomListBrand');
+
+export function isAtomList(value: unknown): value is AtomList<unknown> {
+  return (value as any)?.[atomListBrandKey] === true;
+}
+
+export interface AtomList<T>
+  extends AtomCollection<T, number, RawAtomList<T>, AtomListEmitMap> {
+  readonly [atomListBrandKey]: true;
+  at(index: number): Atom<T | undefined>;
   /* TODO: Implement these methods.
   slice(start?: number, end?: number): DerivedAtomList<T>;
   sliceReversed(start?: number, end?: number): DerivedAtomList<T>;
@@ -22,6 +90,7 @@ export interface AtomList<T> extends AtomCollection<T, number, RawAtomList<T>> {
 }
 
 export interface RawAtomList<T> extends RawAtomCollection<T, number> {
+  at(index: number): T | undefined;
   toArray(): T[];
   /* TODO: Implement these methods.
   slice(start?: number, end?: number): IterableIterator<T>;
@@ -66,17 +135,20 @@ export function createAtomList<T>(
 ): [list: AtomList<T>, listUpdater: AtomListWriter<T>] {
   let innerValues = values;
 
+  function rawAt(index: number) {
+    const size = innerValues.length;
+    let normalizedIndex = Math.trunc(index);
+    normalizedIndex =
+      normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
+    return innerValues[index];
+  }
+
   const rawList: RawAtomList<T> = {
     get size() {
       return innerValues.length;
     },
-    get(index) {
-      const size = innerValues.length;
-      let normalizedIndex = Math.trunc(index);
-      normalizedIndex =
-        normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
-      return innerValues[index];
-    },
+    at: rawAt,
+    [collectionValueAtKey]: rawAt,
     toArray() {
       return innerValues.slice();
     },
@@ -94,8 +166,7 @@ export function createAtomList<T>(
     },
   };
 
-  const { emitter: listEmitter, send } =
-    createSensor<AtomCollectionEmitChange<number>>();
+  const { emitter: listEmitter, send } = createSensor<AtomListEmit>();
 
   /* TODO:
   Abstract this finalization logic into a reusable keyed memo function
@@ -117,62 +188,14 @@ export function createAtomList<T>(
     }
 
     if (!atom) {
-      let emitterFilter =
-        key < 0
-          ? (change: AtomCollectionEmitChange<number>) => {
-              const oldIndex = change.oldSize + key;
-              const index = innerValues.length + key;
-              const isOldIndexOutOfBounds = oldIndex < 0;
-              const isIndexOutOfBounds = index < 0;
-
-              // No change when current and old index is out of bounds
-              if (isOldIndexOutOfBounds && isIndexOutOfBounds) {
-                return false;
-              }
-
-              // Handles within bounds size changes when size has changed
-              if (change.newSize !== change.oldSize) {
-                return !isOldIndexOutOfBounds || !isIndexOutOfBounds;
-              }
-
-              // Handles within bounds size changes when size has not changed
-              // meaning old index and index are the same
-              switch (change.type) {
-                case COLLECTION_EMIT_TYPE_KEY_CHANGE:
-                  return change.key === index;
-                case COLLECTION_EMIT_TYPE_SLICE_CHANGE:
-                  return change.keyStart <= index && index <= change.keyEnd;
-                case COLLECTION_EMIT_TYPE_ALL_CHANGE:
-                  return true;
-                default:
-                  return false;
-              }
-            }
-          : (change: AtomCollectionEmitChange<number>) => {
-              const isIndexOutOfOldSizeBounds = key >= change.oldSize;
-              const isIndexOutOfSizeBounds = key >= innerValues.length;
-
-              // No change when index is out of bounds of both old and new size
-              if (isIndexOutOfOldSizeBounds && isIndexOutOfSizeBounds) {
-                return false;
-              }
-
-              switch (change.type) {
-                case COLLECTION_EMIT_TYPE_KEY_CHANGE:
-                  return change.key === key;
-                case COLLECTION_EMIT_TYPE_SLICE_CHANGE:
-                  return change.keyStart <= key && key <= change.keyEnd;
-                case COLLECTION_EMIT_TYPE_ALL_CHANGE:
-                  return true;
-                default:
-                  return false;
-              }
-            };
       atom = {
         [toValueKey]() {
-          return rawList.get(key);
+          return rawList.at(key);
         },
-        [emitterKey]: filterEmitter(listEmitter, emitterFilter),
+        [emitterKey]: filterEmitter(
+          listEmitter,
+          key < 0 ? filterForNegativeKey(key) : filterForPositiveKey(key)
+        ),
       };
       const freshWeakAtom = new WeakRef(atom);
 
@@ -190,44 +213,43 @@ export function createAtomList<T>(
     },
     [emitterKey]: filterEmitter(
       listEmitter,
-      (change) => change.newSize !== change.oldSize
+      (change) =>
+        change.type === COLLECTION_EMIT_TYPE_ALL_CHANGE &&
+        change.newSize !== change.oldSize
     ),
   };
 
-  const iteratorAtom: AtomIterator<T, AtomCollectionEmitChange<number>> = {
+  const iteratorAtom: AtomIterator<T, AtomListEmit> = {
     [toValueKey]() {
       return rawList.values();
     },
     [emitterKey]: listEmitter,
   };
 
-  const entriesIteratorAtom: AtomIterator<
-    [number, T],
-    AtomCollectionEmitChange<number>
-  > = {
+  const entriesIteratorAtom: AtomIterator<[number, T], AtomListEmit> = {
     [toValueKey]() {
       return rawList.entries();
     },
     [emitterKey]: listEmitter,
   };
 
-  const keysIteratorAtom: AtomIterator<
-    number,
-    AtomCollectionEmitChange<number>
-  > = {
+  const keysIteratorAtom: AtomIterator<number, AtomListEmit> = {
     [toValueKey]() {
       return rawList.keys();
     },
     [emitterKey]: listEmitter,
   };
 
+  function at(index: number) {
+    return getKeyedParticle(Math.trunc(index));
+  }
+
   const list: AtomList<T> = {
-    [collectionBrandKey]: true,
+    [atomListBrandKey]: true,
+    [collectionValueAtKey]: at,
+    at,
     get size() {
       return sizeAtom;
-    },
-    get(index) {
-      return getKeyedParticle(Math.trunc(index));
     },
     [toValueKey]() {
       return rawList;
@@ -261,7 +283,7 @@ export function createAtomList<T>(
         innerValues[index] = value;
 
         send({
-          type: COLLECTION_EMIT_TYPE_KEY_CHANGE,
+          type: COLLECTION_EMIT_TYPE_KEY,
           key: index,
           oldSize,
           newSize: innerValues.length,
@@ -273,7 +295,7 @@ export function createAtomList<T>(
       innerValues.push(value);
       const oldSize = innerValues.length - 1;
       send({
-        type: COLLECTION_EMIT_TYPE_KEY_CHANGE,
+        type: COLLECTION_EMIT_TYPE_KEY,
         key: oldSize,
         oldSize,
         newSize: innerValues.length,
@@ -287,9 +309,9 @@ export function createAtomList<T>(
       const newSize = innerValues.length;
 
       send({
-        type: COLLECTION_EMIT_TYPE_SLICE_CHANGE,
-        keyStart: oldSize,
-        keyEnd: newSize - 1,
+        type: LIST_EMIT_TYPE_SLICE,
+        start: oldSize,
+        end: newSize - 1,
         oldSize,
         newSize,
       });
@@ -305,9 +327,9 @@ export function createAtomList<T>(
       const newSize = innerValues.length;
 
       send({
-        type: COLLECTION_EMIT_TYPE_SLICE_CHANGE,
-        keyStart: index,
-        keyEnd: newSize - 1,
+        type: LIST_EMIT_TYPE_SLICE,
+        start: index,
+        end: newSize - 1,
         oldSize,
         newSize,
       });
@@ -317,9 +339,9 @@ export function createAtomList<T>(
       const deletedItems = innerValues.splice(start, deleteCount, ...items);
       const newSize = innerValues.length;
       send({
-        type: COLLECTION_EMIT_TYPE_SLICE_CHANGE,
-        keyStart: start,
-        keyEnd: newSize - 1,
+        type: LIST_EMIT_TYPE_SLICE,
+        start: start,
+        end: newSize - 1,
         oldSize,
         newSize,
       });
@@ -335,7 +357,7 @@ export function createAtomList<T>(
       const deletedItem = innerValues.pop();
 
       send({
-        type: COLLECTION_EMIT_TYPE_KEY_CHANGE,
+        type: COLLECTION_EMIT_TYPE_KEY,
         key: oldSize,
         oldSize,
         newSize: innerValues.length,
@@ -367,4 +389,64 @@ export function createAtomList<T>(
   };
 
   return [list, listUpdater];
+}
+
+function filterForNegativeKey(key: number) {
+  return (change: AtomListEmit) => {
+    if (isAtomListSizeEmit(change)) {
+      const index = change.newSize + key;
+      const oldIndex = change.oldSize + key;
+      const isOldIndexOutOfBounds = oldIndex < 0;
+      const isIndexOutOfBounds = index < 0;
+
+      // No change when current and old index is out of bounds
+      if (isOldIndexOutOfBounds && isIndexOutOfBounds) {
+        return false;
+      }
+
+      // Handles within bounds size changes
+      if (change.newSize !== change.oldSize) {
+        return !isOldIndexOutOfBounds || !isIndexOutOfBounds;
+      }
+    }
+
+    // Handles within bounds size changes when size has not changed
+    // meaning old index and index are the same
+    switch (change.type) {
+      case COLLECTION_EMIT_TYPE_KEY:
+        return change.key === change.newSize + key;
+      case LIST_EMIT_TYPE_SLICE:
+        const index = change.newSize + key;
+        return change.start <= index && index <= change.end;
+      case COLLECTION_EMIT_TYPE_ALL_CHANGE:
+        return true;
+      default:
+        return false;
+    }
+  };
+}
+
+function filterForPositiveKey(key: number) {
+  return (change: AtomListEmit) => {
+    if (isAtomListSizeEmit(change)) {
+      const isIndexOutOfOldSizeBounds = key >= change.oldSize;
+      const isIndexOutOfSizeBounds = key >= change.newSize;
+
+      // No change when index is out of bounds of both old and new size
+      if (isIndexOutOfOldSizeBounds && isIndexOutOfSizeBounds) {
+        return false;
+      }
+    }
+
+    switch (change.type) {
+      case COLLECTION_EMIT_TYPE_KEY:
+        return change.key === key;
+      case LIST_EMIT_TYPE_SLICE:
+        return change.start <= key && key <= change.end;
+      case COLLECTION_EMIT_TYPE_ALL_CHANGE:
+        return true;
+      default:
+        return false;
+    }
+  };
 }

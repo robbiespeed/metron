@@ -1,14 +1,15 @@
 import { createAtom } from '@metron/core/atom.js';
 import { untracked } from '@metron/core/particle.js';
+import { Counter } from './counter';
 
 export function List() {
-  const [items, setItems] = createAtom([
-    <li>1</li>,
-    <li>2</li>,
-    <li>3</li>,
-    <li>4</li>,
-    <li>5</li>,
-  ]);
+  const [items, setItems] = createAtom(
+    new Array(30_000).fill(0).map((_, i) => (
+      <li>
+        {i}: <Counter />
+      </li>
+    ))
+  );
 
   const reverseList = () => {
     setItems(untracked(items).slice().reverse());
@@ -20,8 +21,9 @@ export function List() {
         Reverse
       </button>
       <ul>
-        <li>0</li>
+        <li>Start</li>
         {items}
+        <li>End</li>
       </ul>
     </>
   );
