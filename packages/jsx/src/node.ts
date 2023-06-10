@@ -8,7 +8,7 @@ export interface JsxBaseNode {
 export interface JsxComponentNode extends JsxBaseNode {
   readonly nodeType: typeof NODE_TYPE_COMPONENT;
   readonly tag: Component;
-  readonly props: JsxNodeProps;
+  readonly props: JsxProps;
 }
 
 export interface JsxContextProviderNode extends JsxBaseNode {
@@ -24,7 +24,7 @@ export interface JsxFragmentNode extends JsxBaseNode {
 
 export interface JsxIntrinsicNode extends JsxBaseNode {
   readonly nodeType: typeof NODE_TYPE_INTRINSIC;
-  readonly props: JsxNodeProps;
+  readonly props: JsxProps;
   readonly tag: string;
 }
 
@@ -41,7 +41,7 @@ export type JsxNode =
   | JsxIntrinsicNode
   | JsxRenderContextNode;
 
-export interface JsxNodeProps {
+export interface JsxProps {
   readonly [key: string]: unknown;
 }
 
@@ -50,14 +50,14 @@ export interface ComponentContextStore {
 }
 
 export interface Component<
-  TProps extends JsxNodeProps = JsxNodeProps,
+  TProps extends JsxProps = JsxProps,
   TReturn = unknown
 > {
   (props: TProps, context: ComponentContext): TReturn;
 }
 
 export interface StaticComponent<
-  TProps extends JsxNodeProps = JsxNodeProps,
+  TProps extends JsxProps = JsxProps,
   TReturn extends JsxNode = JsxNode
 > {
   (props: TProps): TReturn;
@@ -116,7 +116,7 @@ export function isStaticComponent(
 }
 
 export function createStaticComponent<
-  TProps extends JsxNodeProps = JsxNodeProps,
+  TProps extends JsxProps = JsxProps,
   TReturn extends JsxNode = JsxNode
 >(
   component: (props: TProps, context?: undefined) => TReturn

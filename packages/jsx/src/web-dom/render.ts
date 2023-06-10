@@ -4,8 +4,20 @@ import {
   untracked,
   type Atom,
 } from '@metron/core/particle.js';
-import { COLLECTION_EMIT_TYPE_KEY } from '@metron/core/collection.js';
-import { type AtomList, isAtomList } from '@metron/core/list.js';
+import {
+  COLLECTION_EMIT_TYPE_CLEAR,
+  COLLECTION_EMIT_TYPE_KEY_ADD,
+  COLLECTION_EMIT_TYPE_KEY_REMOVE,
+  COLLECTION_EMIT_TYPE_KEY_SWAP,
+  COLLECTION_EMIT_TYPE_KEY_WRITE,
+} from '@metron/core/collection.js';
+import {
+  type AtomList,
+  isAtomList,
+  LIST_EMIT_TYPE_REVERSE,
+  LIST_EMIT_TYPE_SORT,
+  LIST_EMIT_TYPE_RANGE,
+} from '@metron/core/list.js';
 
 import {
   createContext,
@@ -286,10 +298,12 @@ function renderAtomListInto(
     childNodes.push(tailMarker);
   }
 
-  list[emitterKey]((msg) => {
-    switch (msg.type) {
-      case COLLECTION_EMIT_TYPE_KEY:
-        const { key } = msg;
+  list[emitterKey]((message) => {
+    switch (message.type) {
+      case COLLECTION_EMIT_TYPE_KEY_WRITE:
+      case COLLECTION_EMIT_TYPE_KEY_ADD:
+      case COLLECTION_EMIT_TYPE_KEY_REMOVE: {
+        const { key } = message;
         const newValue = untracked(list).at(key);
         const oldRange = ranges[key];
 
@@ -352,7 +366,125 @@ function renderAtomListInto(
         tailMarker = updateContainer[endNodeIndex]!;
         isTailMarkerComment = false;
         return;
-      default:
+      }
+      case COLLECTION_EMIT_TYPE_KEY_SWAP: {
+        const { keySwap } = message;
+        let [keyA, keyB] = keySwap;
+
+        if (keyA > keyB) {
+          // Normalize so that keyA < keyB
+          [keyA, keyB] = [keyB, keyA];
+        }
+
+        const rangeA = ranges[keyA];
+        const rangeB = ranges[keyB];
+
+        swapFlow: if (rangeA !== undefined && rangeB !== undefined) {
+          const rangeATail = rangeA.end ?? rangeA.start;
+          const rangeBTail = rangeB.end ?? rangeB.start;
+          if (rangeATail === tailMarker) {
+            tailMarker = rangeBTail;
+          } else if (rangeBTail === tailMarker) {
+            tailMarker = rangeATail;
+          }
+          swapSiblingRanges(rangeA, rangeB);
+        } else if (rangeA !== undefined) {
+          // move rangeA after b
+          const parent = rangeA.start.parentNode;
+
+          if (parent === null) {
+            throw new Error('Expected parent');
+          }
+
+          const rangeATail = rangeA.end ?? rangeA.start;
+
+          if (rangeATail === tailMarker) {
+            // Can't move further right
+            break swapFlow;
+          }
+
+          const rangeToLeftOfB = findRangeToLeft(keyB, ranges);
+
+          if (rangeToLeftOfB === rangeA) {
+            // Already in correct render order
+            break swapFlow;
+          }
+
+          const afterMarker = rangeToLeftOfB
+            ? rangeToLeftOfB.end ?? rangeToLeftOfB.start
+            : tailMarker;
+
+          if (afterMarker === tailMarker) {
+            tailMarker = rangeATail;
+          }
+
+          parent.insertBefore(
+            getRangeNodeOrFragment(rangeA),
+            afterMarker.nextSibling
+          );
+        } else if (rangeB !== undefined) {
+          // move rangeB before a
+          const parent = rangeB.start.parentNode;
+
+          if (parent === null) {
+            throw new Error('Expected parent');
+          }
+
+          const rangeToRightOfA = findRangeToRight(keyA, ranges);
+
+          if (rangeToRightOfA === rangeB || rangeToRightOfA === undefined) {
+            // Already in correct render order
+            break swapFlow;
+          }
+
+          parent.insertBefore(
+            getRangeNodeOrFragment(rangeB),
+            rangeToRightOfA.start
+          );
+        }
+
+        ranges[keyA] = rangeB;
+        ranges[keyB] = rangeA;
+
+        return;
+      }
+      case LIST_EMIT_TYPE_REVERSE: {
+        const firstRange = findRangeToRight(-1, ranges);
+
+        if (firstRange === undefined) {
+          return;
+        }
+
+        if ((firstRange.end ?? firstRange.start) === tailMarker) {
+          return;
+        }
+
+        const nodeRange = document.createRange();
+        nodeRange.setStartBefore(firstRange.start);
+        nodeRange.setEndAfter(tailMarker);
+        const nodeFragment = nodeRange.extractContents();
+
+        const reversedNodes: Node[] = [];
+        const nodeCount = nodeFragment.childNodes.length;
+        for (let i = nodeCount - 1; i >= 0; i--) {
+          reversedNodes.push(nodeFragment.childNodes[i]!);
+        }
+        nodeFragment.append(...reversedNodes);
+        nodeRange.insertNode(nodeFragment);
+
+        tailMarker = firstRange.start;
+        ranges.reverse();
+        return;
+      }
+      case LIST_EMIT_TYPE_SORT:
+      // TODO: Implement using similar logic to LIST_EMIT_TYPE_REVERSE
+      case LIST_EMIT_TYPE_RANGE:
+      // TODO
+      case COLLECTION_EMIT_TYPE_CLEAR:
+      // TODO
+      default: {
+        // TODO: warn about fallback
+        message;
         const oldStartRange = findRangeToRight(-1, ranges);
 
         const updateNodes: Node[] = [];
@@ -390,8 +522,20 @@ function renderAtomListInto(
           replaceRange(updateNodes, oldTailMarker);
         }
         return;
+      }
     }
   });
+}
+
+function getRangeNodeOrFragment(range: ListItemRenderRange): Node {
+  if (range.end) {
+    const nodeRange = document.createRange();
+    nodeRange.setStartBefore(range.start);
+    nodeRange.setEndAfter(range.end);
+    return nodeRange.extractContents();
+  } else {
+    return range.start;
+  }
 }
 
 function findRangeToRight(
@@ -399,6 +543,18 @@ function findRangeToRight(
   ranges: (ListItemRenderRange | undefined)[]
 ): ListItemRenderRange | undefined {
   for (let i = index + 1; i < ranges.length; i++) {
+    const range = ranges[i];
+    if (range !== undefined) {
+      return range;
+    }
+  }
+}
+
+function findRangeToLeft(
+  index: number,
+  ranges: (ListItemRenderRange | undefined)[]
+): ListItemRenderRange | undefined {
+  for (let i = index - 1; i >= 0; i--) {
     const range = ranges[i];
     if (range !== undefined) {
       return range;
@@ -479,5 +635,52 @@ function replaceRange(
 
   for (const node of newNodeIterator) {
     parent.insertBefore(node, tailEndBefore);
+  }
+}
+
+function swapSiblingRanges(
+  rangeA: ListItemRenderRange,
+  rangeB: ListItemRenderRange
+) {
+  const parent = rangeA.start.parentNode;
+
+  if (parent === null) {
+    throw new Error('Cannot swap nodes without parent');
+  }
+
+  if (rangeA.end === undefined) {
+    if (rangeB.end === undefined) {
+      const temp = document.createComment('');
+
+      parent.replaceChild(temp, rangeA.start);
+      parent.replaceChild(rangeA.start, rangeB.start);
+      parent.replaceChild(rangeB.start, temp);
+    } else {
+      const nodeRangeB = document.createRange();
+      nodeRangeB.setStartBefore(rangeB.start);
+      nodeRangeB.setEndAfter(rangeB.end);
+      const fragmentB = nodeRangeB.extractContents();
+
+      parent.replaceChild(fragmentB, rangeA.start);
+      nodeRangeB.insertNode(rangeA.start);
+    }
+  } else {
+    const nodeRangeA = document.createRange();
+    nodeRangeA.setStartBefore(rangeA.start);
+    nodeRangeA.setEndAfter(rangeA.end);
+    const fragmentA = nodeRangeA.extractContents();
+
+    if (rangeB.end === undefined) {
+      parent.replaceChild(fragmentA, rangeB.start);
+      nodeRangeA.insertNode(rangeB.start);
+    } else {
+      const nodeRangeB = document.createRange();
+      nodeRangeB.setStartBefore(rangeB.start);
+      nodeRangeB.setEndAfter(rangeB.end);
+      const fragmentB = nodeRangeB.extractContents();
+
+      nodeRangeA.insertNode(fragmentB);
+      nodeRangeB.insertNode(fragmentA);
+    }
   }
 }

@@ -10,4 +10,11 @@ describe('jsx', () => {
       props: { foo: true, bar: 1 },
     } satisfies Partial<JsxIntrinsicNode>);
   });
+  it('test', () => {
+    function ListItem({ i }: { readonly i: number }) {
+      return <li>{i}</li>;
+    }
+
+    <ListItem i={1} />;
+  });
 });

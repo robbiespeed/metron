@@ -1,18 +1,45 @@
-import { createAtom } from '@metron/core/atom.js';
+import { Atom, createAtom } from '@metron/core/atom.js';
 import { untracked } from '@metron/core/particle.js';
+import { createAtomList } from '@metron/core/list.js';
 import { Counter } from './counter';
 
+interface Item {
+  id: number;
+  count: Atom<number>;
+  setCount: (value: number) => void;
+}
+
+function ListItem({ item }: { item: Item }) {
+  return (
+    <li>
+      {item.id}: <Counter />
+    </li>
+  );
+}
+
 export function List() {
-  const [items, setItems] = createAtom(
-    new Array(30_000).fill(0).map((_, i) => (
-      <li>
-        {i}: <Counter />
-      </li>
-    ))
+  const [list, listWriter] = createAtomList<Item>(
+    new Array(1_000).fill(0).map((_, i) => {
+      const [count, setCount] = createAtom(0);
+      return { id: i, count, setCount };
+    })
   );
 
   const reverseList = () => {
-    setItems(untracked(items).slice().reverse());
+    listWriter.reverse();
+  };
+
+  const sortListAscId = () => {
+    listWriter.sort((a, b) => a.id - b.id);
+  };
+  const sortListDscId = () => {
+    listWriter.sort((a, b) => b.id - a.id);
+  };
+  const sortListAscCount = () => {
+    listWriter.sort((a, b) => untracked(a.count) - untracked(b.count));
+  };
+  const sortListDscCount = () => {
+    listWriter.sort((a, b) => untracked(b.count) - untracked(a.count));
   };
 
   return (
@@ -20,9 +47,23 @@ export function List() {
       <button type="button" on:click={reverseList}>
         Reverse
       </button>
+      <button type="button" on:click={sortListAscId}>
+        Sort Id (asc)
+      </button>
+      <button type="button" on:click={sortListDscId}>
+        Sort Id (dsc)
+      </button>
+      <button type="button" on:click={sortListAscCount}>
+        Sort Count (asc)
+      </button>
+      <button type="button" on:click={sortListDscCount}>
+        Sort Count (dsc)
+      </button>
       <ul>
         <li>Start</li>
-        {items}
+        {list.map((i) => (
+          <ListItem item={i} />
+        ))}
         <li>End</li>
       </ul>
     </>

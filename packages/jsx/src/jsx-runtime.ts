@@ -8,21 +8,25 @@ import {
   createStaticComponent,
   type StaticComponent,
   isStaticComponent,
-  type JsxNodeProps,
+  type JsxProps,
   NODE_TYPE_FRAGMENT,
   type JsxNode,
 } from './node.js';
 
 declare namespace JSX {
   interface IntrinsicElements {
-    [tagName: string]: JsxNodeProps;
+    [tagName: string]: JsxProps;
   }
 
   interface IntrinsicAttributes {}
 
-  type ElementType = Component | StaticComponent | string;
+  type ElementType<TProps = unknown> =
+    // Jsx won't function unless any is the fallback type for TProps
+    | Component<TProps extends JsxProps ? TProps : any>
+    | StaticComponent<TProps extends JsxProps ? TProps : any>
+    | string;
 
-  type Element = unknown;
+  type Element = JsxNode;
 }
 
 export type { JSX };
@@ -43,7 +47,7 @@ export type PropsFromTag<TTag extends JSX.ElementType> = TTag extends string
 
 export function jsx(
   tag: JSX.ElementType,
-  props: JsxNodeProps,
+  props: JsxProps,
   key?: undefined
 ): JsxNode {
   if (typeof tag === 'function') {

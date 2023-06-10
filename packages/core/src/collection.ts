@@ -1,63 +1,61 @@
 import { atomIteratorKey, type AtomIterator } from './iterable.js';
 import type { Atom } from './particle.js';
 
-export const collectionValueAtKey = Symbol('MetronAtomCollectionValueAt');
+export const collectionKeyToValueKey = Symbol('MetronAtomCollectionKeyToValue');
 
-export const COLLECTION_EMIT_TYPE_KEY = 'CollectionKeyEmit';
+export const COLLECTION_EMIT_TYPE_KEY_WRITE = 'CollectionKeyWrite';
+export const COLLECTION_EMIT_TYPE_KEY_ADD = 'CollectionKeyAdd';
+export const COLLECTION_EMIT_TYPE_KEY_REMOVE = 'CollectionKeyRemove';
 export const COLLECTION_EMIT_TYPE_KEY_SWAP = 'CollectionKeySwap';
 export const COLLECTION_EMIT_TYPE_KEY_BATCH = 'CollectionKeyBatch';
-export const COLLECTION_EMIT_TYPE_KEY_SWAP_BATCH = 'CollectionKeySwapBatch';
-export const COLLECTION_EMIT_TYPE_ALL_CHANGE = 'CollectionAllChange';
+export const COLLECTION_EMIT_TYPE_CLEAR = 'CollectionClear';
 
-export interface AtomCollectionEmitKey<TKey = unknown> {
-  readonly type: typeof COLLECTION_EMIT_TYPE_KEY;
+export interface AtomCollectionEmitKeyWrite<TKey = unknown> {
+  readonly type: typeof COLLECTION_EMIT_TYPE_KEY_WRITE;
   readonly key: TKey;
-  readonly newSize: number;
+  readonly size: number;
+}
+
+export interface AtomCollectionEmitKeyAdd<TKey = unknown> {
+  readonly type: typeof COLLECTION_EMIT_TYPE_KEY_ADD;
+  readonly key: TKey;
+  readonly size: number;
+  readonly oldSize: number;
+}
+
+export interface AtomCollectionEmitKeyRemove<TKey = unknown> {
+  readonly type: typeof COLLECTION_EMIT_TYPE_KEY_REMOVE;
+  readonly key: TKey;
+  readonly size: number;
   readonly oldSize: number;
 }
 
 export interface AtomCollectionEmitKeySwap<TKey = unknown> {
   readonly type: typeof COLLECTION_EMIT_TYPE_KEY_SWAP;
   readonly keySwap: readonly [TKey, TKey];
+  readonly size: number;
 }
 
-export interface AtomCollectionEmitKeyBatch<TKey = unknown> {
-  readonly type: typeof COLLECTION_EMIT_TYPE_KEY_BATCH;
-  readonly keys: readonly TKey[];
-  readonly newSize: number;
-  readonly oldSize: number;
-}
-
-export interface AtomCollectionEmitKeySwapBatch<TKey = unknown> {
-  readonly type: typeof COLLECTION_EMIT_TYPE_KEY_SWAP_BATCH;
-  readonly keySwaps: readonly (readonly [TKey, TKey])[];
-}
-
-export interface AtomCollectionEmitAll {
-  readonly type: typeof COLLECTION_EMIT_TYPE_ALL_CHANGE;
-  readonly newSize: number;
+export interface AtomCollectionEmitClear {
+  readonly type: typeof COLLECTION_EMIT_TYPE_CLEAR;
+  readonly size: number;
   readonly oldSize: number;
 }
 
 export interface AtomCollectionEmitMap<TKey = unknown> {
-  key: AtomCollectionEmitKey<TKey>;
+  keyWrite: AtomCollectionEmitKeyWrite<TKey>;
+  keyAdd: AtomCollectionEmitKeyAdd<TKey>;
+  keyRemove: AtomCollectionEmitKeyRemove<TKey>;
   keySwap: AtomCollectionEmitKeySwap<TKey>;
-  keyBatch: AtomCollectionEmitKeyBatch<TKey>;
-  keySwapBatch: AtomCollectionEmitKeySwapBatch<TKey>;
-  all: AtomCollectionEmitAll;
+  clear: AtomCollectionEmitClear;
 }
 
 export type AtomCollectionEmit<TKey = unknown> =
   AtomCollectionEmitMap<TKey>[keyof AtomCollectionEmitMap];
 
-export type AtomCollectionSizedEmit<TKey = unknown> = Exclude<
-  AtomCollectionEmit<TKey>,
-  AtomCollectionEmitKeySwap | AtomCollectionEmitKeySwapBatch
->;
-
 export interface RawAtomCollection<TValue, TKey = unknown> {
   readonly size: number;
-  [collectionValueAtKey](key: TKey): TValue | undefined;
+  [collectionKeyToValueKey](key: TKey): TValue | undefined;
   [Symbol.iterator](): IterableIterator<TValue>;
   entries(): IterableIterator<[TKey, TValue]>;
   keys(): IterableIterator<TKey>;
@@ -80,27 +78,15 @@ export interface AtomCollection<
   TEmitMap extends AtomCollectionEmitMap<TKey> = AtomCollectionEmitMap<TKey>
 > extends Atom<TRaw, TEmitMap[keyof TEmitMap]> {
   readonly size: Atom<number>;
-  [collectionValueAtKey](key: TKey): Atom<TValue | undefined>;
+  [collectionKeyToValueKey](key: TKey): Atom<TValue | undefined>;
   entries(): AtomIterator<[TKey, TValue]>;
   keys(): AtomIterator<TKey>;
   values(): AtomIterator<TValue>;
   [atomIteratorKey](): AtomIterator<TValue, TEmitMap[keyof TEmitMap]>;
 }
 
-export const ATOM_COLLECTION_EMIT_SIZED_TYPES = {
-  [COLLECTION_EMIT_TYPE_KEY]: true,
-  [COLLECTION_EMIT_TYPE_KEY_BATCH]: true,
-  [COLLECTION_EMIT_TYPE_ALL_CHANGE]: true,
-} as const;
-
-export function isAtomCollectionSizedEmit(
-  value: AtomCollectionEmit
-): value is AtomCollectionSizedEmit {
-  return (ATOM_COLLECTION_EMIT_SIZED_TYPES as any)[value.type] === true;
-}
-
 export function isAtomCollection(
   value: unknown
 ): value is AtomCollection<unknown> {
-  return (value as any)?.[collectionValueAtKey] !== undefined;
+  return (value as any)?.[collectionKeyToValueKey] !== undefined;
 }

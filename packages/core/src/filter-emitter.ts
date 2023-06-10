@@ -1,5 +1,4 @@
-import type { Emitter } from './emitter.js';
-import { createSensor } from './sensor.js';
+import { createEmitter, type Emitter } from './emitter.js';
 
 export function filterEmitter<T, O extends T>(
   baseEmitter: Emitter<T>,
@@ -13,7 +12,7 @@ export function filterEmitter<T>(
   baseEmitter: Emitter<T>,
   filter: (data: T) => boolean
 ): Emitter<T> {
-  const { emitter, send } = createSensor<T>();
+  const [emitter, send] = createEmitter<T>();
 
   baseEmitter((data: T) => {
     if (filter(data)) {
