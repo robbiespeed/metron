@@ -6,7 +6,7 @@ import {
 } from '@metron/core/particle.js';
 import {
   COLLECTION_EMIT_TYPE_CLEAR,
-  COLLECTION_EMIT_TYPE_KEY_ADD,
+  COLLECTION_EMIT_TYPE_KEY_INSERT,
   COLLECTION_EMIT_TYPE_KEY_REMOVE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
   COLLECTION_EMIT_TYPE_KEY_WRITE,
@@ -27,20 +27,17 @@ import {
   type RenderContext,
   type ComponentContextStore,
   isJsxNode,
-  type JsxFragmentNode,
+  type JsxProps,
 } from '../node.js';
 import { isIterable } from '../utils.js';
 
-interface DomRenderContext extends RenderContext {
-  renderComponent(
-    element: JsxComponentNode,
-    contextStore: ComponentContextStore
-  ): Node | Node[];
-  renderFragment(
-    element: JsxFragmentNode,
-    contextStore: ComponentContextStore
-  ): Node | Node[];
-  render(element: unknown, contextStore: ComponentContextStore): Node | Node[];
+interface DomRenderContextProps extends JsxProps {
+  readonly root: Element;
+  readonly children: unknown;
+}
+
+interface DomRenderContext
+  extends RenderContext<DomRenderContextProps, Node | Node[]> {
   renderIntrinsic(
     element: JsxIntrinsicNode,
     contextStore: ComponentContextStore
@@ -51,6 +48,14 @@ const EVENT_HANDLER_PREFIX = 'on:';
 const EVENT_HANDLER_PREFIX_LENGTH = EVENT_HANDLER_PREFIX.length;
 
 export const domRenderContext: DomRenderContext = {
+  renderRoot({ root, children }, contextStore) {
+    const rendered = this?.renderUnknown(children, contextStore);
+    if (Array.isArray(rendered)) {
+      root.replaceChildren(...rendered);
+    } else {
+      root.replaceChildren(rendered);
+    }
+  },
   renderComponent(element, contextStore) {
     const { tag, props } = element as JsxComponentNode;
 
@@ -73,7 +78,7 @@ export const domRenderContext: DomRenderContext = {
 
     return childNodes;
   },
-  render(element, contextStore) {
+  renderUnknown(element, contextStore) {
     const childNodes: Node[] = [];
 
     renderInto(childNodes, element, contextStore, this);
@@ -302,7 +307,7 @@ function renderAtomListInto(
   list[emitterKey]((message) => {
     switch (message.type) {
       case COLLECTION_EMIT_TYPE_KEY_WRITE:
-      case COLLECTION_EMIT_TYPE_KEY_ADD:
+      case COLLECTION_EMIT_TYPE_KEY_INSERT:
       case COLLECTION_EMIT_TYPE_KEY_REMOVE: {
         const { key } = message;
         const newValue = untracked(list).at(key);

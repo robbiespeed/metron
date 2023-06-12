@@ -31,7 +31,7 @@ export interface JsxIntrinsicNode extends JsxBaseNode {
 export interface JsxRenderContextNode extends JsxBaseNode {
   readonly nodeType: typeof NODE_TYPE_RENDER_CONTEXT;
   readonly renderContextKey: symbol;
-  readonly children: unknown;
+  readonly props: JsxProps;
 }
 
 export type JsxNode =
@@ -70,7 +70,11 @@ export interface ComponentContext extends Atom<ComponentContextStore> {
   [setContextKey]: AtomSetter<ComponentContextStore>;
 }
 
-export interface RenderContext<TRendered = unknown> {
+export interface RenderContext<
+  TRootProps extends JsxProps = JsxProps,
+  TRendered = unknown
+> {
+  renderRoot(props: TRootProps, contextStore: ComponentContextStore): void;
   renderComponent(
     node: JsxComponentNode,
     contextStore: ComponentContextStore
@@ -83,7 +87,10 @@ export interface RenderContext<TRendered = unknown> {
     node: JsxIntrinsicNode,
     contextStore: ComponentContextStore
   ): TRendered;
-  render(element: unknown, contextStore: ComponentContextStore): TRendered;
+  renderUnknown(
+    element: unknown,
+    contextStore: ComponentContextStore
+  ): TRendered;
   // moveOther
   // moveComponent
   // moveIntrinsic
@@ -127,25 +134,28 @@ export function createStaticComponent<
 
 const renderContextStore: Record<symbol, RenderContext | undefined> = {};
 
-export function createRenderContext(
-  renderContext: RenderContext
-): StaticComponent<{ readonly children?: unknown }, JsxRenderContextNode> {
+type RenderReturnFromContext<TContext extends RenderContext> =
+  TContext extends RenderContext<any, infer TReturn> ? TReturn : never;
+
+type RenderRootPropsFromContext<TContext extends RenderContext> =
+  TContext extends RenderContext<infer TProps> ? TProps : never;
+
+export function createRenderContext<TContext extends RenderContext>(
+  renderContext: TContext
+): StaticComponent<RenderRootPropsFromContext<TContext>, JsxRenderContextNode> {
   const renderContextKey = Symbol();
   renderContextStore[renderContextKey] = renderContext;
-  return createStaticComponent(({ children }) => ({
+  return createStaticComponent((props) => ({
     [nodeBrandKey]: true,
     nodeType: NODE_TYPE_RENDER_CONTEXT,
     renderContextKey,
-    children,
+    props,
   }));
 }
 
 export function isJsxNode(maybeNode: unknown): maybeNode is JsxNode {
   return (maybeNode as any)?.[nodeBrandKey] === true;
 }
-
-type RenderReturnFromContext<TContext extends RenderContext> =
-  TContext extends RenderContext<infer TReturn> ? TReturn : never;
 
 export function renderNode<
   TRenderContext extends RenderContext = RenderContext,
@@ -171,14 +181,16 @@ export function renderNode<
         ...contextStore,
         ...element.contextStoreUpdate,
       };
-      return renderContext?.render(
+      return renderContext?.renderUnknown(
         element.children,
         childContextStore
       ) as TReturn;
     }
     case NODE_TYPE_RENDER_CONTEXT: {
-      const renderContext = renderContextStore[element.renderContextKey];
-      renderContext?.render(element.children, childContextStore);
+      renderContextStore[element.renderContextKey]?.renderRoot(
+        element.props,
+        childContextStore
+      );
       return;
     }
   }

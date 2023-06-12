@@ -1,4 +1,4 @@
-import { JsxNode, renderNode } from '@metron/jsx/node.js';
+import { createRenderContext, renderNode } from '@metron/jsx/node.js';
 import { domRenderContext } from '@metron/jsx/web-dom/render.js';
 import './style.css';
 import typescriptLogo from './typescript.svg';
@@ -6,8 +6,12 @@ import viteLogo from '/vite.svg';
 import { Counter } from './counter.tsx';
 import { List } from './list.tsx';
 
+const appRoot = document.querySelector<HTMLDivElement>('#app')!;
+
+const Dom = createRenderContext(domRenderContext);
+
 const App = (
-  <div>
+  <Dom root={appRoot}>
     <a href="https://vitejs.dev" target="_blank">
       <img src={viteLogo} class="logo" alt="Vite logo" />
     </a>
@@ -24,9 +28,9 @@ const App = (
     <p class="read-the-docs">
       Click on the Vite and TypeScript logos to learn more
     </p>
-  </div>
+  </Dom>
 );
 
-document
-  .querySelector<HTMLDivElement>('#app')!
-  .appendChild(renderNode(App as JsxNode, {}, domRenderContext) as Node);
+renderNode(App);
+
+// .appendChild(renderNode(App as JsxNode, {}, domRenderContext) as Node);

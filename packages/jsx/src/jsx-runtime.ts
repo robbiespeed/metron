@@ -11,6 +11,7 @@ import {
   type JsxProps,
   NODE_TYPE_FRAGMENT,
   type JsxNode,
+  isJsxNode,
 } from './node.js';
 
 declare namespace JSX {
@@ -19,6 +20,10 @@ declare namespace JSX {
   }
 
   interface IntrinsicAttributes {}
+
+  interface ElementChildrenAttribute {
+    children: {}; // specify children name to use
+  }
 
   type ElementType<TProps = unknown> =
     // Jsx won't function unless any is the fallback type for TProps
@@ -32,6 +37,9 @@ declare namespace JSX {
 export type { JSX };
 
 export const Fragment = createStaticComponent(({ children }) => {
+  if (isJsxNode(children)) {
+    return children;
+  }
   return {
     [nodeBrandKey]: true,
     nodeType: NODE_TYPE_FRAGMENT,

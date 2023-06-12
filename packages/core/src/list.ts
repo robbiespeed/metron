@@ -5,7 +5,7 @@ import {
   type AtomCollectionEmitMap,
   type RawAtomCollection,
   COLLECTION_EMIT_TYPE_KEY_WRITE,
-  COLLECTION_EMIT_TYPE_KEY_ADD,
+  COLLECTION_EMIT_TYPE_KEY_INSERT,
   COLLECTION_EMIT_TYPE_KEY_REMOVE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
 } from './collection.js';
@@ -218,7 +218,7 @@ function createAtomListWriterInternal<T>(
       innerValues.push(value);
       const oldSize = innerValues.length - 1;
       sendEmit({
-        type: COLLECTION_EMIT_TYPE_KEY_ADD,
+        type: COLLECTION_EMIT_TYPE_KEY_INSERT,
         key: oldSize,
         oldSize,
         size: innerValues.length,
@@ -493,7 +493,7 @@ function createAtomKeyGetter<T>(
         return;
       }
       case COLLECTION_EMIT_TYPE_KEY_WRITE:
-      case COLLECTION_EMIT_TYPE_KEY_ADD:
+      case COLLECTION_EMIT_TYPE_KEY_INSERT:
       case COLLECTION_EMIT_TYPE_KEY_REMOVE: {
         const { key } = message;
         keyEmitSenders[key]?.();
