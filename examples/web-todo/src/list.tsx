@@ -12,7 +12,7 @@ interface Item {
 function ListItem({ item }: { item: Item }) {
   return (
     <li>
-      {item.id}: <Counter />
+      {item.id}: <Counter count={item.count} setCount={item.setCount} />
     </li>
   );
 }

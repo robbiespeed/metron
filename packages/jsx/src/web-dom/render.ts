@@ -269,6 +269,7 @@ function renderAtomListInto(
   contextStore: ComponentContextStore,
   renderContext: DomRenderContext
 ) {
+  // TODO: maybe the whole implementation could be simplified if ranges was a derived list
   const childNodes: Node[] = [];
   let ranges: (ListItemRenderRange | undefined)[] = [];
 
@@ -448,43 +449,45 @@ function renderAtomListInto(
 
         return;
       }
-      case LIST_EMIT_TYPE_REVERSE: {
-        const firstRange = findRangeToRight(-1, ranges);
-
-        if (firstRange === undefined) {
-          return;
-        }
-
-        if ((firstRange.end ?? firstRange.start) === tailMarker) {
-          return;
-        }
-
-        const nodeRange = document.createRange();
-        nodeRange.setStartBefore(firstRange.start);
-        nodeRange.setEndAfter(tailMarker);
-        const nodeFragment = nodeRange.extractContents();
-
-        const reversedNodes: Node[] = [];
-        const nodeCount = nodeFragment.childNodes.length;
-        for (let i = nodeCount - 1; i >= 0; i--) {
-          reversedNodes.push(nodeFragment.childNodes[i]!);
-        }
-        nodeFragment.append(...reversedNodes);
-        nodeRange.insertNode(nodeFragment);
-
-        tailMarker = firstRange.start;
-        ranges.reverse();
-        return;
-      }
-      case LIST_EMIT_TYPE_SORT:
-      // TODO: Implement using similar logic to LIST_EMIT_TYPE_REVERSE
-      case LIST_EMIT_TYPE_RANGE:
-      // TODO
       case COLLECTION_EMIT_TYPE_CLEAR:
+      // TODO
+      case LIST_EMIT_TYPE_REVERSE:
+      // TODO: fix implementation, may require ranges to contain all nodes not just start/end
+      // issue with current implementation is it reverses everything inside ranges
+      // {
+      //   const firstRange = findRangeToRight(-1, ranges);
+
+      //   if (firstRange === undefined) {
+      //     return;
+      //   }
+
+      //   if ((firstRange.end ?? firstRange.start) === tailMarker) {
+      //     return;
+      //   }
+
+      //   const nodeRange = document.createRange();
+      //   nodeRange.setStartBefore(firstRange.start);
+      //   nodeRange.setEndAfter(tailMarker);
+      //   const nodeFragment = nodeRange.extractContents();
+
+      //   const reversedNodes: Node[] = [];
+      //   const nodeCount = nodeFragment.childNodes.length;
+      //   for (let i = nodeCount - 1; i >= 0; i--) {
+      //     reversedNodes.push(nodeFragment.childNodes[i]!);
+      //   }
+      //   nodeFragment.append(...reversedNodes);
+      //   nodeRange.insertNode(nodeFragment);
+
+      //   tailMarker = firstRange.start;
+      //   ranges.reverse();
+      //   return;
+      // }
+      case LIST_EMIT_TYPE_SORT:
+      // TODO: May need ranges to contain all nodes not just start/end
+      case LIST_EMIT_TYPE_RANGE:
       // TODO
       default: {
         // TODO: warn about fallback
-        message;
         const oldStartRange = findRangeToRight(-1, ranges);
 
         const updateNodes: Node[] = [];
@@ -632,6 +635,7 @@ function replaceRange(
 
   const tailEndBefore = tailNode.nextSibling;
   // TODO: check perf of using a DocumentFragment to insert nodes
+  // append all to the fragment then insert the fragment
 
   for (const node of newNodeIterator) {
     parent.insertBefore(node, tailEndBefore);

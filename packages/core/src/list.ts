@@ -74,6 +74,7 @@ export interface AtomList<T>
   at(index: number): Atom<T | undefined>;
   map<U>(callback: (value: T, index: number) => U): AtomList<U>;
   /* TODO: Implement these methods.
+  reversed(): DerivedAtomList<T>;
   slice(start?: number, end?: number): DerivedAtomList<T>;
   sliceReversed(start?: number, end?: number): DerivedAtomList<T>;
   entriesReversed(): AtomIterator<[number, T]>;
@@ -333,9 +334,17 @@ function createAtomListWriterInternal<T>(
       innerValues.length = 0;
       const sortMap: number[] = [];
 
+      let isOrderUnchanged = true;
       for (const [value, index] of tmpSorted) {
         innerValues.push(value);
+        if (isOrderUnchanged && index !== sortMap.length) {
+          isOrderUnchanged = false;
+        }
         sortMap.push(index);
+      }
+
+      if (isOrderUnchanged) {
+        return;
       }
 
       sendEmit({
