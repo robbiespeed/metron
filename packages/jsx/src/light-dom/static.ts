@@ -1,4 +1,4 @@
-// import { isAtom, untracked } from '@metron/core/particle.js';
+// import { isAtom, untracked } from '@metron/core/particle';
 // import {
 //   createContext,
 //   renderNode,

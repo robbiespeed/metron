@@ -1,5 +1,5 @@
-import { createAtom } from '@metron/core/atom.js';
-import { Atom, untracked } from '@metron/core/particle.js';
+import { createAtom } from '@metron/core/atom';
+import { Atom, untracked } from '@metron/core/particle';
 
 export function Counter({
   count,

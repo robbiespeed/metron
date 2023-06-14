@@ -3,21 +3,22 @@ import {
   isAtom,
   untracked,
   type Atom,
-} from '@metron/core/particle.js';
+} from '@metron/core/particle';
 import {
   COLLECTION_EMIT_TYPE_CLEAR,
-  COLLECTION_EMIT_TYPE_KEY_INSERT,
-  COLLECTION_EMIT_TYPE_KEY_REMOVE,
+  COLLECTION_EMIT_TYPE_KEY_ADD,
+  COLLECTION_EMIT_TYPE_KEY_DELETE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
   COLLECTION_EMIT_TYPE_KEY_WRITE,
-} from '@metron/core/collection.js';
+} from '@metron/core/collection';
 import {
   type AtomList,
   isAtomList,
   LIST_EMIT_TYPE_REVERSE,
   LIST_EMIT_TYPE_SORT,
   LIST_EMIT_TYPE_RANGE,
-} from '@metron/core/list.js';
+  LIST_EMIT_TYPE_APPEND,
+} from '@metron/core/list';
 
 import {
   createContext,
@@ -37,7 +38,7 @@ interface DomRenderContextProps extends JsxProps {
 }
 
 interface DomRenderContext
-  extends RenderContext<DomRenderContextProps, Node | Node[]> {
+  extends RenderContext<DomRenderContextProps, ChildNode | ChildNode[]> {
   renderIntrinsic(
     element: JsxIntrinsicNode,
     contextStore: ComponentContextStore
@@ -63,7 +64,7 @@ export const domRenderContext: DomRenderContext = {
 
     const children = tag(props, componentContext);
 
-    const childNodes: Node[] = [];
+    const childNodes: ChildNode[] = [];
 
     renderInto(childNodes, children, contextStore, this);
 
@@ -72,14 +73,14 @@ export const domRenderContext: DomRenderContext = {
   renderFragment(element, contextStore) {
     const { children } = element;
 
-    const childNodes: Node[] = [];
+    const childNodes: ChildNode[] = [];
 
     renderInto(childNodes, children, contextStore, this);
 
     return childNodes;
   },
   renderUnknown(element, contextStore) {
-    const childNodes: Node[] = [];
+    const childNodes: ChildNode[] = [];
 
     renderInto(childNodes, element, contextStore, this);
 
@@ -148,8 +149,9 @@ export const domRenderContext: DomRenderContext = {
       }
     }
 
-    const childNodes: Node[] = [];
+    const childNodes: ChildNode[] = [];
 
+    // TODO: add bool param isImidiateChild
     renderInto(childNodes, children, contextStore, this);
 
     renderedElement.append(...childNodes);
@@ -159,7 +161,7 @@ export const domRenderContext: DomRenderContext = {
 };
 
 function renderInto(
-  container: Node[],
+  container: ChildNode[],
   value: unknown,
   contextStore: ComponentContextStore,
   renderContext: DomRenderContext
@@ -177,11 +179,11 @@ function renderInto(
     } else if (renderedComponent !== undefined) {
       container.push(renderedComponent);
     }
-  } else if (value instanceof Node) {
+  } else if (value instanceof Element || value instanceof CharacterData) {
     if (value.parentNode === null) {
-      container.push(value);
+      container.push(value as ChildNode);
     } else {
-      container.push(value.cloneNode(true));
+      container.push(value.cloneNode(true) as ChildNode);
     }
   } else if (isIterable(value) && typeof value === 'object') {
     for (const child of value) {
@@ -192,8 +194,10 @@ function renderInto(
   }
 }
 
+type NonEmptyChildNodes = [ChildNode, ...ChildNode[]];
+
 function renderAtomInto(
-  container: Node[],
+  container: ChildNode[],
   atom: Atom,
   contextStore: ComponentContextStore,
   renderContext: DomRenderContext
@@ -206,12 +210,12 @@ function renderAtomInto(
   const firstValue = untracked(atom);
 
   if (firstValue !== null && typeof firstValue === 'object') {
-    const tmpContainer: Node[] = [];
+    const tmpContainer: ChildNode[] = [];
 
     renderInto(tmpContainer, firstValue, contextStore, renderContext);
 
     const tmpContainerLength = tmpContainer.length;
-    let rangeStartMarker: Node;
+    let rangeStartMarker: ChildNode;
     if (tmpContainerLength > 0) {
       rangeStartMarker = tmpContainer[0]!;
     } else {
@@ -227,11 +231,11 @@ function renderAtomInto(
     container.push(...tmpContainer);
 
     atom[emitterKey](() => {
-      const updateContainer: Node[] = [];
+      const updateContainer: ChildNode[] = [];
       renderInto(updateContainer, untracked(atom), contextStore, renderContext);
 
       const updateContainerLength = updateContainer.length;
-      let newRangeStartMarker: Node;
+      let newRangeStartMarker: ChildNode;
       if (updateContainerLength > 0) {
         newRangeStartMarker = updateContainer[0]!;
       } else {
@@ -244,7 +248,11 @@ function renderAtomInto(
           ? updateContainer[updateContainerLength - 1]!
           : undefined;
 
-      replaceRange(updateContainer, rangeStartMarker, rangeEndMarker);
+      replaceRange(
+        updateContainer as NonEmptyChildNodes,
+        rangeStartMarker,
+        rangeEndMarker
+      );
 
       rangeStartMarker = newRangeStartMarker;
       rangeEndMarker = newRangeEndMarker;
@@ -263,114 +271,146 @@ function renderAtomInto(
   });
 }
 
-interface ListItemRenderRange {
-  start: Node;
-  end?: Node;
-}
+type IndexedNodes = (undefined | NonEmptyChildNodes)[];
 
 function renderAtomListInto(
-  container: Node[],
+  container: ChildNode[],
   list: AtomList<unknown>,
   contextStore: ComponentContextStore,
   renderContext: DomRenderContext
 ) {
   // TODO: maybe the whole implementation could be simplified if ranges was a derived list
-  const childNodes: Node[] = [];
-  let ranges: (ListItemRenderRange | undefined)[] = [];
+  const indexedNodes: IndexedNodes = [];
 
+  let i = 0;
   for (const child of untracked(list)) {
-    const startNodeIndex = childNodes.length;
-    renderInto(childNodes, child, contextStore, renderContext);
-    const endNodeIndex = childNodes.length - 1;
-    if (startNodeIndex === endNodeIndex) {
-      ranges.push({ start: childNodes[startNodeIndex]! });
-    } else if (startNodeIndex < endNodeIndex) {
-      ranges.push({
-        start: childNodes[startNodeIndex]!,
-        end: childNodes[endNodeIndex]!,
-      });
-    } else {
-      ranges.push(undefined);
+    const nodes: ChildNode[] = [];
+    renderInto(nodes, child, contextStore, renderContext);
+    if (nodes.length > 0) {
+      container.push(...nodes);
+      indexedNodes[i] = nodes as NonEmptyChildNodes;
     }
+    i++;
   }
 
-  container.push(...childNodes);
-
-  let tailMarker = childNodes[childNodes.length - 1]!;
-  let isTailMarkerComment = false;
-  if (tailMarker === undefined) {
+  let tailMarker: ChildNode;
+  let tailMarkerIndex = -1;
+  if (indexedNodes.length === 0) {
     tailMarker = document.createComment('');
-    isTailMarkerComment = true;
-    childNodes.push(tailMarker);
+    container.push(tailMarker);
+  } else {
+    tailMarkerIndex = indexedNodes.length - 1;
+    tailMarker = indexedNodes[tailMarkerIndex]!.at(-1)!;
   }
 
   list[emitterKey]((message) => {
     switch (message.type) {
-      case COLLECTION_EMIT_TYPE_KEY_WRITE:
-      case COLLECTION_EMIT_TYPE_KEY_INSERT:
-      case COLLECTION_EMIT_TYPE_KEY_REMOVE: {
+      case COLLECTION_EMIT_TYPE_KEY_DELETE: {
         const { key } = message;
+
+        const parent = tailMarker.parentElement!;
+        let nodeAfter: ChildNode | null = null;
+        let isTail = false;
+        const oldNodes = indexedNodes[key];
+
+        if (key < tailMarkerIndex) {
+          indexedNodes.splice(key, 1);
+        }
+
+        if (oldNodes !== undefined) {
+          const oldTail = oldNodes.at(-1)!;
+          isTail = oldTail === tailMarker;
+          nodeAfter = oldTail.nextSibling;
+          removeNodes(oldNodes);
+        }
+
+        if (isTail) {
+          // If it was the tail we look to the left since nothing in the list should be on the right
+          const leftIndex = findIndexOfNodesToLeft(indexedNodes, key);
+
+          if (leftIndex >= 0) {
+            tailMarker = indexedNodes[leftIndex]!.at(-1)!;
+            tailMarkerIndex = leftIndex;
+          } else {
+            // If no nodes to left then we need to make a comment marker
+            tailMarker = document.createComment('');
+            tailMarkerIndex = -1;
+            if (nodeAfter === null) {
+              parent.appendChild(tailMarker);
+            } else {
+              nodeAfter.before(tailMarker);
+            }
+          }
+        }
+
+        return;
+      }
+      case COLLECTION_EMIT_TYPE_KEY_WRITE:
+      case COLLECTION_EMIT_TYPE_KEY_ADD: {
+        const { key } = message;
+        const isInOrder =
+          message.type === COLLECTION_EMIT_TYPE_KEY_WRITE ||
+          key >= tailMarkerIndex;
+
+        const parent = tailMarker.parentElement!;
+        let nodeAfter: ChildNode | null = null;
+        let isTail = false;
+
+        if (!isInOrder) {
+          indexedNodes.splice(key, 0, undefined);
+        }
         const newValue = untracked(list).at(key);
-        const oldRange = ranges[key];
+        const oldNodes = indexedNodes[key];
 
-        if (newValue === undefined) {
-          if (oldRange !== undefined) {
-            removeRange(oldRange.start, oldRange.end);
-            ranges[key] = undefined;
-          }
-          return;
+        if (oldNodes !== undefined) {
+          const oldTail = oldNodes.at(-1)!;
+          isTail = oldTail === tailMarker;
+          nodeAfter = oldTail.nextSibling;
+          removeNodes(oldNodes);
         }
 
-        const updateContainer: Node[] = [];
-        renderInto(updateContainer, newValue, contextStore, renderContext);
-        const endNodeIndex = updateContainer.length - 1;
-        if (endNodeIndex === 0) {
-          ranges[key] = { start: updateContainer[0]! };
-        } else if (endNodeIndex > 0) {
-          ranges[key] = {
-            start: updateContainer[0]!,
-            end: updateContainer[endNodeIndex],
-          };
+        let newNodes: ChildNode[] | undefined;
+        if (newValue !== undefined) {
+          newNodes = [];
+          renderInto(newNodes, newValue, contextStore, renderContext);
         }
 
-        if (oldRange !== undefined) {
-          const shouldClear = updateContainer.length === 0;
-          const isTail = oldRange.end === tailMarker;
-          if (shouldClear && !isTail) {
-            removeRange(oldRange.start, oldRange.end);
-            ranges[key] = undefined;
-            return;
-          }
-
-          if (shouldClear) {
-            updateContainer.push(document.createComment(''));
-          }
-
-          replaceRange(updateContainer, oldRange.start, oldRange.end);
-
+        if (newNodes === undefined || newNodes.length === 0) {
+          indexedNodes[key] = undefined;
           if (isTail) {
-            tailMarker = updateContainer[endNodeIndex]!;
-            isTailMarkerComment = false;
+            // If it was the tail we look to the left since nothing in the list should be on the right
+            const leftIndex = findIndexOfNodesToLeft(indexedNodes, key);
+
+            if (leftIndex >= 0) {
+              tailMarker = indexedNodes[leftIndex]!.at(-1)!;
+              tailMarkerIndex = leftIndex;
+            } else {
+              // If no nodes to left then we need to make a comment marker
+              tailMarker = document.createComment('');
+              tailMarkerIndex = -1;
+              if (nodeAfter === null) {
+                parent.appendChild(tailMarker);
+              } else {
+                nodeAfter.before(tailMarker);
+              }
+            }
           }
-
-          return;
-        }
-
-        if (updateContainer.length === 0) {
-          return;
-        }
-
-        const rangeToRight = findRangeToRight(key, ranges);
-
-        if (rangeToRight !== undefined) {
-          insertBefore(updateContainer, rangeToRight.start);
-        } else if (isTailMarkerComment) {
-          replaceRange(updateContainer, tailMarker);
         } else {
-          insertAfter(updateContainer, tailMarker);
+          assertOverride<NonEmptyChildNodes>(newNodes);
+          indexedNodes[key] = newNodes;
+          if (isTail || key >= tailMarkerIndex) {
+            if (tailMarkerIndex === -1) {
+              tailMarker.remove();
+            }
+            tailMarker = newNodes.at(-1)!;
+            tailMarkerIndex = key;
+          }
+          if (nodeAfter === null) {
+            parent.append(...newNodes);
+          } else {
+            nodeAfter.before(...newNodes);
+          }
         }
-        tailMarker = updateContainer[endNodeIndex]!;
-        isTailMarkerComment = false;
         return;
       }
       case COLLECTION_EMIT_TYPE_KEY_SWAP: {
@@ -382,79 +422,138 @@ function renderAtomListInto(
           [keyA, keyB] = [keyB, keyA];
         }
 
-        const rangeA = ranges[keyA];
-        const rangeB = ranges[keyB];
+        const aNodes = indexedNodes[keyA];
+        const bNodes = indexedNodes[keyB];
 
-        swapFlow: if (rangeA !== undefined && rangeB !== undefined) {
-          const rangeATail = rangeA.end ?? rangeA.start;
-          const rangeBTail = rangeB.end ?? rangeB.start;
-          if (rangeATail === tailMarker) {
-            tailMarker = rangeBTail;
-          } else if (rangeBTail === tailMarker) {
-            tailMarker = rangeATail;
-          }
-          swapSiblingRanges(rangeA, rangeB);
-        } else if (rangeA !== undefined) {
-          // move rangeA after b
-          const parent = rangeA.start.parentNode;
-
-          if (parent === null) {
-            throw new Error('Expected parent');
-          }
-
-          const rangeATail = rangeA.end ?? rangeA.start;
-
-          if (rangeATail === tailMarker) {
-            // Can't move further right
-            break swapFlow;
-          }
-
-          const rangeToLeftOfB = findRangeToLeft(keyB, ranges);
-
-          if (rangeToLeftOfB === rangeA) {
-            // Already in correct render order
-            break swapFlow;
-          }
-
-          const afterMarker = rangeToLeftOfB
-            ? rangeToLeftOfB.end ?? rangeToLeftOfB.start
-            : tailMarker;
-
-          if (afterMarker === tailMarker) {
-            tailMarker = rangeATail;
-          }
-
-          parent.insertBefore(
-            getRangeNodeOrFragment(rangeA),
-            afterMarker.nextSibling
-          );
-        } else if (rangeB !== undefined) {
-          // move rangeB before a
-          const parent = rangeB.start.parentNode;
-
-          if (parent === null) {
-            throw new Error('Expected parent');
-          }
-
-          const rangeToRightOfA = findRangeToRight(keyA, ranges);
-
-          if (rangeToRightOfA === rangeB || rangeToRightOfA === undefined) {
-            // Already in correct render order
-            break swapFlow;
-          }
-
-          parent.insertBefore(
-            getRangeNodeOrFragment(rangeB),
-            rangeToRightOfA.start
-          );
+        if (aNodes === bNodes) {
+          // If A and B are the same they must both be undefined
+          return;
         }
 
-        ranges[keyA] = rangeB;
-        ranges[keyB] = rangeA;
+        indexedNodes[keyA] = bNodes;
+        indexedNodes[keyB] = aNodes;
+
+        if (bNodes !== undefined) {
+          const isBTail = bNodes.at(-1) === tailMarker;
+
+          if (aNodes !== undefined) {
+            swapNodeLists(aNodes, bNodes);
+
+            if (isBTail) {
+              tailMarker = aNodes.at(-1)!;
+            }
+          } else {
+            if (isBTail) {
+              // We know atleast B is now left of old B
+              const leftOfOldBIndex = findIndexOfNodesToLeft(
+                indexedNodes,
+                keyB
+              );
+
+              indexedNodes.length = leftOfOldBIndex + 1;
+
+              if (leftOfOldBIndex === keyA) {
+                // No-op if new tail is old tail
+                return;
+              }
+
+              tailMarker = indexedNodes[leftOfOldBIndex]!.at(-1)!;
+            }
+            // New B is not tail so there must be something else to the right
+            const rightOfNewB =
+              indexedNodes[findIndexOfNodesToRight(indexedNodes, keyA)]!;
+            rightOfNewB.at(-1)!.before(...bNodes);
+          }
+        } else {
+          // B is empty, A is not
+          assertOverride<NonEmptyChildNodes>(aNodes);
+
+          const aTail = aNodes.at(-1)!;
+          if (aTail === tailMarker) {
+            return;
+          }
+
+          const leftOfOldBIndex = findIndexOfNodesToLeft(indexedNodes, keyB);
+
+          if (leftOfOldBIndex === keyA) {
+            return;
+          }
+
+          const leftOfOldB = indexedNodes[leftOfOldBIndex]!;
+
+          if (leftOfOldB.at(-1) === tailMarker) {
+            tailMarker = aTail;
+          }
+
+          leftOfOldB[0].before(...aNodes);
+        }
+        return;
+      }
+      case COLLECTION_EMIT_TYPE_CLEAR: {
+        if (tailMarkerIndex === -1) {
+          return;
+        }
+
+        const nodesToRemove = [];
+        for (const nodes of indexedNodes) {
+          if (nodes !== undefined) {
+            nodesToRemove.push(...nodes);
+          }
+        }
+        indexedNodes.length = 0;
+
+        const parent = tailMarker.parentElement!;
+        const afterNode = tailMarker.nextSibling;
+
+        removeNodes(nodesToRemove);
+        tailMarker = document.createComment('');
+        tailMarkerIndex = -1;
+        if (afterNode === null) {
+          parent.append(tailMarker);
+        } else {
+          afterNode.before(tailMarker);
+        }
+        return;
+      }
+      case LIST_EMIT_TYPE_APPEND: {
+        const { oldSize } = message;
+
+        const values = untracked(list).toArraySlice(oldSize);
+
+        const parent = tailMarker.parentElement!;
+        const afterNode = tailMarker.nextSibling;
+
+        const updateContainer: ChildNode[] = [];
+
+        let i = oldSize;
+        for (const child of values) {
+          const nodes: ChildNode[] = [];
+          renderInto(nodes, child, contextStore, renderContext);
+          if (nodes.length > 0) {
+            updateContainer.push(...nodes);
+            indexedNodes[i] = nodes as NonEmptyChildNodes;
+          }
+          i++;
+        }
+
+        if (indexedNodes.length === 0) {
+          return;
+        } else {
+          if (tailMarkerIndex === -1) {
+            tailMarker.remove();
+          }
+          tailMarkerIndex = indexedNodes.length - 1;
+          tailMarker = indexedNodes[tailMarkerIndex]!.at(-1)!;
+        }
+
+        if (afterNode === null) {
+          parent.append(...updateContainer);
+        } else {
+          afterNode.before(...updateContainer);
+        }
 
         return;
       }
-      case COLLECTION_EMIT_TYPE_CLEAR:
       // TODO
       case LIST_EMIT_TYPE_REVERSE:
       // TODO: fix implementation, may require ranges to contain all nodes not just start/end
@@ -475,7 +574,7 @@ function renderAtomListInto(
       //   nodeRange.setEndAfter(tailMarker);
       //   const nodeFragment = nodeRange.extractContents();
 
-      //   const reversedNodes: Node[] = [];
+      //   const reversedNodes: ChildNode[] = [];
       //   const nodeCount = nodeFragment.childNodes.length;
       //   for (let i = nodeCount - 1; i >= 0; i--) {
       //     reversedNodes.push(nodeFragment.childNodes[i]!);
@@ -493,41 +592,51 @@ function renderAtomListInto(
       // TODO
       default: {
         // TODO: warn about fallback
-        const oldStartRange = findRangeToRight(-1, ranges);
-
-        const updateNodes: Node[] = [];
-        ranges = [];
-
-        for (const child of untracked(list)) {
-          const startNodeIndex = updateNodes.length;
-          renderInto(updateNodes, child, contextStore, renderContext);
-          const endNodeIndex = updateNodes.length - 1;
-          if (startNodeIndex === endNodeIndex) {
-            ranges.push({ start: updateNodes[startNodeIndex]! });
-          } else if (startNodeIndex < endNodeIndex) {
-            ranges.push({
-              start: updateNodes[startNodeIndex]!,
-              end: updateNodes[endNodeIndex]!,
-            });
-          } else {
-            ranges.push(undefined);
+        const nodesToRemove = [];
+        for (const nodes of indexedNodes) {
+          if (nodes !== undefined) {
+            nodesToRemove.push(...nodes);
           }
         }
+        indexedNodes.length = 0;
 
-        const oldTailMarker = tailMarker;
+        const parent = tailMarker.parentElement!;
+        const afterNode = tailMarker.nextSibling;
 
-        tailMarker = updateNodes[updateNodes.length - 1]!;
-        isTailMarkerComment = false;
-        if (tailMarker === undefined) {
-          tailMarker = document.createComment('');
-          isTailMarkerComment = true;
-          updateNodes.push(tailMarker);
+        removeNodes(nodesToRemove);
+
+        const updateContainer: ChildNode[] = [];
+
+        let i = 0;
+        for (const child of untracked(list)) {
+          const nodes: ChildNode[] = [];
+          renderInto(nodes, child, contextStore, renderContext);
+          if (nodes.length > 0) {
+            updateContainer.push(...nodes);
+            indexedNodes[i] = nodes as NonEmptyChildNodes;
+          }
+          i++;
         }
 
-        if (oldStartRange !== undefined) {
-          replaceRange(updateNodes, oldStartRange.start, oldTailMarker);
+        if (indexedNodes.length === 0) {
+          if (tailMarkerIndex === -1) {
+            return;
+          }
+          tailMarker = document.createComment('');
+          tailMarkerIndex = -1;
+          updateContainer.push(tailMarker);
         } else {
-          replaceRange(updateNodes, oldTailMarker);
+          if (tailMarkerIndex === -1) {
+            tailMarker.remove();
+          }
+          tailMarkerIndex = indexedNodes.length - 1;
+          tailMarker = indexedNodes[tailMarkerIndex]!.at(-1)!;
+        }
+
+        if (afterNode === null) {
+          parent.append(...updateContainer);
+        } else {
+          afterNode.before(...updateContainer);
         }
         return;
       }
@@ -535,89 +644,56 @@ function renderAtomListInto(
   });
 }
 
-function getRangeNodeOrFragment(range: ListItemRenderRange): Node {
-  if (range.end) {
-    const nodeRange = document.createRange();
-    nodeRange.setStartBefore(range.start);
-    nodeRange.setEndAfter(range.end);
-    return nodeRange.extractContents();
-  } else {
-    return range.start;
-  }
-}
+// TODO: move to shared package
+function assertOverride<T>(value: unknown): asserts value is T {}
 
-function findRangeToRight(
-  index: number,
-  ranges: (ListItemRenderRange | undefined)[]
-): ListItemRenderRange | undefined {
-  for (let i = index + 1; i < ranges.length; i++) {
-    const range = ranges[i];
-    if (range !== undefined) {
-      return range;
+function findIndexOfNodesToRight(
+  indexedNodes: IndexedNodes,
+  index: number
+): number {
+  for (let i = index + 1; i < indexedNodes.length; i++) {
+    const nodes = indexedNodes[i];
+    if (nodes !== undefined) {
+      return i;
     }
   }
+  return -1;
 }
 
-function findRangeToLeft(
-  index: number,
-  ranges: (ListItemRenderRange | undefined)[]
-): ListItemRenderRange | undefined {
+function findIndexOfNodesToLeft(
+  indexedNodes: IndexedNodes,
+  index: number
+): number {
   for (let i = index - 1; i >= 0; i--) {
-    const range = ranges[i];
-    if (range !== undefined) {
-      return range;
+    const nodes = indexedNodes[i];
+    if (nodes !== undefined) {
+      return i;
     }
   }
+  return -1;
 }
 
-function insertAfter(nodes: Node[], after: Node) {
-  const parent = after.parentNode;
-
-  if (parent === null) {
-    throw new Error('Expected parent for insertAfter');
-  }
-
-  const tailEndBefore = after.nextSibling;
-
-  for (const node of nodes) {
-    parent.insertBefore(node, tailEndBefore);
-  }
+function removeNodes(nodes: ChildNode[]) {
+  const fragment = document.createDocumentFragment();
+  fragment.append(...nodes);
 }
 
-function insertBefore(nodes: Node[], before: Node) {
-  const parent = before.parentNode;
-
-  if (parent === null) {
-    throw new Error('Expected parent for insertBefore');
-  }
-
-  for (const node of nodes) {
-    parent.insertBefore(node, before);
-  }
+function swapNodeLists(aNodes: NonEmptyChildNodes, bNodes: NonEmptyChildNodes) {
+  const temp = document.createComment('');
+  aNodes[0].replaceWith(temp);
+  bNodes[0].replaceWith(...aNodes);
+  temp.replaceWith(...bNodes);
 }
 
-function removeRange(rangeStartMarker: Node, rangeEndMarker?: Node) {
-  const parent = rangeStartMarker.parentNode;
-
-  if (parent === null) {
-    throw new Error('Expected parent for range');
-  }
-
-  if (rangeEndMarker === undefined) {
-    parent.removeChild(rangeStartMarker);
-    return;
-  }
-
-  const range = document.createRange();
-  range.setStartBefore(rangeStartMarker);
-  range.setEndAfter(rangeEndMarker);
-  range.deleteContents();
-}
+// function replaceChildren(parent: ParentNode, newNodes: ChildNode[]) {
+//   parent.textContent = '';
+//   parent.append(...newNodes);
+// }
 
 function replaceRange(
-  newNodes: Node[],
-  rangeStartMarker: Node,
-  rangeEndMarker?: Node
+  newNodes: [ChildNode, ...ChildNode[]],
+  rangeStartMarker: ChildNode,
+  rangeEndMarker?: ChildNode
 ) {
   const parent = rangeStartMarker.parentNode;
 
@@ -625,71 +701,28 @@ function replaceRange(
     throw new Error('Cannot replace nodes without parent');
   }
 
-  const newNodeIterator = newNodes.values();
-  let tailNode: Node = newNodeIterator.next().value;
-
   if (rangeEndMarker === undefined) {
-    parent.replaceChild(tailNode, rangeStartMarker);
-  } else {
-    const range = document.createRange();
-    range.setStartBefore(rangeStartMarker);
-    range.setEndAfter(rangeEndMarker);
-    range.deleteContents();
-    range.insertNode(tailNode);
+    rangeStartMarker.replaceWith(...newNodes);
+    return;
   }
 
-  const tailEndBefore = tailNode.nextSibling;
+  const tailEndBefore = rangeEndMarker.nextSibling;
+  const range = document.createRange();
+  range.setStartBefore(rangeStartMarker);
+  range.setEndAfter(rangeEndMarker);
+  range.deleteContents();
+  if (tailEndBefore === null) {
+    parent.append(...newNodes);
+  } else {
+    tailEndBefore.before(...newNodes);
+  }
+
   // TODO: check perf of using a DocumentFragment to insert nodes
   // append all to the fragment then insert the fragment
+  // const { length } = newNodes;
 
-  for (const node of newNodeIterator) {
-    parent.insertBefore(node, tailEndBefore);
-  }
-}
-
-function swapSiblingRanges(
-  rangeA: ListItemRenderRange,
-  rangeB: ListItemRenderRange
-) {
-  const parent = rangeA.start.parentNode;
-
-  if (parent === null) {
-    throw new Error('Cannot swap nodes without parent');
-  }
-
-  if (rangeA.end === undefined) {
-    if (rangeB.end === undefined) {
-      const temp = document.createComment('');
-
-      parent.replaceChild(temp, rangeA.start);
-      parent.replaceChild(rangeA.start, rangeB.start);
-      parent.replaceChild(rangeB.start, temp);
-    } else {
-      const nodeRangeB = document.createRange();
-      nodeRangeB.setStartBefore(rangeB.start);
-      nodeRangeB.setEndAfter(rangeB.end);
-      const fragmentB = nodeRangeB.extractContents();
-
-      parent.replaceChild(fragmentB, rangeA.start);
-      nodeRangeB.insertNode(rangeA.start);
-    }
-  } else {
-    const nodeRangeA = document.createRange();
-    nodeRangeA.setStartBefore(rangeA.start);
-    nodeRangeA.setEndAfter(rangeA.end);
-    const fragmentA = nodeRangeA.extractContents();
-
-    if (rangeB.end === undefined) {
-      parent.replaceChild(fragmentA, rangeB.start);
-      nodeRangeA.insertNode(rangeB.start);
-    } else {
-      const nodeRangeB = document.createRange();
-      nodeRangeB.setStartBefore(rangeB.start);
-      nodeRangeB.setEndAfter(rangeB.end);
-      const fragmentB = nodeRangeB.extractContents();
-
-      nodeRangeA.insertNode(fragmentB);
-      nodeRangeB.insertNode(fragmentA);
-    }
-  }
+  // while (i < length) {
+  //   parent.insertBefore(newNodes[i]!, tailEndBefore);
+  //   i++;
+  // }
 }

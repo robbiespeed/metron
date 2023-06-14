@@ -1,5 +1,5 @@
-import { createRenderContext, renderNode } from '@metron/jsx/node.js';
-import { domRenderContext } from '@metron/jsx/web-dom/render.js';
+import { createRenderContext, renderNode } from '@metron/jsx/node';
+import { domRenderContext } from '@metron/jsx/web-dom/render';
 import './style.css';
 import typescriptLogo from './typescript.svg';
 import viteLogo from '/vite.svg';

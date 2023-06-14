@@ -4,8 +4,8 @@ import type { Atom } from './particle.js';
 export const collectionKeyToValueKey = Symbol('MetronAtomCollectionKeyToValue');
 
 export const COLLECTION_EMIT_TYPE_KEY_WRITE = 'CollectionKeyWrite';
-export const COLLECTION_EMIT_TYPE_KEY_INSERT = 'CollectionKeyInsert';
-export const COLLECTION_EMIT_TYPE_KEY_REMOVE = 'CollectionKeyRemove';
+export const COLLECTION_EMIT_TYPE_KEY_ADD = 'CollectionKeyAdd';
+export const COLLECTION_EMIT_TYPE_KEY_DELETE = 'CollectionKeyDelete';
 export const COLLECTION_EMIT_TYPE_KEY_SWAP = 'CollectionKeySwap';
 export const COLLECTION_EMIT_TYPE_KEY_BATCH = 'CollectionKeyBatch';
 export const COLLECTION_EMIT_TYPE_CLEAR = 'CollectionClear';
@@ -16,15 +16,15 @@ export interface AtomCollectionEmitKeyWrite<TKey = unknown> {
   readonly size: number;
 }
 
-export interface AtomCollectionEmitKeyInsert<TKey = unknown> {
-  readonly type: typeof COLLECTION_EMIT_TYPE_KEY_INSERT;
+export interface AtomCollectionEmitKeyAdd<TKey = unknown> {
+  readonly type: typeof COLLECTION_EMIT_TYPE_KEY_ADD;
   readonly key: TKey;
   readonly size: number;
   readonly oldSize: number;
 }
 
-export interface AtomCollectionEmitKeyRemove<TKey = unknown> {
-  readonly type: typeof COLLECTION_EMIT_TYPE_KEY_REMOVE;
+export interface AtomCollectionEmitKeyDelete<TKey = unknown> {
+  readonly type: typeof COLLECTION_EMIT_TYPE_KEY_DELETE;
   readonly key: TKey;
   readonly size: number;
   readonly oldSize: number;
@@ -44,8 +44,8 @@ export interface AtomCollectionEmitClear {
 
 export interface AtomCollectionEmitMap<TKey = unknown> {
   keyWrite: AtomCollectionEmitKeyWrite<TKey>;
-  keyInsert: AtomCollectionEmitKeyInsert<TKey>;
-  keyRemove: AtomCollectionEmitKeyRemove<TKey>;
+  keyAdd: AtomCollectionEmitKeyAdd<TKey>;
+  keyDelete: AtomCollectionEmitKeyDelete<TKey>;
   keySwap: AtomCollectionEmitKeySwap<TKey>;
   clear: AtomCollectionEmitClear;
 }

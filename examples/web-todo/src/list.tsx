@@ -1,6 +1,6 @@
-import { Atom, createAtom } from '@metron/core/atom.js';
-import { untracked } from '@metron/core/particle.js';
-import { createAtomList } from '@metron/core/list.js';
+import { Atom, createAtom } from '@metron/core/atom';
+import { untracked } from '@metron/core/particle';
+import { createAtomList } from '@metron/core/list';
 import { Counter } from './counter';
 
 interface Item {

@@ -5,8 +5,8 @@ import {
   type AtomCollectionEmitMap,
   type RawAtomCollection,
   COLLECTION_EMIT_TYPE_KEY_WRITE,
-  COLLECTION_EMIT_TYPE_KEY_INSERT,
-  COLLECTION_EMIT_TYPE_KEY_REMOVE,
+  COLLECTION_EMIT_TYPE_KEY_ADD,
+  COLLECTION_EMIT_TYPE_KEY_DELETE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
 } from './collection.js';
 import { createEmitter, type Emitter } from './emitter.js';
@@ -14,9 +14,11 @@ import { filterEmitter } from './filter-emitter.js';
 import { atomIteratorKey, type AtomIterator } from './iterable.js';
 import { emitterKey, toValueKey, type Atom } from './particle.js';
 
+export const LIST_EMIT_TYPE_APPEND = 'ListAppendEmit';
 export const LIST_EMIT_TYPE_RANGE = 'ListRangeEmit';
-export const LIST_EMIT_TYPE_SORT = 'ListSortEmit';
 export const LIST_EMIT_TYPE_REVERSE = 'ListReverseEmit';
+export const LIST_EMIT_TYPE_SPLICE = 'ListSpliceEmit';
+export const LIST_EMIT_TYPE_SORT = 'ListSortEmit';
 
 interface Range {
   readonly start: number;
@@ -25,6 +27,21 @@ interface Range {
 
 export interface AtomListEmitRange extends Range {
   readonly type: typeof LIST_EMIT_TYPE_RANGE;
+  readonly size: number;
+  readonly oldSize: number;
+}
+
+export interface AtomListEmitAppend {
+  readonly type: typeof LIST_EMIT_TYPE_APPEND;
+  readonly size: number;
+  readonly oldSize: number;
+}
+
+export interface AtomListEmitSplice {
+  readonly type: typeof LIST_EMIT_TYPE_SPLICE;
+  readonly start: number;
+  readonly deleteCount: number;
+  readonly addCount: number;
   readonly size: number;
   readonly oldSize: number;
 }
@@ -41,26 +58,14 @@ export interface AtomListEmitReverse {
 }
 
 export interface AtomListEmitMap extends AtomCollectionEmitMap<number> {
+  append: AtomListEmitAppend;
   range: AtomListEmitRange;
-  sort: AtomListEmitSort;
   reverse: AtomListEmitReverse;
+  splice: AtomListEmitSplice;
+  sort: AtomListEmitSort;
 }
 
 export type AtomListEmit = AtomListEmitMap[keyof AtomListEmitMap];
-
-export type AtomListSizedEmit = AtomListEmitRange;
-
-export const ATOM_LIST_EMIT_SIZED_TYPES = {
-  [LIST_EMIT_TYPE_RANGE]: true,
-  [LIST_EMIT_TYPE_SORT]: false,
-  [LIST_EMIT_TYPE_REVERSE]: false,
-} as const;
-
-export function isAtomListSizeEmit(
-  emit: AtomListEmit
-): emit is AtomListSizedEmit {
-  return (ATOM_LIST_EMIT_SIZED_TYPES as any)[emit.type] === true;
-}
 
 const atomListBrandKey = Symbol('MetronAtomListBrand');
 
@@ -86,8 +91,8 @@ export interface AtomList<T>
 export interface RawAtomList<T> extends RawAtomCollection<T, number> {
   at(index: number): T | undefined;
   toArray(): T[];
+  toArraySlice(start?: number, end?: number): T[];
   /* TODO: Implement these methods.
-  slice(start?: number, end?: number): IterableIterator<T>;
   sliceReversed(start?: number, end?: number): IterableIterator<T>;
   entriesReversed(): IterableIterator<[number, T]>;
   keysReversed(): IterableIterator<number>;
@@ -111,8 +116,9 @@ export interface AtomListWriter<T> {
   set(index: number, value: T): T;
   swap(indexA: number, indexB: number): void;
   push(value: T): void;
-  append(...values: T[]): void;
+  append(values: T[]): void;
   insert(index: number, item: T): void;
+  delete(index: number): void;
   splice(start: number, deleteCount: number, items?: T[]): T[];
   pop(): T | undefined;
   reverse(): void;
@@ -186,19 +192,8 @@ function createAtomListWriterInternal<T>(
     },
     swap(indexA, indexB) {
       const oldSize = innerValues.length;
-      let normalizedIndexA = Math.trunc(indexA);
-      normalizedIndexA =
-        normalizedIndexA < 0 ? oldSize + normalizedIndexA : normalizedIndexA;
-      if (normalizedIndexA < 0 || normalizedIndexA >= oldSize) {
-        throw new Error(SET_INDEX_OUT_OF_BOUNDS_MESSAGE);
-      }
-
-      let normalizedIndexB = Math.trunc(indexB);
-      normalizedIndexB =
-        normalizedIndexB < 0 ? oldSize + normalizedIndexB : normalizedIndexB;
-      if (normalizedIndexB < 0 || normalizedIndexB >= oldSize) {
-        throw new Error(SET_INDEX_OUT_OF_BOUNDS_MESSAGE);
-      }
+      const normalizedIndexA = normalizeIndexStrict(indexA, oldSize);
+      const normalizedIndexB = normalizeIndexStrict(indexB, oldSize);
 
       if (normalizedIndexA === normalizedIndexB) {
         return;
@@ -218,13 +213,13 @@ function createAtomListWriterInternal<T>(
       innerValues.push(value);
       const oldSize = innerValues.length - 1;
       sendEmit({
-        type: COLLECTION_EMIT_TYPE_KEY_INSERT,
+        type: COLLECTION_EMIT_TYPE_KEY_ADD,
         key: oldSize,
         oldSize,
         size: innerValues.length,
       });
     },
-    append(...values) {
+    append(values) {
       const appendCount = values.length;
       if (appendCount === 0) {
         return;
@@ -236,14 +231,12 @@ function createAtomListWriterInternal<T>(
 
       innerValues.push(...values);
 
-      const newSize = innerValues.length;
+      const size = innerValues.length;
 
       sendEmit({
-        type: LIST_EMIT_TYPE_RANGE,
-        start: oldSize,
-        end: newSize - 1,
+        type: LIST_EMIT_TYPE_APPEND,
         oldSize,
-        size: newSize,
+        size,
       });
     },
     insert(index, item) {
@@ -257,23 +250,46 @@ function createAtomListWriterInternal<T>(
       const newSize = innerValues.length;
 
       sendEmit({
-        type: LIST_EMIT_TYPE_RANGE,
-        start: index,
-        end: newSize - 1,
+        type: COLLECTION_EMIT_TYPE_KEY_ADD,
+        key: index,
         oldSize,
         size: newSize,
       });
     },
-    splice(start, deleteCount, items = []) {
+    delete(index) {
       const oldSize = innerValues.length;
-      const deletedItems = innerValues.splice(start, deleteCount, ...items);
-      const newSize = innerValues.length;
+      const normalizedIndex = normalizeIndex(index, oldSize);
+      if (normalizedIndex === undefined) {
+        return false;
+      }
+      if (index === oldSize - 1) {
+        innerValues.pop()!;
+      } else {
+        innerValues.splice(normalizedIndex, 1) as [T];
+      }
+      const size = innerValues.length;
+
       sendEmit({
-        type: LIST_EMIT_TYPE_RANGE,
-        start: start,
-        end: newSize - 1,
+        type: COLLECTION_EMIT_TYPE_KEY_DELETE,
+        key: index,
         oldSize,
-        size: newSize,
+        size,
+      });
+
+      return true;
+    },
+    splice(start, deleteCount, [...values] = []) {
+      const oldSize = innerValues.length;
+      const deletedItems = innerValues.splice(start, deleteCount, ...values);
+      const size = innerValues.length;
+      const addCount = values.length;
+      sendEmit({
+        type: LIST_EMIT_TYPE_SPLICE,
+        start: start,
+        deleteCount: Math.trunc(size - oldSize - addCount),
+        addCount,
+        oldSize,
+        size,
       });
       return deletedItems;
     },
@@ -287,7 +303,7 @@ function createAtomListWriterInternal<T>(
       const deletedItem = innerValues.pop();
 
       sendEmit({
-        type: COLLECTION_EMIT_TYPE_KEY_REMOVE,
+        type: COLLECTION_EMIT_TYPE_KEY_DELETE,
         key: oldSize,
         oldSize,
         size: innerValues.length,
@@ -383,6 +399,9 @@ function createRawAtomList<T>(innerValues: T[]): RawAtomList<T> {
     },
     at: rawAt,
     [collectionKeyToValueKey]: rawAt,
+    toArraySlice(start, end) {
+      return innerValues.slice(start, end);
+    },
     toArray() {
       return innerValues.slice();
     },
@@ -432,6 +451,9 @@ function createMappedRawAtomList<T, U>(
     [collectionKeyToValueKey]: rawAt,
     toArray() {
       return rawList.toArray().map(mapper);
+    },
+    toArraySlice(start, end) {
+      return rawList.toArraySlice(start, end).map(mapper);
     },
     [Symbol.iterator]: values,
     *entries() {
@@ -493,8 +515,8 @@ function createAtomKeyGetter<T>(
         return;
       }
       case COLLECTION_EMIT_TYPE_KEY_WRITE:
-      case COLLECTION_EMIT_TYPE_KEY_INSERT:
-      case COLLECTION_EMIT_TYPE_KEY_REMOVE: {
+      case COLLECTION_EMIT_TYPE_KEY_ADD:
+      case COLLECTION_EMIT_TYPE_KEY_DELETE: {
         const { key } = message;
         keyEmitSenders[key]?.();
         keyEmitSenders[key - message.size]?.();
@@ -546,6 +568,26 @@ function createAtomKeyGetter<T>(
 
     return atom;
   };
+}
+
+function normalizeIndexStrict(index: number, size: number): number {
+  let normalizedIndex = Math.trunc(index);
+  normalizedIndex =
+    normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
+  if (normalizedIndex < 0 || normalizedIndex >= size) {
+    throw new Error(SET_INDEX_OUT_OF_BOUNDS_MESSAGE);
+  }
+  return normalizedIndex;
+}
+
+function normalizeIndex(index: number, size: number): number | undefined {
+  let normalizedIndex = Math.trunc(index);
+  normalizedIndex =
+    normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
+  if (normalizedIndex < 0 || normalizedIndex >= size) {
+    return undefined;
+  }
+  return normalizedIndex;
 }
 
 function checkBounds(
