@@ -74,22 +74,26 @@ export interface RenderContext<
   TRootProps extends JsxProps = JsxProps,
   TRendered = unknown
 > {
-  renderRoot(props: TRootProps, contextStore: ComponentContextStore): void;
+  renderRoot(props: TRootProps, contextStore: ComponentContextStore): TRendered;
   renderComponent(
     node: JsxComponentNode,
-    contextStore: ComponentContextStore
+    contextStore: ComponentContextStore,
+    isOnlyChild: boolean
   ): TRendered;
   renderFragment(
     node: JsxFragmentNode,
-    contextStore: ComponentContextStore
+    contextStore: ComponentContextStore,
+    isOnlyChild: boolean
   ): TRendered;
   renderIntrinsic(
     node: JsxIntrinsicNode,
-    contextStore: ComponentContextStore
+    contextStore: ComponentContextStore,
+    isOnlyChild: boolean
   ): TRendered;
   renderUnknown(
     element: unknown,
-    contextStore: ComponentContextStore
+    contextStore: ComponentContextStore,
+    isOnlyChild: boolean
   ): TRendered;
   // moveOther
   // moveComponent
@@ -163,18 +167,31 @@ export function renderNode<
 >(
   element: JsxNode,
   contextStore: ComponentContextStore = {},
-  renderContext?: TRenderContext
+  renderContext?: TRenderContext,
+  isOnlyChild = false
 ): undefined | TReturn {
   let childContextStore = contextStore;
   switch (element.nodeType) {
     case NODE_TYPE_COMPONENT: {
-      return renderContext?.renderComponent(element, contextStore) as TReturn;
+      return renderContext?.renderComponent(
+        element,
+        contextStore,
+        isOnlyChild
+      ) as TReturn;
     }
     case NODE_TYPE_FRAGMENT: {
-      return renderContext?.renderFragment(element, contextStore) as TReturn;
+      return renderContext?.renderFragment(
+        element,
+        contextStore,
+        isOnlyChild
+      ) as TReturn;
     }
     case NODE_TYPE_INTRINSIC: {
-      return renderContext?.renderIntrinsic(element, contextStore) as TReturn;
+      return renderContext?.renderIntrinsic(
+        element,
+        contextStore,
+        isOnlyChild
+      ) as TReturn;
     }
     case NODE_TYPE_CONTEXT_PROVIDER: {
       childContextStore = {
@@ -183,7 +200,8 @@ export function renderNode<
       };
       return renderContext?.renderUnknown(
         element.children,
-        childContextStore
+        childContextStore,
+        isOnlyChild
       ) as TReturn;
     }
     case NODE_TYPE_RENDER_CONTEXT: {

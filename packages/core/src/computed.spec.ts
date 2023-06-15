@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { createComputed } from './computed.js';
 import { createSensor } from './sensor.js';
 import { emitterKey, untracked } from './particle.js';
-import type { Emitter, EmitterCallback } from './emitter.js';
+import type { Emitter, EmitHandler } from './emitter.js';
 import { garbageCollect } from '@metron/test-utils';
 
 describe('core: Computed', () => {
@@ -37,7 +37,7 @@ describe('core: Computed', () => {
   });
   function createWeakComputed() {
     let subCount = 0;
-    let emitterCallback: EmitterCallback<undefined> | undefined;
+    let emitterCallback: EmitHandler<undefined> | undefined;
     const emitter: Emitter<undefined> = (cb) => {
       subCount++;
       emitterCallback = cb;

@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { createDerived } from './derived.js';
 import { createSensor } from './sensor.js';
 import { emitterKey, untracked } from './particle.js';
-import type { Emitter, EmitterCallback } from './emitter.js';
+import type { Emitter, EmitHandler } from './emitter.js';
 import { garbageCollect } from '@metron/test-utils';
 
 describe('core: Derived', () => {
@@ -36,7 +36,7 @@ describe('core: Derived', () => {
   });
   function createWeakDerived() {
     let subCount = 0;
-    let emitterCallback: EmitterCallback<undefined> | undefined;
+    let emitterCallback: EmitHandler<undefined> | undefined;
     const emitter: Emitter<undefined> = (cb) => {
       subCount++;
       emitterCallback = cb;

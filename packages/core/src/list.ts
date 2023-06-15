@@ -475,14 +475,20 @@ function createAtomKeyGetter<T>(
   const weakAtoms: { [key: number]: WeakRef<Atom<T | undefined>> } = {};
   const keyEmitSenders: { [key: number]: () => void } = {};
   let weakAtomCount = 0;
+  let listEmitTerminator: undefined | (() => void);
 
   const finalizationRegistry = new FinalizationRegistry((index: number) => {
     delete keyEmitSenders[index];
     delete weakAtoms[index];
     weakAtomCount--;
+
+    if (weakAtomCount < 1) {
+      listEmitTerminator?.();
+      listEmitTerminator = undefined;
+    }
   });
 
-  listEmitter((message) => {
+  const emitHandler = (message: AtomListEmit) => {
     if (weakAtomCount === 0) {
       return;
     }
@@ -543,7 +549,7 @@ function createAtomKeyGetter<T>(
         throw new Error('Unhandled emit', { cause: message });
       }
     }
-  });
+  };
 
   return function getKeyedParticle(key: number) {
     const weakAtom = weakAtoms[key];
@@ -561,6 +567,10 @@ function createAtomKeyGetter<T>(
       const freshWeakAtom = new WeakRef(atom);
 
       finalizationRegistry.register(atom, key);
+
+      if (listEmitTerminator === undefined) {
+        listEmitTerminator = listEmitter(emitHandler);
+      }
 
       weakAtoms[key] = freshWeakAtom;
       weakAtomCount++;

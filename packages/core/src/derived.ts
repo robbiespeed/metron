@@ -1,6 +1,6 @@
 import type { Atom } from './atom.js';
+import { createEmitter } from './emitter.js';
 import { emitterKey, toValueKey, type MaybeAtomParticle } from './particle.js';
-import { createSensor } from './sensor.js';
 
 export interface DerivedAtom<T> extends Atom<T> {
   readonly cachedValue: T | undefined;
@@ -21,11 +21,17 @@ const dependencyCleanupRegistry = new FinalizationRegistry(
   }
 );
 
+// const derivedSendKey = Symbol('MetronDerivedEmitterSend');
+
 export function createDerived<const D extends readonly MaybeAtomParticle[], T>(
   dependencies: D,
   derive: (...values: ExtractParticleValues<D>) => T
 ): DerivedAtom<T> {
-  const { [emitterKey]: emitter, send } = createSensor();
+  const [emitter, send] = createEmitter();
+
+  // (emitter as any)[derivedSendKey] = send;
+
+  // const weakEmitter = new WeakRef<any>(emitter);
 
   let cachedValue: T | undefined;
   let isCacheInvalid = true;
@@ -33,6 +39,7 @@ export function createDerived<const D extends readonly MaybeAtomParticle[], T>(
   const triggerChange = () => {
     cachedValue = undefined;
     isCacheInvalid = true;
+    // weakEmitter.deref()?.[derivedSendKey]();
     send();
   };
 
@@ -51,7 +58,7 @@ export function createDerived<const D extends readonly MaybeAtomParticle[], T>(
     return cachedValue as T;
   }
 
-  dependencyCleanupRegistry.register(emitter, terminators);
+  dependencyCleanupRegistry.register(getValue, terminators);
 
   return {
     get isCacheValid() {
