@@ -16,7 +16,6 @@ import {
   isAtomList,
   LIST_EMIT_TYPE_REVERSE,
   LIST_EMIT_TYPE_SORT,
-  LIST_EMIT_TYPE_RANGE,
   LIST_EMIT_TYPE_APPEND,
 } from '@metron/core/list';
 
@@ -204,8 +203,9 @@ export const domRenderContext: DomRenderContext = {
             })
           );
         } else {
-          if (value !== undefined) {
-            renderedElement.setAttribute(key, String(untracked(value)));
+          const firstValue = untracked(value);
+          if (firstValue !== undefined) {
+            renderedElement.setAttribute(key, String(firstValue));
           }
 
           disposers.push(
@@ -318,6 +318,7 @@ function renderAtomInto(
       renderContext,
       isOnlyChild
     );
+    return;
   }
 
   const firstValue = untracked(atom);
@@ -806,7 +807,7 @@ function renderAtomListInto(
         // }
         case LIST_EMIT_TYPE_SORT:
         // TODO: May need ranges to contain all nodes not just start/end
-        case LIST_EMIT_TYPE_RANGE:
+        // case LIST_EMIT_TYPE_RANGE:
         // TODO
         default: {
           // TODO: warn about fallback

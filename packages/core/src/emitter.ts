@@ -8,22 +8,37 @@ export interface Emitter<TEmitData = unknown> extends Particle<TEmitData> {
 
 // const NO_OP_TERMINATOR = () => {};
 
+// TODO: store handlers in ({ handler })[] terminator sets handler to undefined. Then scheduled cleanup task with requestIdle or setTimeout removes all empty handlers
+
+declare const window: {
+  requestIdleCallback(
+    callback: () => void,
+    options?: { timeout: number }
+  ): number;
+};
+
 export function createEmitter(): [Emitter<undefined>, () => void];
 export function createEmitter<TEmitData>(): [
   Emitter<TEmitData>,
   (message: TEmitData) => void
 ];
 export function createEmitter(): [Emitter, (message: unknown) => void] {
-  const handlers = new Map<() => void, EmitHandler<unknown>>();
+  let handlers: { handler?: EmitHandler<unknown> }[] = [];
+  // const handlersOld = new Map<() => void, EmitHandler<unknown>>();
   // const weakHandlers = new WeakRef(handlers);
 
   function send(data: unknown) {
-    for (const callback of handlers.values()) {
-      callback(data);
+    for (const { handler } of handlers) {
+      handler?.(data);
     }
   }
 
-  function emitter(callback: EmitHandler<unknown>) {
+  let cleanId: number | undefined;
+  function clean() {
+    handlers = handlers.filter((h) => h.handler !== undefined);
+  }
+
+  function emitter(handler: EmitHandler<unknown>) {
     // const handlersMaybe = weakHandlers.deref();
 
     // if (handlersMaybe === undefined) {
@@ -36,11 +51,16 @@ export function createEmitter(): [Emitter, (message: unknown) => void] {
 
     // handlersMaybe.set(terminator, callback);
 
+    const handlerWrapper: { handler?: EmitHandler<unknown> } = { handler };
+
     const terminator = () => {
-      handlers.delete(terminator);
+      handlerWrapper.handler = undefined;
+      if (cleanId === undefined) {
+        cleanId = window.requestIdleCallback(clean);
+      }
     };
 
-    handlers.set(terminator, callback);
+    handlers.push(handlerWrapper);
 
     return terminator;
   }
