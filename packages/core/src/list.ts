@@ -64,7 +64,7 @@ export interface AtomList<T>
   extends AtomCollection<T, number, RawAtomList<T>, AtomListEmitMap> {
   readonly [atomListBrandKey]: true;
   at(index: number): Atom<T | undefined>;
-  map<U>(callback: (value: T, index: number) => U): AtomList<U>;
+  map<U>(callback: (value: T) => U, isDeffered?: boolean): AtomList<U>;
   /* TODO: Implement these methods.
   reversed(): DerivedAtomList<T>;
   slice(start?: number, end?: number): DerivedAtomList<T>;
@@ -167,11 +167,19 @@ function createAtomListWriterInternal<T>(
     },
     swap(indexA, indexB) {
       const oldSize = innerValues.length;
-      const normalizedIndexA = normalizeIndexStrict(indexA, oldSize);
-      const normalizedIndexB = normalizeIndexStrict(indexB, oldSize);
+      let normalizedIndexA = normalizeIndexStrict(indexA, oldSize);
+      let normalizedIndexB = normalizeIndexStrict(indexB, oldSize);
 
       if (normalizedIndexA === normalizedIndexB) {
         return;
+      }
+
+      if (normalizedIndexA > normalizedIndexB) {
+        // Normalize so that a < b
+        [normalizedIndexA, normalizedIndexB] = [
+          normalizedIndexB,
+          normalizedIndexA,
+        ];
       }
 
       const temp = innerValues[normalizedIndexA];
@@ -529,7 +537,7 @@ function createAtomKeyGetter<T>(
       };
       const freshWeakAtom = new WeakRef(atom);
 
-      finalizationRegistry.register(atom, key);
+      finalizationRegistry.register(keyEmitter, key);
 
       if (listEmitTerminator === undefined) {
         listEmitTerminator = listEmitter(emitHandler);
@@ -614,8 +622,11 @@ function createAtomListInternal<T>(
     [atomIteratorKey]() {
       return iteratorAtom;
     },
-    map(mapper) {
-      return createMappedAtomList(list, innerValues, mapper);
+    map(mapper, isDeffered) {
+      if (isDeffered) {
+        return createMappedAtomListDeffered(list, innerValues, mapper);
+      }
+      return createMappedAtomListImmidiate(list, innerValues, mapper);
     },
     entries() {
       return entriesIteratorAtom;
@@ -681,10 +692,10 @@ function createMappedRawAtomList<T, U>(
 
 const mapCacheInvalidKey = Symbol('MetronAtomListMapCacheInvalid');
 
-function createMappedAtomList<T, U>(
+function createMappedAtomListDeffered<T, U>(
   originalList: AtomList<T>,
   originalValues: T[],
-  mapper: (value: T, index: number) => U
+  mapper: (value: T) => U
 ): AtomList<U> {
   const cacheValues: (U | typeof mapCacheInvalidKey)[] = [];
 
@@ -693,7 +704,7 @@ function createMappedAtomList<T, U>(
       return value;
     }
 
-    const mappedValue = mapper(originalValues[index]!, index);
+    const mappedValue = mapper(originalValues[index]!);
     cacheValues[index] = mappedValue;
     return mappedValue;
   }
@@ -799,10 +810,8 @@ function createMappedAtomList<T, U>(
     return getKeyedParticle(Math.trunc(index));
   }
 
-  function nestMapper<V>(
-    nestedMapped: (value: U, index: number) => V
-  ): (value: T, index: number) => V {
-    return (value, index) => nestedMapped(mapper(value, index), index);
+  function nestMapper<V>(nestedMapped: (value: U) => V): (value: T) => V {
+    return (value) => nestedMapped(mapper(value));
   }
 
   const list: AtomList<U> = {
@@ -819,8 +828,176 @@ function createMappedAtomList<T, U>(
     [atomIteratorKey]() {
       return iteratorAtom;
     },
-    map(mapper) {
-      return createMappedAtomList(
+    map(mapper, isDeffered) {
+      if (isDeffered) {
+        return createMappedAtomListDeffered(
+          originalList,
+          originalValues,
+          nestMapper(mapper)
+        );
+      }
+      return createMappedAtomListImmidiate(
+        originalList,
+        originalValues,
+        nestMapper(mapper)
+      );
+    },
+    entries() {
+      return entriesIteratorAtom;
+    },
+    keys() {
+      return keysIteratorAtom;
+    },
+    values() {
+      return iteratorAtom;
+    },
+  };
+
+  return list;
+}
+
+function createMappedAtomListImmidiate<T, U>(
+  originalList: AtomList<T>,
+  originalValues: T[],
+  mapper: (value: T) => U
+): AtomList<U> {
+  const mappedValues: U[] = originalValues.map(mapper);
+
+  function handleChange(message: AtomListEmit) {
+    switch (message.type) {
+      case COLLECTION_EMIT_TYPE_CLEAR: {
+        mappedValues.length = 0;
+        return;
+      }
+      case COLLECTION_EMIT_TYPE_KEY_ADD: {
+        const { key, oldSize } = message;
+
+        if (key === oldSize) {
+          mappedValues.push(mapper(originalValues[key]!));
+        } else {
+          mappedValues.splice(key, 0, mapper(originalValues[key]!));
+        }
+        return;
+      }
+      case COLLECTION_EMIT_TYPE_KEY_DELETE: {
+        const { key, size } = message;
+
+        if (key === size) {
+          mappedValues.length = size;
+        } else {
+          mappedValues.splice(key, 1);
+        }
+        return;
+      }
+      case COLLECTION_EMIT_TYPE_KEY_SWAP: {
+        const [keyA, keyB] = message.keySwap;
+        const tmp = mappedValues[keyA]!;
+        mappedValues[keyA] = mappedValues[keyB]!;
+        mappedValues[keyB] = tmp;
+        return;
+      }
+      case COLLECTION_EMIT_TYPE_KEY_WRITE: {
+        const { key } = message;
+        mappedValues[key] = mapper(originalValues[key]!);
+        return;
+      }
+      case LIST_EMIT_TYPE_APPEND: {
+        const { size, oldSize } = message;
+        const newValues: U[] = [];
+        for (let i = oldSize; i < size; i++) {
+          newValues.push(mapper(originalValues[i]!));
+        }
+        mappedValues.push(...newValues);
+        return;
+      }
+      case LIST_EMIT_TYPE_REVERSE: {
+        mappedValues.reverse();
+        return;
+      }
+      case LIST_EMIT_TYPE_SORT: {
+        const { sortMap } = message;
+        const tmpCacheValues = mappedValues.slice();
+        for (const [index, oldIndex] of sortMap.entries()) {
+          mappedValues[index] = tmpCacheValues[oldIndex]!;
+        }
+        return;
+      }
+      case LIST_EMIT_TYPE_SPLICE: {
+        const { start, deleteCount, addCount } = message;
+        if (addCount === 0) {
+          mappedValues.splice(start, deleteCount);
+        } else {
+          const adds: U[] = [];
+          const addEnd = start + addCount;
+          for (let i = start; i < addEnd; i++) {
+            adds.push(mapper(originalValues[i]!));
+          }
+          mappedValues.splice(start, deleteCount, ...adds);
+        }
+        return;
+      }
+      default: {
+        throw new Error('Unhandled emit', { cause: message });
+      }
+    }
+  }
+
+  const listEmitter = originalList[emitterKey];
+  const sizeAtom = originalList.size;
+
+  // TODO: use cleanup register with mappedRawAtomList as target and terminator as value
+  originalList[emitterKey](handleChange);
+
+  const rawList = createRawAtomList(mappedValues);
+
+  const getKeyedParticle = createAtomKeyGetter(listEmitter, rawList.at);
+
+  const iteratorAtom: AtomIterator<U, AtomListEmit> = {
+    [toValueKey]: rawList.values,
+    [emitterKey]: listEmitter,
+  };
+
+  const entriesIteratorAtom: AtomIterator<[number, U], AtomListEmit> = {
+    [toValueKey]: rawList.entries,
+    [emitterKey]: listEmitter,
+  };
+
+  const keysIteratorAtom: AtomIterator<number, AtomListEmit> = {
+    [toValueKey]: rawList.keys,
+    [emitterKey]: listEmitter,
+  };
+
+  function at(index: number) {
+    return getKeyedParticle(Math.trunc(index));
+  }
+
+  function nestMapper<V>(nestedMapped: (value: U) => V): (value: T) => V {
+    return (value) => nestedMapped(mapper(value));
+  }
+
+  const list: AtomList<U> = {
+    [atomListBrandKey]: true,
+    [collectionKeyToValueKey]: at,
+    at,
+    get size() {
+      return sizeAtom;
+    },
+    [toValueKey]() {
+      return rawList;
+    },
+    [emitterKey]: listEmitter,
+    [atomIteratorKey]() {
+      return iteratorAtom;
+    },
+    map(mapper, isDeffered) {
+      if (isDeffered) {
+        return createMappedAtomListDeffered(
+          originalList,
+          originalValues,
+          nestMapper(mapper)
+        );
+      }
+      return createMappedAtomListImmidiate(
         originalList,
         originalValues,
         nestMapper(mapper)

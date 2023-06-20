@@ -64,11 +64,12 @@ export function createEmitter(): [Emitter, (message: unknown) => void] {
 
     return terminator;
   }
-  Object.defineProperty(emitter, emitterKey, {
-    get(this: Emitter) {
-      return this;
-    },
-  });
+  (emitter as any)[emitterKey] = emitter;
+  // Object.defineProperty(emitter, emitterKey, {
+  //   get(this: Emitter) {
+  //     return this;
+  //   },
+  // });
 
   return [emitter as Emitter, send];
 }
