@@ -161,7 +161,7 @@ export const domRenderContext: DomRenderContext = {
   },
   renderIntrinsic(element, contextStore) {
     const { tag, props } = element;
-    const { children, ...restProps } = props;
+    const { children, ...restProps } = props as Record<string, unknown>;
 
     const renderedElement = document.createElement(tag);
 

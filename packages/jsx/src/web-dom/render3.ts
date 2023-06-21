@@ -66,6 +66,9 @@ export function render(
 }
 
 const jsxRender: JsxRender = {
+  Raw() {
+    throw new Error('Not Implemented');
+  },
   [NODE_TYPE_COMPONENT](
     parent,
     nodeContainer,
@@ -114,7 +117,7 @@ const jsxRender: JsxRender = {
     contextStore,
     isOnlyChild
   ) {
-    const { children, ...props } = intrinsic.props;
+    const { children, ...props } = intrinsic.props as Record<string, unknown>;
 
     const element = document.createElement(intrinsic.tag);
 
@@ -331,7 +334,7 @@ function renderOnlyChildAtomListInto(
     }
   }
 
-  const listEmitTerminator = list[emitterKey](() => {
+  const listEmitDisposer = list[emitterKey](() => {
     const newValues = rawList.toArray();
     const newValueIndexes = new Map<unknown, number>();
     const newIndexedNodes = [];
@@ -402,7 +405,7 @@ function renderOnlyChildAtomListInto(
   });
 
   disposerContainer.push(() => {
-    listEmitTerminator();
+    listEmitDisposer();
     for (const possibleDisposers of indexedDisposers) {
       if (possibleDisposers !== undefined) {
         dispose(possibleDisposers);

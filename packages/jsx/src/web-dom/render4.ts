@@ -49,8 +49,8 @@ type JsxRender = {
   ) => void;
 };
 
-const EVENT_HANDLER_PREFIX = 'on:';
-const EVENT_HANDLER_PREFIX_LENGTH = EVENT_HANDLER_PREFIX.length;
+export const EVENT_HANDLER_PREFIX = 'on:';
+export const EVENT_HANDLER_PREFIX_LENGTH = EVENT_HANDLER_PREFIX.length;
 
 export function render(
   { root, children }: DomRenderContextProps,
@@ -125,7 +125,7 @@ const jsxRender: JsxRender = {
     contextStore,
     isOnlyChild
   ) {
-    const { children, ...props } = intrinsic.props;
+    const { children, ...props } = intrinsic.props as Record<string, unknown>;
 
     const element = document.createElement(intrinsic.tag);
 
@@ -137,10 +137,9 @@ const jsxRender: JsxRender = {
           const eventName = key.slice(EVENT_HANDLER_PREFIX_LENGTH);
 
           let eventHandler = untracked(value);
+          // TODO: don't check typeof instead rely on intrinsic types to be correct
           if (typeof eventHandler === 'function') {
             element.addEventListener(eventName, eventHandler as () => void);
-          } else if (eventHandler !== undefined) {
-            throw new TypeError('Event handler must be a function');
           }
 
           disposerContainer.push(
@@ -154,15 +153,15 @@ const jsxRender: JsxRender = {
 
               eventHandler = untracked(value);
               if (typeof eventHandler === 'function') {
+                // TODO: don't check typeof instead rely on intrinsic types to be correct
                 element.addEventListener(eventName, eventHandler as () => void);
-              } else if (eventHandler !== undefined) {
-                throw new TypeError('Event handler must be a function');
               }
             })
           );
         } else {
           const firstValue = untracked(value);
           if (firstValue !== undefined) {
+            // TODO: don't cast to string instead make Intrinsic Dom types opnly allow string
             element.setAttribute(key, String(firstValue));
           }
 
@@ -172,6 +171,7 @@ const jsxRender: JsxRender = {
               if (newValue === undefined) {
                 element.removeAttribute(key);
               } else {
+                // TODO: don't cast to string instead make Intrinsic Dom types opnly allow string
                 element.setAttribute(key, String(newValue));
               }
             })
@@ -185,6 +185,7 @@ const jsxRender: JsxRender = {
           throw new TypeError('Event handler must be a function');
         }
       } else if (value !== undefined) {
+        // TODO: don't cast to string instead make Intrinsic Dom types opnly allow string
         element.setAttribute(key, String(value));
       }
     }
@@ -202,24 +203,18 @@ const jsxRender: JsxRender = {
 
     element.append(...childNodeContainer);
   },
-  [NODE_TYPE_CONTEXT_PROVIDER](
-    parent,
-    nodeContainer,
-    disposerContainer,
-    intrinsic,
-    contextStore,
-    isOnlyChild
-  ) {
+  [NODE_TYPE_CONTEXT_PROVIDER]() {
     throw new Error('Not Implemented');
   },
-  [NODE_TYPE_RENDER_CONTEXT](
-    parent,
-    nodeContainer,
-    disposerContainer,
-    intrinsic,
-    contextStore,
-    isOnlyChild
-  ) {
+  Raw(parent, nodeContainer, disposerContainer, { value, disposer }) {
+    if (disposer !== undefined) {
+      disposerContainer.push(disposer);
+    }
+    if (value instanceof Element) {
+      nodeContainer.push(value);
+    }
+  },
+  [NODE_TYPE_RENDER_CONTEXT]() {
     throw new Error('Not Implemented');
   },
 };
@@ -348,7 +343,7 @@ function renderOnlyChildAtomListInto(
     nodeContainer.push(...childNodeContainer);
   }
 
-  const listEmitTerminator = list[emitterKey]((message) => {
+  const listEmitDisposer = list[emitterKey]((message) => {
     switch (message.type) {
       case COLLECTION_EMIT_TYPE_CLEAR: {
         const oldIndexedDisposers = indexedDisposers.slice();
@@ -606,7 +601,7 @@ function renderOnlyChildAtomListInto(
   });
 
   disposerContainer.push(() => {
-    listEmitTerminator();
+    listEmitDisposer();
     disposeIndexed(indexedDisposers);
   });
 }

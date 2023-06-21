@@ -28,6 +28,12 @@ export interface JsxIntrinsicNode extends JsxBaseNode {
   readonly tag: string;
 }
 
+export interface JsxRawNode extends JsxBaseNode {
+  readonly nodeType: typeof NODE_TYPE_RAW;
+  readonly value: unknown;
+  readonly disposer?: () => void;
+}
+
 export interface JsxRenderContextNode extends JsxBaseNode {
   readonly nodeType: typeof NODE_TYPE_RENDER_CONTEXT;
   readonly renderContextKey: symbol;
@@ -39,11 +45,13 @@ export type JsxNode =
   | JsxContextProviderNode
   | JsxFragmentNode
   | JsxIntrinsicNode
+  | JsxRawNode
   | JsxRenderContextNode;
 
-export interface JsxProps {
-  readonly [key: string]: unknown;
-}
+// export interface JsxProps {
+//   readonly [key: string]: unknown;
+// }
+export type JsxProps = object;
 
 export interface ComponentContextStore {
   readonly [key: string]: unknown;
@@ -104,6 +112,7 @@ export const NODE_TYPE_COMPONENT = 'Component';
 export const NODE_TYPE_CONTEXT_PROVIDER = 'ContextProvider';
 export const NODE_TYPE_FRAGMENT = 'Fragment';
 export const NODE_TYPE_INTRINSIC = 'Intrinsic';
+export const NODE_TYPE_RAW = 'Raw';
 export const NODE_TYPE_RENDER_CONTEXT = 'RenderContext';
 
 export const nodeBrandKey = Symbol('MetronJSXNodeBrand');

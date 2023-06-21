@@ -36,16 +36,18 @@ declare namespace JSX {
 
 export type { JSX };
 
-export const Fragment = createStaticComponent(({ children }) => {
-  if (isJsxNode(children)) {
-    return children;
+export const Fragment = createStaticComponent<{ children?: unknown[] }>(
+  ({ children }) => {
+    if (isJsxNode(children)) {
+      return children;
+    }
+    return {
+      [nodeBrandKey]: true,
+      nodeType: NODE_TYPE_FRAGMENT,
+      children,
+    } as const;
   }
-  return {
-    [nodeBrandKey]: true,
-    nodeType: NODE_TYPE_FRAGMENT,
-    children,
-  } as const;
-});
+);
 
 export type PropsFromTag<TTag extends JSX.ElementType> = TTag extends string
   ? JSX.IntrinsicElements[TTag]

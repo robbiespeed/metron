@@ -1,15 +1,15 @@
 import { emitterKey, type Particle } from './particle.js';
 
+export interface Disposer {
+  (): void;
+}
 export type EmitHandler<TEmitData> = (data: TEmitData) => void;
 
 export interface Emitter<TEmitData = unknown> extends Particle<TEmitData> {
-  (callback: EmitHandler<TEmitData>): () => void;
+  (callback: EmitHandler<TEmitData>): Disposer;
 }
 
-// const NO_OP_TERMINATOR = () => {};
-
-// TODO: store handlers in ({ handler })[] terminator sets handler to undefined. Then scheduled cleanup task with requestIdle or setTimeout removes all empty handlers
-
+// TODO: make this platform agnostic
 declare const window: {
   requestIdleCallback(
     callback: () => void,
@@ -24,8 +24,6 @@ export function createEmitter<TEmitData>(): [
 ];
 export function createEmitter(): [Emitter, (message: unknown) => void] {
   let handlers: { handler?: EmitHandler<unknown> }[] = [];
-  // const handlersOld = new Map<() => void, EmitHandler<unknown>>();
-  // const weakHandlers = new WeakRef(handlers);
 
   function send(data: unknown) {
     for (const { handler } of handlers) {
@@ -39,21 +37,9 @@ export function createEmitter(): [Emitter, (message: unknown) => void] {
   }
 
   function emitter(handler: EmitHandler<unknown>) {
-    // const handlersMaybe = weakHandlers.deref();
-
-    // if (handlersMaybe === undefined) {
-    //   return NO_OP_TERMINATOR;
-    // }
-
-    // const terminator = () => {
-    //   weakHandlers.deref()?.delete(terminator);
-    // };
-
-    // handlersMaybe.set(terminator, callback);
-
     const handlerWrapper: { handler?: EmitHandler<unknown> } = { handler };
 
-    const terminator = () => {
+    const disposer = () => {
       handlerWrapper.handler = undefined;
       if (cleanId === undefined) {
         cleanId = window.requestIdleCallback(clean);
@@ -62,14 +48,9 @@ export function createEmitter(): [Emitter, (message: unknown) => void] {
 
     handlers.push(handlerWrapper);
 
-    return terminator;
+    return disposer;
   }
   (emitter as any)[emitterKey] = emitter;
-  // Object.defineProperty(emitter, emitterKey, {
-  //   get(this: Emitter) {
-  //     return this;
-  //   },
-  // });
 
   return [emitter as Emitter, send];
 }
