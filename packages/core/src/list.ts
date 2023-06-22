@@ -9,6 +9,7 @@ import {
   COLLECTION_EMIT_TYPE_KEY_DELETE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
 } from './collection.js';
+import { autoDisposeRegistry } from './effect.js';
 import { createEmitter, type Emitter } from './emitter.js';
 import { filterEmitter } from './filter-emitter.js';
 import { atomIteratorKey, type AtomIterator } from './iterable.js';
@@ -64,11 +65,17 @@ export interface AtomList<T>
   extends AtomCollection<T, number, RawAtomList<T>, AtomListEmitMap> {
   readonly [atomListBrandKey]: true;
   at(index: number): Atom<T | undefined>;
-  map<U>(callback: (value: T) => U, isDeffered?: boolean): AtomList<U>;
+  map<U>(
+    callback: (value: T) => U,
+    type?: 'immediate' | 'deferred' | 'forgetful'
+  ): AtomList<U>;
   /* TODO: Implement these methods.
-  reversed(): DerivedAtomList<T>;
-  slice(start?: number, end?: number): DerivedAtomList<T>;
-  sliceReversed(start?: number, end?: number): DerivedAtomList<T>;
+  sorted(): AtomList<T>;
+  reversed(): AtomList<T>;
+  slice(start?: number, end?: number): AtomList<T>;
+  sliceReversed(start?: number, end?: number): AtomList<T>;
+  */
+  /* What would a AtomIterator do?
   entriesReversed(): AtomIterator<[number, T]>;
   keysReversed(): AtomIterator<number>;
   valuesReversed(): AtomIterator<T>;
@@ -80,22 +87,11 @@ export interface RawAtomList<T> extends RawAtomCollection<T, number> {
   toArray(): T[];
   toArraySlice(start?: number, end?: number): T[];
   /* TODO: Implement these methods.
-  sliceReversed(start?: number, end?: number): IterableIterator<T>;
+  valuesRange(start?: number, end?: number): IterableIterator<T>;
+  valuesRangeReversed(start?: number, end?: number): IterableIterator<T>;
   entriesReversed(): IterableIterator<[number, T]>;
   keysReversed(): IterableIterator<number>;
   valuesReversed(): IterableIterator<T>;
-
-  // These should be utility functions that operate on Iterators, but also useful if directly on list
-  // Then similar functions for use on AtomIterators can be created.
-  find(predicate: (value: T, index: number, obj: T[]) => unknown, thisArg?: any): T | undefined;
-  filter(predicate: (value: T, index: number, obj: T[]) => unknown, thisArg?: any): T[];
-  map<U>(callbackfn: (value: T, index: number, array: T[]) => U, thisArg?: any): U[];
-  reduce(callbackfn: (previousValue: T, currentValue: T, currentIndex: number, array: T[]) => T): T;
-  some(predicate: (value: T, index: number, obj: T[]) => unknown, thisArg?: any): boolean;
-  every(predicate: (value: T, index: number, obj: T[]) => unknown, thisArg?: any): boolean;
-  forEach(callbackfn: (value: T, index: number, array: T[]) => void, thisArg?: any): void;
-  includes(searchElement: T): boolean;
-  join(separator?: string): string;
   */
 }
 
@@ -269,7 +265,7 @@ function createAtomListWriterInternal<T>(
       sendEmit({
         type: LIST_EMIT_TYPE_SPLICE,
         start: start,
-        deleteCount: Math.trunc(size - oldSize - addCount),
+        deleteCount: deletedItems.length,
         addCount,
         oldSize,
         size,
@@ -295,14 +291,11 @@ function createAtomListWriterInternal<T>(
       return deletedItem;
     },
     replace(values) {
-      const size = values.length;
-      if (values.length === 0) {
-        return this.clear();
-      }
       const oldSize = innerValues.length;
       if (oldSize === 0) {
         return this.append(values);
       }
+      const size = values.length;
       innerValues.splice(0, oldSize, ...values);
       sendEmit({
         type: LIST_EMIT_TYPE_SPLICE,
@@ -622,11 +615,15 @@ function createAtomListInternal<T>(
     [atomIteratorKey]() {
       return iteratorAtom;
     },
-    map(mapper, isDeffered) {
-      if (isDeffered) {
-        return createMappedAtomListDeffered(list, innerValues, mapper);
+    map(mapper, type) {
+      switch (type) {
+        case 'deferred':
+          return createMappedAtomListDeferred(list, innerValues, mapper);
+        case 'forgetful':
+          return createMappedAtomListForgetful(list, innerValues, mapper);
+        default:
+          return createMappedAtomListImmediate(list, innerValues, mapper);
       }
-      return createMappedAtomListImmidiate(list, innerValues, mapper);
     },
     entries() {
       return entriesIteratorAtom;
@@ -692,7 +689,7 @@ function createMappedRawAtomList<T, U>(
 
 const mapCacheInvalidKey = Symbol('MetronAtomListMapCacheInvalid');
 
-function createMappedAtomListDeffered<T, U>(
+function createMappedAtomListDeferred<T, U>(
   originalList: AtomList<T>,
   originalValues: T[],
   mapper: (value: T) => U
@@ -781,82 +778,18 @@ function createMappedAtomListDeffered<T, U>(
     }
   }
 
-  const listEmitter = originalList[emitterKey];
-  const sizeAtom = originalList.size;
-
-  // TODO: use cleanup register with mappedRawAtomList as target and terminator as value
-  originalList[emitterKey](handleChange);
-
   const rawList = createMappedRawAtomList(cacheValues, cacheMapper);
+  autoDisposeRegistry.register(rawList, originalList[emitterKey](handleChange));
 
-  const getKeyedParticle = createAtomKeyGetter(listEmitter, rawList.at);
-
-  const iteratorAtom: AtomIterator<U, AtomListEmit> = {
-    [toValueKey]: rawList.values,
-    [emitterKey]: listEmitter,
-  };
-
-  const entriesIteratorAtom: AtomIterator<[number, U], AtomListEmit> = {
-    [toValueKey]: rawList.entries,
-    [emitterKey]: listEmitter,
-  };
-
-  const keysIteratorAtom: AtomIterator<number, AtomListEmit> = {
-    [toValueKey]: rawList.keys,
-    [emitterKey]: listEmitter,
-  };
-
-  function at(index: number) {
-    return getKeyedParticle(Math.trunc(index));
-  }
-
-  function nestMapper<V>(nestedMapped: (value: U) => V): (value: T) => V {
-    return (value) => nestedMapped(mapper(value));
-  }
-
-  const list: AtomList<U> = {
-    [atomListBrandKey]: true,
-    [collectionKeyToValueKey]: at,
-    at,
-    get size() {
-      return sizeAtom;
-    },
-    [toValueKey]() {
-      return rawList;
-    },
-    [emitterKey]: listEmitter,
-    [atomIteratorKey]() {
-      return iteratorAtom;
-    },
-    map(mapper, isDeffered) {
-      if (isDeffered) {
-        return createMappedAtomListDeffered(
-          originalList,
-          originalValues,
-          nestMapper(mapper)
-        );
-      }
-      return createMappedAtomListImmidiate(
-        originalList,
-        originalValues,
-        nestMapper(mapper)
-      );
-    },
-    entries() {
-      return entriesIteratorAtom;
-    },
-    keys() {
-      return keysIteratorAtom;
-    },
-    values() {
-      return iteratorAtom;
-    },
-  };
-
-  return list;
+  return createMappedAtomListInternal(
+    originalList,
+    originalValues,
+    rawList,
+    mapper
+  );
 }
 
-function createMappedAtomListImmidiate<T, U>(
+function createMappedAtomListImmediate<T, U>(
   originalList: AtomList<T>,
   originalValues: T[],
   mapper: (value: T) => U
@@ -942,13 +875,40 @@ function createMappedAtomListImmidiate<T, U>(
     }
   }
 
+  const rawList = createRawAtomList(mappedValues);
+  autoDisposeRegistry.register(rawList, originalList[emitterKey](handleChange));
+
+  return createMappedAtomListInternal(
+    originalList,
+    originalValues,
+    rawList,
+    mapper
+  );
+}
+
+function createMappedAtomListForgetful<T, U>(
+  originalList: AtomList<T>,
+  originalValues: T[],
+  mapper: (value: T) => U
+): AtomList<U> {
+  const rawList = createMappedRawAtomList(originalValues, mapper);
+
+  return createMappedAtomListInternal(
+    originalList,
+    originalValues,
+    rawList,
+    mapper
+  );
+}
+
+function createMappedAtomListInternal<T, U>(
+  originalList: AtomList<T>,
+  originalValues: T[],
+  rawList: RawAtomList<U>,
+  originalMapper: (value: T) => U
+): AtomList<U> {
   const listEmitter = originalList[emitterKey];
   const sizeAtom = originalList.size;
-
-  // TODO: use cleanup register with mappedRawAtomList as target and terminator as value
-  originalList[emitterKey](handleChange);
-
-  const rawList = createRawAtomList(mappedValues);
 
   const getKeyedParticle = createAtomKeyGetter(listEmitter, rawList.at);
 
@@ -972,7 +932,7 @@ function createMappedAtomListImmidiate<T, U>(
   }
 
   function nestMapper<V>(nestedMapped: (value: U) => V): (value: T) => V {
-    return (value) => nestedMapped(mapper(value));
+    return (value) => nestedMapped(originalMapper(value));
   }
 
   const list: AtomList<U> = {
@@ -989,19 +949,27 @@ function createMappedAtomListImmidiate<T, U>(
     [atomIteratorKey]() {
       return iteratorAtom;
     },
-    map(mapper, isDeffered) {
-      if (isDeffered) {
-        return createMappedAtomListDeffered(
-          originalList,
-          originalValues,
-          nestMapper(mapper)
-        );
+    map(mapper, type) {
+      switch (type) {
+        case 'deferred':
+          return createMappedAtomListDeferred(
+            originalList,
+            originalValues,
+            nestMapper(mapper)
+          );
+        case 'forgetful':
+          return createMappedAtomListForgetful(
+            originalList,
+            originalValues,
+            nestMapper(mapper)
+          );
+        default:
+          return createMappedAtomListImmediate(
+            originalList,
+            originalValues,
+            nestMapper(mapper)
+          );
       }
-      return createMappedAtomListImmidiate(
-        originalList,
-        originalValues,
-        nestMapper(mapper)
-      );
     },
     entries() {
       return entriesIteratorAtom;

@@ -1,4 +1,5 @@
 import { emitterKey, type Particle } from './particle.js';
+import { scheduleCleanup } from './schedulers.js';
 
 export interface Disposer {
   (): void;
@@ -9,40 +10,49 @@ export interface Emitter<TEmitData = unknown> extends Particle<TEmitData> {
   (callback: EmitHandler<TEmitData>): Disposer;
 }
 
-// TODO: make this platform agnostic
-declare const window: {
-  requestIdleCallback(
-    callback: () => void,
-    options?: { timeout: number }
-  ): number;
-};
-
 export function createEmitter(): [Emitter<undefined>, () => void];
 export function createEmitter<TEmitData>(): [
   Emitter<TEmitData>,
   (message: TEmitData) => void
 ];
 export function createEmitter(): [Emitter, (message: unknown) => void] {
-  let handlers: { handler?: EmitHandler<unknown> }[] = [];
+  const strongHandlers: { handler?: EmitHandler<unknown> }[] = [];
+  const weakHandlers = new WeakRef(strongHandlers);
 
   function send(data: unknown) {
-    for (const { handler } of handlers) {
+    for (const { handler } of strongHandlers) {
       handler?.(data);
     }
   }
 
-  let cleanId: number | undefined;
+  let canScheduleClean = true;
   function clean() {
-    handlers = handlers.filter((h) => h.handler !== undefined);
+    const handlers = weakHandlers.deref();
+    if (handlers === undefined) {
+      return;
+    }
+    canScheduleClean = true;
+
+    handlers.splice(
+      0,
+      handlers.length,
+      ...handlers.filter((h) => h.handler !== undefined)
+    );
   }
 
   function emitter(handler: EmitHandler<unknown>) {
+    const handlers = weakHandlers.deref();
+    if (handlers === undefined) {
+      return;
+    }
+
     const handlerWrapper: { handler?: EmitHandler<unknown> } = { handler };
 
     const disposer = () => {
       handlerWrapper.handler = undefined;
-      if (cleanId === undefined) {
-        cleanId = window.requestIdleCallback(clean);
+      if (canScheduleClean) {
+        canScheduleClean = false;
+        scheduleCleanup(clean);
       }
     };
 

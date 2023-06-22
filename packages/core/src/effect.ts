@@ -8,3 +8,20 @@ export function createEffect<TEmit>(
   handler();
   return particle[emitterKey](handler);
 }
+
+export const autoDisposeRegistry = new FinalizationRegistry(
+  (disposer: Disposer) => {
+    disposer();
+  }
+);
+
+export function createAutoDisposeEffect<TEmit>(
+  particle: Particle<TEmit>,
+  handler: (message?: TEmit) => void,
+  ref: object
+): Disposer {
+  handler();
+  const disposer = particle[emitterKey](handler);
+  autoDisposeRegistry.register(ref, disposer);
+  return disposer;
+}

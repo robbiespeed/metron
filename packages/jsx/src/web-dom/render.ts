@@ -1,191 +1,153 @@
 import {
-  emitterKey,
-  isAtom,
-  untracked,
-  type Atom,
-} from '@metron/core/particle';
-import {
   COLLECTION_EMIT_TYPE_CLEAR,
   COLLECTION_EMIT_TYPE_KEY_ADD,
   COLLECTION_EMIT_TYPE_KEY_DELETE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
   COLLECTION_EMIT_TYPE_KEY_WRITE,
 } from '@metron/core/collection';
+import type { Disposer } from '@metron/core/emitter';
 import {
-  type AtomList,
-  isAtomList,
-  LIST_EMIT_TYPE_REVERSE,
-  LIST_EMIT_TYPE_SORT,
   LIST_EMIT_TYPE_APPEND,
+  LIST_EMIT_TYPE_SPLICE,
+  isAtomList,
+  type AtomList,
 } from '@metron/core/list';
-
 import {
+  emitterKey,
+  isAtom,
+  untracked,
+  type Atom,
+} from '@metron/core/particle';
+import { scheduleCleanup, setCleanupScheduler } from '@metron/core/schedulers';
+import {
+  NODE_TYPE_COMPONENT,
+  NODE_TYPE_CONTEXT_PROVIDER,
+  NODE_TYPE_FRAGMENT,
+  NODE_TYPE_INTRINSIC,
+  NODE_TYPE_RENDER_CONTEXT,
   createContext,
-  renderNode,
-  type JsxComponentNode,
-  type JsxIntrinsicNode,
-  type RenderContext,
-  type ComponentContextStore,
   isJsxNode,
+  type ComponentContextStore,
+  type JsxNode,
   type JsxProps,
 } from '../node.js';
 import { isIterable } from '../utils.js';
 
-type Disposer = () => void;
+setCleanupScheduler(window.requestIdleCallback);
 
 interface DomRenderContextProps extends JsxProps {
-  readonly root: Element;
+  readonly root: ParentNode;
   readonly children: unknown;
 }
 
-interface DomSingleRenderResult<TNode extends ChildNode = ChildNode> {
-  type: typeof RENDER_RESULT_TYPE_SINGLE;
-  dispose?: Disposer;
-  node: TNode;
+type JsxRender = {
+  [key in JsxNode['nodeType']]: (
+    parent: ParentNode,
+    nodeContainer: ChildNode[],
+    disposerContainer: Disposer[],
+    value: Extract<JsxNode, { nodeType: key }>,
+    contextStore: ComponentContextStore,
+    isOnlyChild?: boolean
+  ) => void;
+};
+
+export const EVENT_HANDLER_PREFIX = 'on:';
+export const EVENT_HANDLER_PREFIX_LENGTH = EVENT_HANDLER_PREFIX.length;
+
+export function render(
+  { root, children }: DomRenderContextProps,
+  contextStore: ComponentContextStore = {}
+): Disposer {
+  const nodeContainer: ChildNode[] = [];
+  const disposerContainer: Disposer[] = [];
+
+  renderInto(
+    root,
+    nodeContainer,
+    disposerContainer,
+    children,
+    contextStore,
+    true
+  );
+
+  root.replaceChildren(...nodeContainer);
+
+  return () => {
+    dispose(disposerContainer);
+    disposerContainer.length = 0;
+  };
 }
 
-interface DomManyRenderResult {
-  type: typeof RENDER_RESULT_TYPE_MANY;
-  disposers: Disposer[];
-  nodes: ChildNode[];
-}
-
-interface DomRenderContext
-  extends RenderContext<
-    DomRenderContextProps,
-    DomSingleRenderResult | DomManyRenderResult
-  > {
-  renderRoot(
-    props: DomRenderContextProps,
-    contextStore: ComponentContextStore
-  ): DomSingleRenderResult<Element>;
-  renderIntrinsic(
-    element: JsxIntrinsicNode,
-    contextStore: ComponentContextStore
-  ): DomSingleRenderResult<Element>;
-}
-
-const RENDER_RESULT_TYPE_SINGLE = 0;
-const RENDER_RESULT_TYPE_MANY = 1;
-
-const EVENT_HANDLER_PREFIX = 'on:';
-const EVENT_HANDLER_PREFIX_LENGTH = EVENT_HANDLER_PREFIX.length;
-
-export const domRenderContext: DomRenderContext = {
-  renderRoot({ root, children }, contextStore) {
-    const result = this?.renderUnknown(children, contextStore, true);
-    if (result.type === RENDER_RESULT_TYPE_MANY) {
-      root.replaceChildren(...result.nodes);
-
-      return {
-        type: RENDER_RESULT_TYPE_SINGLE,
-        dispose: () => {
-          root.innerHTML = '';
-          const { disposers } = result;
-          if (disposers) {
-            for (const d of disposers) {
-              d();
-            }
-          }
-        },
-        node: root,
-      };
-    }
-    root.replaceChildren(result.node);
-    return {
-      type: RENDER_RESULT_TYPE_SINGLE,
-      dispose: () => {
-        root.innerHTML = '';
-        result.dispose?.();
-      },
-      node: root,
-    };
-  },
-  renderComponent(element, contextStore, isOnlyChild) {
-    const { tag, props } = element as JsxComponentNode;
+const jsxRender: JsxRender = {
+  [NODE_TYPE_COMPONENT](
+    parent,
+    nodeContainer,
+    disposerContainer,
+    component,
+    contextStore,
+    isOnlyChild
+  ) {
+    const { tag, props } = component;
 
     const componentContext = createContext(contextStore);
 
     const children = tag(props, componentContext);
 
-    const childNodes: ChildNode[] = [];
-    const disposers: Disposer[] = [];
-
     renderInto(
-      childNodes,
-      disposers,
+      parent,
+      nodeContainer,
+      disposerContainer,
       children,
       contextStore,
-      this,
       isOnlyChild
     );
-
-    return {
-      type: RENDER_RESULT_TYPE_MANY,
-      nodes: childNodes,
-      disposers: disposers,
-    };
   },
-  renderFragment(element, contextStore, isOnlyChild) {
-    const { children } = element;
-
-    const childNodes: ChildNode[] = [];
-    const disposers: Disposer[] = [];
-
+  [NODE_TYPE_FRAGMENT](
+    parent,
+    nodeContainer,
+    disposerContainer,
+    { children },
+    contextStore,
+    isOnlyChild
+  ) {
     renderInto(
-      childNodes,
-      disposers,
+      parent,
+      nodeContainer,
+      disposerContainer,
       children,
       contextStore,
-      this,
       isOnlyChild
     );
-
-    return {
-      type: RENDER_RESULT_TYPE_MANY,
-      nodes: childNodes,
-      disposers: disposers,
-    };
   },
-  renderUnknown(element, contextStore, isOnlyChild) {
-    const childNodes: ChildNode[] = [];
-    const disposers: Disposer[] = [];
+  [NODE_TYPE_INTRINSIC](
+    parent,
+    nodeContainer,
+    disposerContainer,
+    intrinsic,
+    contextStore,
+    isOnlyChild
+  ) {
+    const { children, ...props } = intrinsic.props as Record<string, unknown>;
 
-    renderInto(childNodes, disposers, element, contextStore, this, isOnlyChild);
+    const element = document.createElement(intrinsic.tag);
 
-    return {
-      type: RENDER_RESULT_TYPE_MANY,
-      nodes: childNodes,
-      disposers: disposers,
-    };
-  },
-  renderIntrinsic(element, contextStore) {
-    const { tag, props } = element;
-    const { children, ...restProps } = props as Record<string, unknown>;
+    nodeContainer.push(element);
 
-    const renderedElement = document.createElement(tag);
-
-    const disposers: Disposer[] = [];
-
-    for (const [key, value] of Object.entries(restProps)) {
+    for (const [key, value] of Object.entries(props)) {
       if (isAtom(value)) {
         if (key.startsWith(EVENT_HANDLER_PREFIX)) {
           const eventName = key.slice(EVENT_HANDLER_PREFIX_LENGTH);
 
           let eventHandler = untracked(value);
+          // TODO: don't check typeof instead rely on intrinsic types to be correct
           if (typeof eventHandler === 'function') {
-            renderedElement.addEventListener(
-              eventName,
-              eventHandler as () => void
-            );
-          } else {
-            eventHandler = undefined;
+            element.addEventListener(eventName, eventHandler as () => void);
           }
 
-          disposers.push(
+          disposerContainer.push(
             value[emitterKey](() => {
               if (eventHandler) {
-                renderedElement.removeEventListener(
+                element.removeEventListener(
                   eventName,
                   eventHandler as () => void
                 );
@@ -193,28 +155,26 @@ export const domRenderContext: DomRenderContext = {
 
               eventHandler = untracked(value);
               if (typeof eventHandler === 'function') {
-                renderedElement.addEventListener(
-                  eventName,
-                  eventHandler as () => void
-                );
-              } else {
-                eventHandler = undefined;
+                // TODO: don't check typeof instead rely on intrinsic types to be correct
+                element.addEventListener(eventName, eventHandler as () => void);
               }
             })
           );
         } else {
           const firstValue = untracked(value);
           if (firstValue !== undefined) {
-            renderedElement.setAttribute(key, String(firstValue));
+            // TODO: don't cast to string instead make Intrinsic Dom types only allow string
+            element.setAttribute(key, String(firstValue));
           }
 
-          disposers.push(
+          disposerContainer.push(
             value[emitterKey](() => {
               const newValue = untracked(value);
               if (newValue === undefined) {
-                renderedElement.removeAttribute(key);
+                element.removeAttribute(key);
               } else {
-                renderedElement.setAttribute(key, String(newValue));
+                // TODO: don't cast to string instead make Intrinsic Dom types only allow string
+                element.setAttribute(key, String(newValue));
               }
             })
           );
@@ -222,186 +182,114 @@ export const domRenderContext: DomRenderContext = {
       } else if (key.startsWith(EVENT_HANDLER_PREFIX)) {
         if (typeof value === 'function') {
           const eventName = key.slice(EVENT_HANDLER_PREFIX_LENGTH);
-          renderedElement.addEventListener(eventName, value as () => void);
+          element.addEventListener(eventName, value as () => void);
+        } else {
+          throw new TypeError('Event handler must be a function');
         }
       } else if (value !== undefined) {
-        renderedElement.setAttribute(key, String(value));
+        // TODO: don't cast to string instead make Intrinsic Dom types only allow string
+        element.setAttribute(key, String(value));
       }
     }
 
-    const childNodes: ChildNode[] = [];
+    const childNodeContainer: ChildNode[] = [];
 
-    // TODO: add bool param isImidiateChild
-    renderInto(childNodes, disposers, children, contextStore, this, true);
+    renderInto(
+      element,
+      childNodeContainer,
+      disposerContainer,
+      children,
+      contextStore,
+      true
+    );
 
-    renderedElement.append(...childNodes);
-
-    return {
-      type: RENDER_RESULT_TYPE_SINGLE,
-      dispose: () => {
-        for (const d of disposers) {
-          d();
-        }
-      },
-      node: renderedElement,
-    };
+    element.append(...childNodeContainer);
+  },
+  [NODE_TYPE_CONTEXT_PROVIDER]() {
+    throw new Error('Not Implemented');
+  },
+  Raw(parent, nodeContainer, disposerContainer, { value, disposer }) {
+    if (disposer !== undefined) {
+      disposerContainer.push(disposer);
+    }
+    if (value instanceof Element) {
+      nodeContainer.push(value);
+    }
+  },
+  [NODE_TYPE_RENDER_CONTEXT]() {
+    throw new Error('Not Implemented');
   },
 };
 
+function dispose(disposers: Disposer[]): void {
+  for (const d of disposers) {
+    d();
+  }
+}
+
 function renderInto(
+  parent: ParentNode,
   nodeContainer: ChildNode[],
   disposerContainer: Disposer[],
   value: unknown,
   contextStore: ComponentContextStore,
-  renderContext: DomRenderContext,
   isOnlyChild = false
 ): void {
   if (value === undefined) {
     return;
   }
 
-  if (isAtom(value)) {
-    return renderAtomInto(
+  if (isJsxNode(value)) {
+    jsxRender[value.nodeType](
+      parent,
       nodeContainer,
       disposerContainer,
-      value,
+      value as any,
       contextStore,
-      renderContext,
       isOnlyChild
     );
-  } else if (isJsxNode(value)) {
-    const result = renderNode(value, contextStore, renderContext, isOnlyChild);
-    if (result === undefined) {
-    } else if (result.type === RENDER_RESULT_TYPE_MANY) {
-      nodeContainer.push(...result.nodes);
-      disposerContainer.push(...result.disposers);
-    } else {
-      nodeContainer.push(result.node);
-      const { dispose } = result;
-      if (dispose) {
-        disposerContainer.push(dispose);
-      }
-    }
-  } else if (value instanceof Element || value instanceof CharacterData) {
-    nodeContainer.push(value);
   } else if (isIterable(value) && typeof value === 'object') {
     for (const child of value) {
-      renderInto(
+      renderInto(parent, nodeContainer, disposerContainer, child, contextStore);
+    }
+  } else if (isAtom(value)) {
+    if (isOnlyChild) {
+      renderOnlyChildAtomInto(
+        parent,
         nodeContainer,
         disposerContainer,
-        child,
-        contextStore,
-        renderContext
+        value,
+        contextStore
       );
+    } else {
+      throw new Error('Not implemented');
     }
   } else {
     nodeContainer.push(document.createTextNode(String(value)));
   }
 }
 
-type NonEmptyChildNodes = [ChildNode, ...ChildNode[]];
-
-function renderAtomInto(
+function renderOnlyChildAtomInto(
+  parent: ParentNode,
   nodeContainer: ChildNode[],
   disposerContainer: Disposer[],
   atom: Atom,
-  contextStore: ComponentContextStore,
-  renderContext: DomRenderContext,
-  isOnlyChild = false
+  contextStore: ComponentContextStore
 ): void {
   if (isAtomList(atom)) {
-    renderAtomListInto(
+    return renderOnlyChildAtomListInto(
+      parent,
       nodeContainer,
       disposerContainer,
       atom,
-      contextStore,
-      renderContext,
-      isOnlyChild
+      contextStore
     );
-    return;
   }
 
   const firstValue = untracked(atom);
 
   if (firstValue !== null && typeof firstValue === 'object') {
-    const internalDisposers: Disposer[] = [];
-    const tmpNodeContainer: ChildNode[] = [];
-
-    renderInto(
-      tmpNodeContainer,
-      internalDisposers,
-      firstValue,
-      contextStore,
-      renderContext,
-      isOnlyChild
-    );
-
-    const tmpContainerLength = tmpNodeContainer.length;
-    let rangeStartMarker: ChildNode;
-    if (tmpContainerLength > 0) {
-      rangeStartMarker = tmpNodeContainer[0]!;
-    } else {
-      rangeStartMarker = document.createComment('');
-      tmpNodeContainer.push(rangeStartMarker);
-    }
-
-    let rangeEndMarker =
-      tmpContainerLength > 1
-        ? tmpNodeContainer[tmpContainerLength - 1]!
-        : undefined;
-
-    nodeContainer.push(...tmpNodeContainer);
-
-    disposerContainer.push(
-      atom[emitterKey](() => {
-        for (const d of internalDisposers) {
-          d();
-        }
-        internalDisposers.length = 0;
-
-        const updateContainer: ChildNode[] = [];
-
-        renderInto(
-          updateContainer,
-          internalDisposers,
-          untracked(atom),
-          contextStore,
-          renderContext,
-          isOnlyChild
-        );
-
-        const updateContainerLength = updateContainer.length;
-        let newRangeStartMarker: ChildNode;
-        if (updateContainerLength > 0) {
-          newRangeStartMarker = updateContainer[0]!;
-        } else {
-          newRangeStartMarker = document.createComment('');
-          updateContainer.push(newRangeStartMarker);
-        }
-
-        const newRangeEndMarker =
-          updateContainerLength > 1
-            ? updateContainer[updateContainerLength - 1]!
-            : undefined;
-
-        replaceRange(
-          updateContainer as NonEmptyChildNodes,
-          rangeStartMarker,
-          rangeEndMarker
-        );
-
-        rangeStartMarker = newRangeStartMarker;
-        rangeEndMarker = newRangeEndMarker;
-      })
-    );
-
-    disposerContainer.push(() => {
-      for (const d of internalDisposers) {
-        d();
-      }
-    });
-
-    return;
+    throw new Error('Not implemented');
   }
 
   const text = document.createTextNode(
@@ -417,482 +305,314 @@ function renderAtomInto(
   );
 }
 
-type IndexedNodes = (undefined | NonEmptyChildNodes)[];
-type IndexedDisposers = (undefined | Disposer)[];
+type NonEmptyChildNodes = [ChildNode, ...ChildNode[]];
+type IndexedEmpty = [];
+type IndexedNodes = (NonEmptyChildNodes | IndexedEmpty)[];
+type IndexedDisposers = Disposer[][];
 
-function renderAtomListInto(
+const EMPTY_ARRAY: IndexedEmpty = [];
+
+function renderOnlyChildAtomListInto(
+  parent: ParentNode,
   nodeContainer: ChildNode[],
   disposerContainer: Disposer[],
   list: AtomList<unknown>,
-  contextStore: ComponentContextStore,
-  renderContext: DomRenderContext,
-  isOnlyChild = false
-): void {
-  // TODO: maybe the whole implementation could be simplified if ranges was a derived list
+  contextStore: ComponentContextStore
+) {
   const indexedDisposers: IndexedDisposers = [];
   const indexedNodes: IndexedNodes = [];
 
-  let i = 0;
-  for (const child of untracked(list)) {
-    const nestedNodes: ChildNode[] = [];
-    const nestedDisposers: Disposer[] = [];
+  const rawList = untracked(list);
+
+  for (const value of rawList) {
+    const childDisposerContainer: Disposer[] = [];
+    const childNodeContainer: ChildNode[] = [];
     renderInto(
-      nestedNodes,
-      nestedDisposers,
-      child,
-      contextStore,
-      renderContext
+      parent,
+      childNodeContainer,
+      childDisposerContainer,
+      value,
+      contextStore
     );
-    if (nestedDisposers.length > 0) {
-      indexedDisposers[i] = () => {
-        for (const d of nestedDisposers) {
-          d();
-        }
-      };
-    }
-    if (nestedNodes.length > 0) {
-      nodeContainer.push(...nestedNodes);
-      indexedNodes[i] = nestedNodes as NonEmptyChildNodes;
-    }
-    i++;
+    indexedDisposers.push(
+      childDisposerContainer.length > 0 ? childDisposerContainer : EMPTY_ARRAY
+    );
+    indexedNodes.push(
+      childNodeContainer.length > 0
+        ? (childNodeContainer as NonEmptyChildNodes)
+        : EMPTY_ARRAY
+    );
+    nodeContainer.push(...childNodeContainer);
   }
 
-  let tailMarker: ChildNode;
-  let tailMarkerIndex = -1;
-  if (indexedNodes.length === 0) {
-    tailMarker = document.createComment('');
-    nodeContainer.push(tailMarker);
-  } else {
-    tailMarkerIndex = indexedNodes.length - 1;
-    tailMarker = indexedNodes[tailMarkerIndex]!.at(-1)!;
-  }
+  const listEmitDisposer = list[emitterKey]((message) => {
+    switch (message.type) {
+      case COLLECTION_EMIT_TYPE_CLEAR: {
+        const oldIndexedDisposers = indexedDisposers.slice();
+        scheduleCleanup(() => disposeIndexed(oldIndexedDisposers));
+        parent.replaceChildren();
+        indexedDisposers.length = 0;
+        indexedNodes.length = 0;
+        return;
+      }
+      case COLLECTION_EMIT_TYPE_KEY_ADD: {
+        const { key, oldSize } = message;
 
-  disposerContainer.push(
-    list[emitterKey]((message) => {
-      switch (message.type) {
-        case COLLECTION_EMIT_TYPE_KEY_DELETE: {
-          const { key } = message;
-          indexedDisposers[key]?.();
-          const lastDisposerIndex = indexedNodes.length - 1;
+        const value = rawList.at(key);
+        let newDisposers: Disposer[] = [];
+        let newNodes: ChildNode[] = [];
 
-          if (key < lastDisposerIndex) {
-            indexedDisposers.splice(key, 1);
-          } else if (key === lastDisposerIndex) {
-            indexedDisposers.length = key;
-          }
+        renderInto(parent, newNodes, newDisposers, value, contextStore);
 
-          const parent = tailMarker.parentElement!;
-          let nodeAfter: ChildNode | null = null;
-          let isTail = false;
-          const oldNodes = indexedNodes[key];
-          const lastNodeIndex = indexedNodes.length - 1;
+        newDisposers = newDisposers.length > 0 ? newDisposers : EMPTY_ARRAY;
+        newNodes = newNodes.length > 0 ? newNodes : EMPTY_ARRAY;
 
-          if (key < lastNodeIndex) {
-            indexedNodes.splice(key, 1);
-          } else if (key === lastNodeIndex) {
-            indexedNodes.length = key;
-          }
-
-          if (oldNodes !== undefined) {
-            const oldTail = oldNodes.at(-1)!;
-            isTail = oldTail === tailMarker;
-            nodeAfter = oldTail.nextSibling;
-            removeNodes(oldNodes);
-          }
-
-          if (isTail) {
-            // If it was the tail we look to the left since nothing in the list should be on the right
-            const leftIndex = findIndexOfNodesToLeft(indexedNodes, key);
-
-            if (leftIndex >= 0) {
-              tailMarker = indexedNodes[leftIndex]!.at(-1)!;
-              tailMarkerIndex = leftIndex;
-            } else {
-              // If no nodes to left then we need to make a comment marker
-              tailMarker = document.createComment('');
-              tailMarkerIndex = -1;
-              if (nodeAfter === null) {
-                parent.appendChild(tailMarker);
-              } else {
-                nodeAfter.before(tailMarker);
-              }
-            }
-          }
-
-          return;
-        }
-        case COLLECTION_EMIT_TYPE_KEY_WRITE:
-        case COLLECTION_EMIT_TYPE_KEY_ADD: {
-          const { key } = message;
-          indexedDisposers[key]?.();
-
-          const isInOrder =
-            message.type === COLLECTION_EMIT_TYPE_KEY_WRITE ||
-            key >= tailMarkerIndex;
-
-          const parent = tailMarker.parentElement!;
-          let nodeAfter: ChildNode | null = null;
-          let isTail = false;
-
-          if (!isInOrder) {
-            indexedNodes.splice(key, 0, undefined);
-          }
-          const newValue = untracked(list).at(key);
-          const oldNodes = indexedNodes[key];
-
-          if (oldNodes !== undefined) {
-            const oldTail = oldNodes.at(-1)!;
-            isTail = oldTail === tailMarker;
-            nodeAfter = oldTail.nextSibling;
-            removeNodes(oldNodes);
-          }
-
-          let newNodes: ChildNode[] | undefined;
-          let newDisposers: Disposer[] | undefined;
-          if (newValue !== undefined) {
-            newNodes = [];
-            newDisposers = [];
-            renderInto(
-              newNodes,
-              newDisposers,
-              newValue,
-              contextStore,
-              renderContext
-            );
-          }
-
-          indexedDisposers[key] =
-            newDisposers && newDisposers.length
-              ? () => {
-                  for (const d of newDisposers!) {
-                    d();
-                  }
-                }
-              : undefined;
-
-          if (newNodes === undefined || newNodes.length === 0) {
-            indexedNodes[key] = undefined;
-            if (isTail) {
-              // If it was the tail we look to the left since nothing in the list should be on the right
-              const leftIndex = findIndexOfNodesToLeft(indexedNodes, key);
-
-              if (leftIndex >= 0) {
-                tailMarker = indexedNodes[leftIndex]!.at(-1)!;
-                tailMarkerIndex = leftIndex;
-              } else {
-                // If no nodes to left then we need to make a comment marker
-                tailMarker = document.createComment('');
-                tailMarkerIndex = -1;
-                if (nodeAfter === null) {
-                  parent.appendChild(tailMarker);
-                } else {
-                  nodeAfter.before(tailMarker);
-                }
-              }
-            }
-          } else {
-            assertOverride<NonEmptyChildNodes>(newNodes);
-            indexedNodes[key] = newNodes;
-            if (isTail || key >= tailMarkerIndex) {
-              if (tailMarkerIndex === -1) {
-                tailMarker.remove();
-              }
-              tailMarker = newNodes.at(-1)!;
-              tailMarkerIndex = key;
-            }
-            if (nodeAfter === null) {
+        if (key === oldSize) {
+          parent.append(...newNodes);
+          indexedDisposers.push(newDisposers);
+          indexedNodes.push(newNodes as []);
+        } else {
+          if (newNodes !== EMPTY_ARRAY) {
+            const rightIndex = findIndexOfNodesToRight(indexedNodes, key);
+            if (rightIndex < 0) {
               parent.append(...newNodes);
             } else {
-              nodeAfter.before(...newNodes);
+              indexedNodes[rightIndex]![0]!.before(...newNodes);
             }
           }
-          return;
+          indexedDisposers.splice(key, 0, newDisposers);
+          indexedNodes.splice(key, 0, newNodes as []);
         }
-        case COLLECTION_EMIT_TYPE_KEY_SWAP: {
-          const { keySwap } = message;
-          let [keyA, keyB] = keySwap;
 
-          if (keyA > keyB) {
-            // Normalize so that keyA < keyB
-            [keyA, keyB] = [keyB, keyA];
-          }
-
-          const tmpDisposer = indexedDisposers[keyA];
-          indexedDisposers[keyA] = indexedDisposers[keyB];
-          indexedDisposers[keyB] = tmpDisposer;
-
-          const aNodes = indexedNodes[keyA];
-          const bNodes = indexedNodes[keyB];
-
-          if (aNodes === bNodes) {
-            // If A and B are the same they must both be undefined
-            return;
-          }
-
-          indexedNodes[keyA] = bNodes;
-          indexedNodes[keyB] = aNodes;
-
-          if (bNodes !== undefined) {
-            const isBTail = bNodes.at(-1) === tailMarker;
-
-            if (aNodes !== undefined) {
-              swapNodeLists(aNodes, bNodes);
-
-              if (isBTail) {
-                tailMarker = aNodes.at(-1)!;
-              }
-            } else {
-              if (isBTail) {
-                // We know atleast B is now left of old B
-                const leftOfOldBIndex = findIndexOfNodesToLeft(
-                  indexedNodes,
-                  keyB
-                );
-
-                indexedNodes.length = leftOfOldBIndex + 1;
-
-                if (leftOfOldBIndex === keyA) {
-                  // No-op if new tail is old tail
-                  return;
-                }
-
-                tailMarker = indexedNodes[leftOfOldBIndex]!.at(-1)!;
-              }
-              // New B is not tail so there must be something else to the right
-              const rightOfNewB =
-                indexedNodes[findIndexOfNodesToRight(indexedNodes, keyA)]!;
-              rightOfNewB.at(-1)!.before(...bNodes);
-            }
-          } else {
-            // B is empty, A is not
-            assertOverride<NonEmptyChildNodes>(aNodes);
-
-            const aTail = aNodes.at(-1)!;
-            if (aTail === tailMarker) {
-              return;
-            }
-
-            const leftOfOldBIndex = findIndexOfNodesToLeft(indexedNodes, keyB);
-
-            if (leftOfOldBIndex === keyA) {
-              return;
-            }
-
-            const leftOfOldB = indexedNodes[leftOfOldBIndex]!;
-
-            if (leftOfOldB.at(-1) === tailMarker) {
-              tailMarker = aTail;
-            }
-
-            leftOfOldB[0].before(...aNodes);
-          }
-          return;
-        }
-        case COLLECTION_EMIT_TYPE_CLEAR: {
-          for (const d of indexedDisposers) {
-            d?.();
-          }
-          indexedDisposers.length = 0;
-
-          if (tailMarkerIndex === -1) {
-            return;
-          }
-
-          const nodesToRemove = [];
-          for (const nodes of indexedNodes) {
-            if (nodes !== undefined) {
-              nodesToRemove.push(...nodes);
-            }
-          }
-          indexedNodes.length = 0;
-
-          const parent = tailMarker.parentElement!;
-          const afterNode = tailMarker.nextSibling;
-
-          removeNodes(nodesToRemove);
-          tailMarker = document.createComment('');
-          tailMarkerIndex = -1;
-          if (afterNode === null) {
-            parent.append(tailMarker);
-          } else {
-            afterNode.before(tailMarker);
-          }
-          return;
-        }
-        case LIST_EMIT_TYPE_APPEND: {
-          const { oldSize } = message;
-
-          const values = untracked(list).toArraySlice(oldSize);
-
-          const parent = tailMarker.parentElement!;
-          const afterNode = tailMarker.nextSibling;
-
-          const updateContainer: ChildNode[] = [];
-
-          let i = oldSize;
-          for (const child of values) {
-            const nestedNodes: ChildNode[] = [];
-            const nestedDisposers: Disposer[] = [];
-            renderInto(
-              nestedNodes,
-              nestedDisposers,
-              child,
-              contextStore,
-              renderContext
-            );
-            if (nestedDisposers.length > 0) {
-              indexedDisposers[i] = () => {
-                for (const d of nestedDisposers) {
-                  d();
-                }
-              };
-            }
-
-            if (nestedNodes.length > 0) {
-              updateContainer.push(...nestedNodes);
-              indexedNodes[i] = nestedNodes as NonEmptyChildNodes;
-            }
-            i++;
-          }
-
-          if (indexedNodes.length === 0) {
-            return;
-          } else {
-            if (tailMarkerIndex === -1) {
-              tailMarker.remove();
-            }
-            tailMarkerIndex = indexedNodes.length - 1;
-            tailMarker = indexedNodes[tailMarkerIndex]!.at(-1)!;
-          }
-
-          if (afterNode === null) {
-            parent.append(...updateContainer);
-          } else {
-            afterNode.before(...updateContainer);
-          }
-
-          return;
-        }
-        // TODO
-        case LIST_EMIT_TYPE_REVERSE:
-        // TODO: fix implementation, may require ranges to contain all nodes not just start/end
-        // issue with current implementation is it reverses everything inside ranges
-        // {
-        //   const firstRange = findRangeToRight(-1, ranges);
-
-        //   if (firstRange === undefined) {
-        //     return;
-        //   }
-
-        //   if ((firstRange.end ?? firstRange.start) === tailMarker) {
-        //     return;
-        //   }
-
-        //   const nodeRange = document.createRange();
-        //   nodeRange.setStartBefore(firstRange.start);
-        //   nodeRange.setEndAfter(tailMarker);
-        //   const nodeFragment = nodeRange.extractContents();
-
-        //   const reversedNodes: ChildNode[] = [];
-        //   const nodeCount = nodeFragment.childNodes.length;
-        //   for (let i = nodeCount - 1; i >= 0; i--) {
-        //     reversedNodes.push(nodeFragment.childNodes[i]!);
-        //   }
-        //   nodeFragment.append(...reversedNodes);
-        //   nodeRange.insertNode(nodeFragment);
-
-        //   tailMarker = firstRange.start;
-        //   ranges.reverse();
-        //   return;
-        // }
-        case LIST_EMIT_TYPE_SORT:
-        // TODO: May need ranges to contain all nodes not just start/end
-        // case LIST_EMIT_TYPE_RANGE:
-        // TODO
-        default: {
-          // TODO: warn about fallback
-          for (const d of indexedDisposers) {
-            d?.();
-          }
-          indexedDisposers.length = 0;
-
-          const nodesToRemove = [];
-          for (const nodes of indexedNodes) {
-            if (nodes !== undefined) {
-              nodesToRemove.push(...nodes);
-            }
-          }
-          indexedNodes.length = 0;
-
-          const parent = tailMarker.parentElement!;
-          const afterNode = tailMarker.nextSibling;
-
-          removeNodes(nodesToRemove);
-
-          const updateContainer: ChildNode[] = [];
-
-          let i = 0;
-          for (const child of untracked(list)) {
-            const nestedNodes: ChildNode[] = [];
-            const nestedDisposers: Disposer[] = [];
-
-            renderInto(
-              nestedNodes,
-              nestedDisposers,
-              child,
-              contextStore,
-              renderContext
-            );
-
-            if (nestedDisposers.length > 0) {
-              indexedDisposers[i] = () => {
-                for (const d of nestedDisposers) {
-                  d();
-                }
-              };
-            }
-
-            if (nestedNodes.length > 0) {
-              updateContainer.push(...nestedNodes);
-              indexedNodes[i] = nestedNodes as NonEmptyChildNodes;
-            }
-            i++;
-          }
-
-          if (indexedNodes.length === 0) {
-            if (tailMarkerIndex === -1) {
-              return;
-            }
-            tailMarker = document.createComment('');
-            tailMarkerIndex = -1;
-            updateContainer.push(tailMarker);
-          } else {
-            if (tailMarkerIndex === -1) {
-              tailMarker.remove();
-            }
-            tailMarkerIndex = indexedNodes.length - 1;
-            tailMarker = indexedNodes[tailMarkerIndex]!.at(-1)!;
-          }
-
-          if (afterNode === null) {
-            parent.append(...updateContainer);
-          } else {
-            afterNode.before(...updateContainer);
-          }
-          return;
-        }
+        return;
       }
-    })
-  );
-  disposerContainer.push(() => {
-    for (const d of indexedDisposers) {
-      d?.();
+      case COLLECTION_EMIT_TYPE_KEY_DELETE: {
+        const { key, size } = message;
+
+        const oldDisposers = indexedDisposers[key]!;
+        if (oldDisposers !== EMPTY_ARRAY) {
+          scheduleCleanup(() => dispose(oldDisposers));
+        }
+        for (const node of indexedNodes[key]!) {
+          parent.removeChild(node);
+        }
+
+        if (key === size) {
+          indexedDisposers.length = size;
+          indexedNodes.length = size;
+        } else {
+          indexedDisposers.splice(key, 1);
+          indexedNodes.splice(key, 1);
+        }
+
+        return;
+      }
+      case COLLECTION_EMIT_TYPE_KEY_SWAP: {
+        const [keyA, keyB] = message.keySwap;
+
+        const aNodes = indexedNodes[keyA]!;
+        const bNodes = indexedNodes[keyB]!;
+
+        if (aNodes === bNodes) {
+          // If A and B are the same they must both be EMPTY_ARRAY
+          return;
+        }
+
+        if (aNodes !== EMPTY_ARRAY) {
+          assertOverride<NonEmptyChildNodes>(aNodes);
+          if (bNodes !== EMPTY_ARRAY) {
+            assertOverride<NonEmptyChildNodes>(bNodes);
+            swapNodeLists(parent, aNodes, bNodes);
+          } else {
+            const rightOfBIndex = findIndexOfNodesToRight(indexedNodes, keyB);
+            if (rightOfBIndex < 0) {
+              parent.append(...aNodes);
+            } else {
+              indexedNodes[rightOfBIndex]![0]!.before(...aNodes);
+            }
+          }
+        } else {
+          const rightOfAIndex = findIndexOfNodesToRight(indexedNodes, keyA);
+          if (rightOfAIndex < keyB) {
+            indexedNodes[rightOfAIndex]![0]!.before(...bNodes);
+          }
+        }
+
+        const tmpDisposers = indexedDisposers[keyA]!;
+        indexedDisposers[keyA] = indexedDisposers[keyB]!;
+        indexedDisposers[keyB] = tmpDisposers;
+        indexedNodes[keyA] = bNodes;
+        indexedNodes[keyB] = aNodes;
+
+        return;
+      }
+      case LIST_EMIT_TYPE_APPEND: {
+        const { oldSize } = message;
+
+        const newNodes: ChildNode[] = [];
+        const newValues = rawList.toArraySlice(oldSize);
+
+        for (const child of newValues) {
+          const childNodes: ChildNode[] = [];
+          const childDisposers: Disposer[] = [];
+          renderInto(parent, childNodes, childDisposers, child, contextStore);
+          indexedDisposers.push(
+            childDisposers.length > 0 ? childDisposers : EMPTY_ARRAY
+          );
+          indexedNodes.push(
+            childNodes.length > 0 ? (childNodes as []) : EMPTY_ARRAY
+          );
+          newNodes.push(...childNodes);
+        }
+
+        parent.append(...newNodes);
+
+        return;
+      }
+      case COLLECTION_EMIT_TYPE_KEY_WRITE: {
+        const { key } = message;
+
+        const oldDisposers = indexedDisposers[key]!;
+        if (oldDisposers !== EMPTY_ARRAY) {
+          scheduleCleanup(() => dispose(oldDisposers));
+        }
+
+        const oldNodes = indexedNodes[key]!;
+
+        const newValue = rawList.at(key);
+        const newDisposers: Disposer[] = [];
+        const newNodes: ChildNode[] = [];
+        renderInto(parent, newNodes, newDisposers, newValue, contextStore);
+        indexedDisposers[key] =
+          newDisposers.length > 0 ? newDisposers : EMPTY_ARRAY;
+        if (newNodes.length > 0) {
+          indexedNodes[key] = newNodes as NonEmptyChildNodes;
+
+          if (oldNodes === EMPTY_ARRAY) {
+            const rightIndex = findIndexOfNodesToRight(indexedNodes, key);
+            if (rightIndex < 0) {
+              parent.append(...newNodes);
+            } else {
+              indexedNodes[rightIndex]![0]!.before(...newNodes);
+            }
+          } else {
+            oldNodes[0]!.before(...newNodes);
+          }
+        } else {
+          indexedNodes[key] = EMPTY_ARRAY;
+        }
+
+        for (const node of oldNodes) {
+          parent.removeChild(node);
+        }
+
+        return;
+      }
+      case LIST_EMIT_TYPE_SPLICE: {
+        const { start, deleteCount, addCount, oldSize } = message;
+
+        if (deleteCount === oldSize && start === 0) {
+          // Fast path for whole list replacement
+          const oldIndexedDisposers = indexedDisposers.slice();
+          scheduleCleanup(() => disposeIndexed(oldIndexedDisposers));
+          indexedDisposers.length = 0;
+          indexedNodes.length = 0;
+
+          const newNodes: ChildNode[] = [];
+
+          for (const child of rawList) {
+            const childNodes: ChildNode[] = [];
+            const childDisposers: Disposer[] = [];
+            renderInto(parent, childNodes, childDisposers, child, contextStore);
+            indexedDisposers.push(
+              childDisposers.length > 0 ? childDisposers : EMPTY_ARRAY
+            );
+            indexedNodes.push(
+              childNodes.length > 0 ? (childNodes as []) : EMPTY_ARRAY
+            );
+            newNodes.push(...childNodes);
+          }
+
+          parent.replaceChildren(...newNodes);
+          return;
+        }
+
+        let deletedIndexedDisposers: IndexedDisposers;
+        let deletedIndexedNodes: IndexedNodes;
+
+        if (addCount === 0) {
+          deletedIndexedDisposers = indexedDisposers.splice(start, deleteCount);
+          deletedIndexedNodes = indexedNodes.splice(start, deleteCount);
+        } else {
+          const addedIndexedDisposers: IndexedDisposers = [];
+          const addedIndexedNodes: IndexedNodes = [];
+          const newValues = rawList.toArraySlice(start, start + addCount);
+          const newNodes: ChildNode[] = [];
+
+          for (const child of newValues) {
+            const childNodes: ChildNode[] = [];
+            const childDisposers: Disposer[] = [];
+            renderInto(parent, childNodes, childDisposers, child, contextStore);
+            addedIndexedDisposers.push(
+              childDisposers.length > 0 ? childDisposers : EMPTY_ARRAY
+            );
+            addedIndexedNodes.push(
+              childNodes.length > 0 ? (childNodes as []) : EMPTY_ARRAY
+            );
+            newNodes.push(...childNodes);
+          }
+
+          if (newNodes.length > 0) {
+            const rightIndex = findIndexOfNodesToRight(indexedNodes, start);
+            if (rightIndex < 0) {
+              parent.append(...newNodes);
+            } else {
+              indexedNodes[rightIndex]![0]!.before(...newNodes);
+            }
+          }
+
+          deletedIndexedDisposers = indexedDisposers.splice(
+            start,
+            deleteCount,
+            ...addedIndexedDisposers
+          );
+          deletedIndexedNodes = indexedNodes.splice(
+            start,
+            deleteCount,
+            ...addedIndexedNodes
+          );
+        }
+
+        if (deletedIndexedDisposers.length > 0) {
+          scheduleCleanup(() => disposeIndexed(deletedIndexedDisposers));
+        }
+        for (const nodes of deletedIndexedNodes) {
+          for (const node of nodes) {
+            parent.removeChild(node);
+          }
+        }
+
+        return;
+      }
+      default: {
+        throw new Error('Unhandled emit', { cause: message });
+      }
     }
+  });
+
+  disposerContainer.push(() => {
+    listEmitDisposer();
+    disposeIndexed(indexedDisposers);
   });
 }
 
-// TODO: move to shared package
-function assertOverride<T>(value: unknown): asserts value is T {}
+function disposeIndexed(indexedDisposers: IndexedDisposers) {
+  for (const disposers of indexedDisposers) {
+    for (const d of disposers) {
+      d();
+    }
+  }
+}
 
 function findIndexOfNodesToRight(
   indexedNodes: IndexedNodes,
@@ -900,101 +620,34 @@ function findIndexOfNodesToRight(
 ): number {
   for (let i = index + 1; i < indexedNodes.length; i++) {
     const nodes = indexedNodes[i];
-    if (nodes !== undefined) {
+    if (nodes !== EMPTY_ARRAY) {
       return i;
     }
   }
   return -1;
 }
 
-function findIndexOfNodesToLeft(
-  indexedNodes: IndexedNodes,
-  index: number
-): number {
-  for (let i = index - 1; i >= 0; i--) {
-    const nodes = indexedNodes[i];
-    if (nodes !== undefined) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-function removeNodes(nodes: ChildNode[]) {
-  const fragment = document.createDocumentFragment();
-  fragment.append(...nodes);
-}
-
-function swapNodeLists(aNodes: NonEmptyChildNodes, bNodes: NonEmptyChildNodes) {
+function swapNodeLists(
+  parent: ParentNode,
+  aNodes: NonEmptyChildNodes,
+  bNodes: NonEmptyChildNodes
+) {
   const firstA = aNodes[0];
   const lastB = bNodes.at(-1)!;
   const afterB = lastB.nextSibling;
   const beforeA = firstA.previousSibling;
-  const parentNode = firstA.parentNode!;
 
   if (afterB === null) {
-    parentNode.append(...aNodes);
+    parent.append(...aNodes);
   } else {
     afterB.before(...aNodes);
   }
   if (beforeA === null) {
-    parentNode.prepend(...bNodes);
+    parent.prepend(...bNodes);
   } else {
     beforeA.after(...bNodes);
   }
-
-  // const firstA = aNodes[0];
-  // const firstB = bNodes[0];
-  // const afterB = firstB.nextSibling;
-  // const parentNode = firstA.parentNode!;
-
-  // parentNode.insertBefore(firstB, firstA);
-  // parentNode.insertBefore(firstA, afterB);
-
-  // const temp = document.createComment('');
-  // aNodes[0].replaceWith(temp);
-  // bNodes[0].replaceWith(...aNodes);
-  // temp.replaceWith(...bNodes);
 }
 
-// function replaceChildren(parent: ParentNode, newNodes: ChildNode[]) {
-//   parent.textContent = '';
-//   parent.append(...newNodes);
-// }
-
-function replaceRange(
-  newNodes: [ChildNode, ...ChildNode[]],
-  rangeStartMarker: ChildNode,
-  rangeEndMarker?: ChildNode
-) {
-  const parent = rangeStartMarker.parentNode;
-
-  if (parent === null) {
-    throw new Error('Cannot replace nodes without parent');
-  }
-
-  if (rangeEndMarker === undefined) {
-    rangeStartMarker.replaceWith(...newNodes);
-    return;
-  }
-
-  const tailEndBefore = rangeEndMarker.nextSibling;
-  const range = document.createRange();
-  range.setStartBefore(rangeStartMarker);
-  range.setEndAfter(rangeEndMarker);
-  range.deleteContents();
-  if (tailEndBefore === null) {
-    parent.append(...newNodes);
-  } else {
-    tailEndBefore.before(...newNodes);
-  }
-
-  // TODO: check perf of using a DocumentFragment to insert nodes
-  // append all to the fragment then insert the fragment
-  // const { length } = newNodes;
-
-  // while (i < length) {
-  //   parent.insertBefore(newNodes[i]!, tailEndBefore);
-  //   i++;
-  // }
-}
+// TODO: move to shared package
+function assertOverride<T>(value: unknown): asserts value is T {}
