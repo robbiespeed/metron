@@ -2,7 +2,7 @@ import { isJsxNode, type JsxNode } from '../node.js';
 
 export function renderStatic(intrinsic: JsxNode): Element {
   if (intrinsic.nodeType !== 'Intrinsic') {
-    throw new TypeError('Template may only contain intrinsic nodes');
+    throw new TypeError('Static render may only contain intrinsic nodes');
   }
 
   const { children, ...props } = intrinsic.props as Record<string, unknown>;
@@ -10,13 +10,28 @@ export function renderStatic(intrinsic: JsxNode): Element {
   const element = document.createElement(intrinsic.tag);
 
   for (const [key, value] of Object.entries(props)) {
-    switch (typeof value) {
-      case 'string':
-        element.setAttribute(key, value);
+    if (value === undefined) {
+      continue;
+    }
+    let [keySpecifier, keyName] = key.split(':', 2) as [string, string];
+    if (keySpecifier === key) {
+      keyName = keySpecifier;
+      keySpecifier = 'attr';
+    }
+    switch (keySpecifier) {
+      case 'prop':
+        (element as any)[keyName] = value;
         break;
-      case 'boolean':
-        element.toggleAttribute(key, value);
+      case 'attr':
+        if (value === true) {
+          element.toggleAttribute(keyName, true);
+        } else {
+          // setAttributes converts any value to string
+          element.setAttribute(keyName, value as string);
+        }
         break;
+      default:
+        throw new TypeError(`Unsupported specifier "${keySpecifier}"`);
     }
   }
 

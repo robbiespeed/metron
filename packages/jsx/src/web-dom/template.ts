@@ -121,7 +121,7 @@ export function template<TProps extends TemplateProps>(
     let disposers: Disposer[] | undefined;
     if (descriptor !== undefined) {
       disposers = [];
-      initCloneFromDescriptor(element, props, disposers, descriptor);
+      initDynamic(element, props, disposers, descriptor);
     }
 
     return {
@@ -222,16 +222,17 @@ function renderTemplateNode(
       } else if (typeof child === 'string') {
         childNodes.push(document.createTextNode(child as string));
       } else {
-        childNodes.push(document.createComment(''));
+        childNodes.push(document.createTextNode(''));
       }
     }
     element.append(...childNodes);
   } else if (children !== undefined) {
     if (isSlot(children)) {
       (children.isAtom ? (atomNodes ??= []) : (staticNodes ??= [])).push({
-        index: -1,
+        index: 0,
         key: children.key,
       });
+      element.appendChild(document.createTextNode(''));
     } else if (isJsxNode(children)) {
       const [childElement, childDescriptor] = renderTemplateNode(children);
       if (childDescriptor !== undefined) {
@@ -265,7 +266,7 @@ function renderTemplateNode(
   return [element, descriptor];
 }
 
-function initCloneFromDescriptor(
+function initDynamic(
   element: Element,
   props: TemplateProps,
   disposers: Disposer[],
@@ -361,21 +362,30 @@ function initCloneFromDescriptor(
   }
   if (staticNodes !== undefined) {
     for (const { index, key } of staticNodes) {
-      const value = props[key] as string | undefined;
+      const value = props[key] as unknown;
 
-      if (value !== undefined) {
-        if (index < 0) {
-          element.textContent = value;
-        } else {
-          (element.childNodes[index] as Text).textContent = value;
+      switch (typeof value) {
+        case 'string':
+          (element.childNodes[index] as Text).data = value;
+          break;
+        case 'object': {
+          if (isJsxNode(value)) {
+          } else {
+          }
+          break;
         }
+        case 'undefined':
+          break;
+        default:
+          (element.childNodes[index] as Text).data = String(value);
+          break;
       }
     }
   }
   if (childDescriptors !== undefined) {
     for (const childDescriptor of childDescriptors) {
       const { index } = childDescriptor;
-      initCloneFromDescriptor(
+      initDynamic(
         (index === undefined
           ? element.firstChild
           : element.childNodes[index]) as Element,
