@@ -25,8 +25,7 @@ export function renderStatic(intrinsic: JsxNode): Element {
       case 'attr':
         if (value === true) {
           element.toggleAttribute(keyName, true);
-        } else {
-          // setAttributes converts any value to string
+        } else if (value !== false) {
           element.setAttribute(keyName, value as string);
         }
         break;

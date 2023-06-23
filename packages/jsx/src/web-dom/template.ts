@@ -5,56 +5,28 @@ import {
   type JsxRawNode,
   isJsxNode,
   createStaticComponent,
+  type JsxProps,
 } from '../node.js';
-import { EVENT_HANDLER_PREFIX, EVENT_HANDLER_PREFIX_LENGTH } from './render.js';
-import { untracked } from '@metron/core/particle';
-import { createEffect } from '@metron/core/effect';
-import type { Disposer } from '@metron/core/emitter';
+import { isAtom, untracked } from '@metron/core/particle.js';
+import { createEffect } from '@metron/core/effect.js';
+import type { Disposer } from '@metron/core/emitter.js';
 
-// TODO: type the message
-type EventHandler = () => void;
-
-type TemplatePropValues = undefined | Element | string | EventHandler;
-
-interface TemplateProps {
-  [key: string]: TemplatePropValues | Atom<TemplatePropValues>;
-}
-
-interface PropsDescriptor<TProps extends TemplateProps = any> {
-  // nestedPath?: [number, ...number[]];
+interface InitDescriptor<TProps extends JsxProps = JsxProps> {
   index?: number;
-  atomAttributes?: { attribute: string; key: AtomPropKeys<TProps> }[];
-  atomNodes?: { index: number; key: AtomPropKeys<TProps> }[];
-  atomEvents?: { eventName: string; key: AtomPropKeys<TProps> }[];
-  staticAttributes?: { attribute: string; key: StaticPropKeys<TProps> }[];
-  staticNodes?: { index: number; key: StaticPropKeys<TProps> }[];
-  staticEvents?: { eventName: string; key: StaticPropKeys<TProps> }[];
-  childDescriptors?: PropsDescriptor[];
+  props?: { key: string; initKey: keyof TProps }[];
+  attributes?: { key: string; initKey: keyof TProps }[];
+  events?: { key: string; initKey: keyof TProps }[];
+  nodes?: { index: number; initKey: keyof TProps }[];
+  childDescriptors?: InitDescriptor[];
 }
 
-type AtomPropKeys<TProps extends object> = {
-  [P in keyof TProps]: TProps[P] extends Atom ? P : never;
-}[keyof TProps];
-
-type StaticPropKeys<TProps extends object> = {
-  [P in keyof TProps]: TProps[P] extends Atom
-    ? never
-    : Atom<any> extends TProps[P]
-    ? never
-    : P;
-}[keyof TProps];
-
-type AtomProps<TProps extends object> = Pick<TProps, AtomPropKeys<TProps>>;
-type StaticProps<TProps extends object> = Pick<TProps, StaticPropKeys<TProps>>;
-
-interface Slot<T = unknown, TIsAtom extends boolean = false> extends Atom<T> {
+interface Slot<T = unknown> extends Atom<T> {
   [slotBrandKey]: true;
   key: string;
-  isAtom: TIsAtom;
 }
 
-type PropAccessor<TProps extends object, TIsAtom extends boolean = false> = {
-  [K in keyof TProps]: Slot<TProps[K], TIsAtom>;
+type PropAccessor<TProps extends JsxProps> = {
+  [K in keyof TProps]: Slot<TProps[K]>;
 };
 
 const fakeToValue = () => {
@@ -68,14 +40,13 @@ const fakeEmitter: Emitter<any> = (() => {
 
 const noOpTrap = () => false;
 const empty = Object.create(null);
-const staticPropProxy = new Proxy(empty, {
-  get(_, key: string): Slot<any, false> {
+const propProxy: PropAccessor<any> = new Proxy(empty, {
+  get(_, key: string) {
     return {
       [toValueKey]: fakeToValue,
       [emitterKey]: fakeEmitter,
       [slotBrandKey]: true,
       key,
-      isAtom: false,
     };
   },
   set: noOpTrap,
@@ -83,38 +54,18 @@ const staticPropProxy = new Proxy(empty, {
   setPrototypeOf: noOpTrap,
   defineProperty: noOpTrap,
   deleteProperty: noOpTrap,
-}) as PropAccessor<any, false>;
+});
 
-const atomPropProxy = new Proxy(empty, {
-  get(_, key: string): Slot<any, true> {
-    return {
-      [toValueKey]: fakeToValue,
-      [emitterKey]: fakeEmitter,
-      [slotBrandKey]: true,
-      key,
-      isAtom: true,
-    };
-  },
-  set: noOpTrap,
-  has: noOpTrap,
-  setPrototypeOf: noOpTrap,
-  defineProperty: noOpTrap,
-  deleteProperty: noOpTrap,
-}) as PropAccessor<any, true>;
-
-interface DynamicTemplateCreator<TProps extends TemplateProps> {
-  (
-    staticProps: PropAccessor<StaticProps<TProps>, false>,
-    atomProps: PropAccessor<AtomProps<TProps>, true>
-  ): JsxNode;
+interface DynamicTemplateCreator<TProps extends JsxProps> {
+  (props: PropAccessor<TProps>): JsxNode;
 }
 
 const slotBrandKey = Symbol('MetronJSXTemplateSlotBrand');
 
-export function template<TProps extends TemplateProps>(
+export function template<TProps extends JsxProps>(
   templateCreator: DynamicTemplateCreator<TProps>
 ): (props: TProps) => JsxRawNode {
-  const templateNode = templateCreator(staticPropProxy, atomPropProxy);
+  const templateNode = templateCreator(propProxy);
   const [templateElement, descriptor] = renderTemplateNode(templateNode);
   return createStaticComponent((props: TProps) => {
     const element = templateElement.cloneNode(true) as Element;
@@ -147,70 +98,89 @@ function isSlot(value: any): value is Slot {
 
 function renderTemplateNode(
   intrinsic: JsxNode
-): [Element, undefined | PropsDescriptor] {
+): [Element, undefined | InitDescriptor] {
+  // TODO: should allow handling of non intrinsic node and have their creation be delayed until init.
+  // intrinsics nested inside other nodes like components could create a separate template
   if (intrinsic.nodeType !== 'Intrinsic') {
     throw new TypeError('Template may only contain intrinsic nodes');
   }
 
-  const { children, ...props } = intrinsic.props as Record<string, unknown>;
+  const { children, ...templateProps } = intrinsic.props as Record<
+    string,
+    unknown
+  >;
 
   const element = document.createElement(intrinsic.tag);
-  let atomAttributes: PropsDescriptor['atomAttributes'];
-  let staticAttributes: PropsDescriptor['staticAttributes'];
-  let atomEvents: PropsDescriptor['atomEvents'];
-  let staticEvents: PropsDescriptor['staticEvents'];
+  let attributeDescriptors: InitDescriptor['attributes'];
+  let propDescriptors: InitDescriptor['props'];
+  let eventDescriptors: InitDescriptor['events'];
 
-  for (const [key, value] of Object.entries(props)) {
-    if (isSlot(value)) {
-      if (key.startsWith(EVENT_HANDLER_PREFIX)) {
-        const eventName = key.slice(EVENT_HANDLER_PREFIX_LENGTH);
-        (value.isAtom ? (atomEvents ??= []) : (staticEvents ??= [])).push({
-          eventName,
-          key: value.key,
-        });
-      } else {
-        (value.isAtom
-          ? (atomAttributes ??= [])
-          : (staticAttributes ??= [])
-        ).push({
-          attribute: key,
-          key: value.key,
-        });
-      }
-    } else if (key.startsWith(EVENT_HANDLER_PREFIX)) {
-      if (typeof value === 'function') {
-        const eventName = key.slice(EVENT_HANDLER_PREFIX_LENGTH);
-        element.addEventListener(eventName, value as () => void);
-      } else {
-        throw new TypeError('Event handler must be a function');
-      }
-    } else {
-      switch (typeof value) {
-        case 'string':
-          element.setAttribute(key, String(value));
-          break;
-        case 'boolean':
-          element.toggleAttribute(key, value);
-          break;
-      }
+  for (const [key, value] of Object.entries(templateProps)) {
+    if (value === undefined) {
+      continue;
+    }
+
+    let [keySpecifier, keyName] = key.split(':', 2) as [string, string];
+    if (keySpecifier === key) {
+      keyName = keySpecifier;
+      keySpecifier = 'attr';
+    }
+
+    switch (keySpecifier) {
+      case 'prop':
+        if (isSlot(value)) {
+          (propDescriptors ??= []).push({
+            key: keyName,
+            initKey: value.key,
+          });
+        } else {
+          (element as any)[keyName] = value;
+        }
+        break;
+      case 'attr':
+        if (isSlot(value)) {
+          (attributeDescriptors ??= []).push({
+            key: keyName,
+            initKey: value.key,
+          });
+        } else if (value === true) {
+          element.toggleAttribute(keyName, true);
+        } else {
+          // setAttribute casts to string
+          element.setAttribute(keyName, value as any);
+        }
+        break;
+      case 'on':
+        if (isSlot(value)) {
+          (eventDescriptors ??= []).push({
+            key: keyName,
+            initKey: value.key,
+          });
+        } else {
+          throw new TypeError(
+            'Templates cannot register event handlers on themselves'
+          );
+        }
+        break;
+      default:
+        throw new TypeError(`Unsupported specifier "${keySpecifier}"`);
     }
   }
 
-  let atomNodes: PropsDescriptor['atomNodes'];
-  let staticNodes: PropsDescriptor['staticNodes'];
-  let childDescriptors: PropsDescriptor['childDescriptors'];
+  let nodeDescriptors: InitDescriptor['nodes'];
+  let childDescriptors: InitDescriptor['childDescriptors'];
 
   if (Array.isArray(children)) {
     const childNodes: ChildNode[] = [];
     const childrenCount = children.length;
 
     for (let i = 0; i < childrenCount; i++) {
-      const child = children[i];
+      const child: unknown = children[i];
       if (isSlot(child)) {
         childNodes.push(document.createTextNode(''));
-        (child.isAtom ? (atomNodes ??= []) : (staticNodes ??= [])).push({
+        (nodeDescriptors ??= []).push({
           index: i,
-          key: child.key,
+          initKey: child.key,
         });
       } else if (isJsxNode(child)) {
         const [childElement, childDescriptor] = renderTemplateNode(child);
@@ -228,9 +198,9 @@ function renderTemplateNode(
     element.append(...childNodes);
   } else if (children !== undefined) {
     if (isSlot(children)) {
-      (children.isAtom ? (atomNodes ??= []) : (staticNodes ??= [])).push({
+      (nodeDescriptors ??= []).push({
         index: 0,
-        key: children.key,
+        initKey: children.key,
       });
       element.appendChild(document.createTextNode(''));
     } else if (isJsxNode(children)) {
@@ -245,21 +215,17 @@ function renderTemplateNode(
   }
 
   const descriptor =
+    attributeDescriptors ??
     childDescriptors ??
-    staticAttributes ??
-    staticEvents ??
-    staticNodes ??
-    atomAttributes ??
-    atomEvents ??
-    atomNodes
+    eventDescriptors ??
+    nodeDescriptors ??
+    propDescriptors
       ? {
           childDescriptors,
-          atomAttributes,
-          atomEvents,
-          atomNodes,
-          staticAttributes,
-          staticEvents,
-          staticNodes,
+          attributes: attributeDescriptors,
+          events: eventDescriptors,
+          nodes: nodeDescriptors,
+          props: propDescriptors,
         }
       : undefined;
 
@@ -268,117 +234,118 @@ function renderTemplateNode(
 
 function initDynamic(
   element: Element,
-  props: TemplateProps,
+  initProps: JsxProps,
   disposers: Disposer[],
-  {
-    atomAttributes,
-    atomEvents,
-    atomNodes,
-    childDescriptors,
-    staticAttributes,
-    staticEvents,
-    staticNodes,
-  }: PropsDescriptor
+  { childDescriptors, attributes, events, nodes, props }: InitDescriptor
 ) {
-  if (atomAttributes !== undefined) {
-    for (const { key, attribute } of atomAttributes) {
-      const atom = props[key] as Atom<TemplatePropValues>;
+  if (attributes !== undefined) {
+    for (const { initKey, key } of attributes) {
+      const initValue = initProps[initKey];
 
-      disposers.push(
-        createEffect(atom, () => {
-          const value = untracked(atom);
-          switch (typeof value) {
-            case 'string':
-              element.setAttribute(attribute, value);
-              break;
-            case 'boolean':
-              element.toggleAttribute(attribute, value);
-              break;
-            case 'undefined':
-              element.removeAttribute(attribute);
-              break;
-          }
-        })
-      );
-    }
-  }
-  if (atomEvents !== undefined) {
-    for (const { key, eventName } of atomEvents) {
-      const atom = props[key] as Atom<(() => void) | undefined>;
+      if (initValue === undefined || initValue === false) {
+        continue;
+      } else if (initValue === true) {
+        element.toggleAttribute(key, true);
+      } else if (isAtom(initValue)) {
+        const firstValue = untracked(initValue);
 
-      let eventHandler: (() => void) | undefined;
-
-      disposers.push(
-        createEffect(atom, () => {
-          if (eventHandler) {
-            element.removeEventListener(eventName, eventHandler);
-          }
-
-          eventHandler = untracked(atom);
-          if (eventHandler !== undefined) {
-            element.addEventListener(eventName, eventHandler);
-          }
-        })
-      );
-    }
-  }
-  if (atomNodes !== undefined) {
-    for (const { index, key } of atomNodes) {
-      const atom = props[key] as Atom<string | undefined>;
-      const node = index < 0 ? element : (element.childNodes[index] as Text);
-
-      disposers.push(
-        createEffect(atom, () => {
-          const value = untracked(atom);
-          if (value === undefined) {
-            node.textContent = '';
-          } else {
-            node.textContent = value;
-          }
-        })
-      );
-    }
-  }
-  if (staticAttributes !== undefined) {
-    for (const { attribute, key } of staticAttributes) {
-      const value = props[key] as string | undefined;
-      switch (typeof value) {
-        case 'string':
-          element.setAttribute(attribute, value);
-          break;
-        case 'boolean':
-          element.toggleAttribute(attribute, value);
-          break;
-      }
-    }
-  }
-  if (staticEvents !== undefined) {
-    for (const { eventName, key } of staticEvents) {
-      const eventHandler = props[key] as () => void | undefined;
-      if (eventHandler !== undefined) {
-        element.addEventListener(eventName, eventHandler);
-      }
-    }
-  }
-  if (staticNodes !== undefined) {
-    for (const { index, key } of staticNodes) {
-      const value = props[key] as unknown;
-
-      switch (typeof value) {
-        case 'string':
-          (element.childNodes[index] as Text).data = value;
-          break;
-        case 'object': {
-          if (isJsxNode(value)) {
-          } else {
-          }
-          break;
+        if (firstValue === true) {
+          element.toggleAttribute(key, true);
+        } else if (firstValue !== undefined && firstValue !== false) {
+          // setAttribute casts to string
+          element.setAttribute(key, firstValue as any);
         }
-        case 'undefined':
-          break;
-        default:
-          (element.childNodes[index] as Text).data = String(value);
-          break;
+
+        disposers.push(
+          initValue[emitterKey](() => {
+            const value = untracked(initValue);
+            switch (typeof value) {
+              case 'boolean':
+                element.toggleAttribute(key, value);
+                break;
+              case 'undefined':
+                element.removeAttribute(key);
+                break;
+              default:
+                // setAttribute casts to string
+                element.setAttribute(key, value as any);
+                break;
+            }
+          })
+        );
+      } else {
+        // setAttribute casts to string
+        element.setAttribute(key, initValue as any);
+      }
+    }
+  }
+  if (events !== undefined) {
+    for (const { initKey, key } of events) {
+      const initValue = initProps[initKey];
+
+      if (isAtom(initValue)) {
+        let eventHandler: EventListenerOrEventListenerObject | undefined;
+        disposers.push(
+          createEffect(initValue, () => {
+            if (eventHandler) {
+              element.removeEventListener(key, eventHandler);
+            }
+
+            // Defer correctness to addEventListener error handling
+            eventHandler = untracked(initValue) as any;
+            if (eventHandler !== undefined) {
+              element.addEventListener(key, eventHandler);
+            }
+          })
+        );
+      } else if (initValue !== undefined) {
+        element.addEventListener(key, initValue as any);
+      }
+    }
+  }
+  if (nodes !== undefined) {
+    // TODO: handle JSX
+    for (const { index, initKey } of nodes) {
+      const initValue = initProps[initKey];
+
+      if (initValue === undefined) {
+        continue;
+      }
+
+      const node = element.childNodes[index] as Text;
+
+      if (isAtom(initValue)) {
+        disposers.push(
+          createEffect(initValue, () => {
+            const value = untracked(initValue);
+            if (value === undefined) {
+              node.data = '';
+            } else {
+              // Data casts to string
+              node.data = value as any;
+            }
+          })
+        );
+      } else {
+        // Data casts to string
+        node.data = initValue as any;
+      }
+    }
+  }
+  if (props !== undefined) {
+    for (const { key, initKey } of props) {
+      const initValue = initProps[initKey];
+
+      if (isAtom(initValue)) {
+        disposers.push(
+          createEffect(initValue, () => {
+            // Expect the user knows what they are doing
+            (element as any)[key] = untracked(initValue);
+          })
+        );
+      } else {
+        // Expect the user knows what they are doing
+        (element as any)[key] = initValue;
       }
     }
   }
@@ -389,7 +356,7 @@ function initDynamic(
         (index === undefined
           ? element.firstChild
           : element.childNodes[index]) as Element,
-        props,
+        initProps,
         disposers,
         childDescriptor
       );
@@ -397,7 +364,7 @@ function initDynamic(
   }
 }
 
-export function manualTemplate<TProps extends object>(
+export function manualTemplate<TProps extends JsxProps>(
   templateCreator: () => Element,
   init: (element: Element, props: TProps) => Disposer | undefined
 ): (props: TProps) => JsxRawNode {

@@ -9,7 +9,6 @@
     { "path": "packages/core/tsconfig.build.json" },
     { "path": "packages/jsx/tsconfig.build.json" },
     { "path": "packages/jsx/tsconfig.web.build.json" },
-    { "path": "packages/legacy/tsconfig.build.json" },
     { "path": "packages/test-utils/tsconfig.build.json" }
   ]
 }

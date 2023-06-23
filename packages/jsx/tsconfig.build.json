@@ -6,8 +6,5 @@
     "rootDir": "./src",
     "outDir": "./lib"
   },
-  "references": [
-    { "path": "../core/tsconfig.build.json" },
-    { "path": "./tsconfig.web.build.json" }
-  ]
+  "references": [{ "path": "../core/tsconfig.build.json" }]
 }

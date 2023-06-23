@@ -20,8 +20,10 @@
       "import": "./lib/jsx-runtime.js"
     },
     "./*": {
-      "types": "./lib/*.d.ts",
-      "import": "./lib/*.js"
+      "import": "./lib/*"
+    },
+    "./*.js": {
+      "types": "./lib/*.d.ts"
     }
   },
   "dependencies": {

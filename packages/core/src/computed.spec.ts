@@ -38,13 +38,14 @@ describe('core: Computed', () => {
   function createWeakComputed() {
     let subCount = 0;
     let emitterCallback: EmitHandler<undefined> | undefined;
-    const emitter: Emitter<undefined> = (cb) => {
+    const emitter = ((cb) => {
       subCount++;
       emitterCallback = cb;
       return () => {
         emitterCallback = undefined;
       };
-    };
+    }) as Emitter<undefined>;
+    (emitter as any)[emitterKey] = emitter;
     const send = () => {
       emitterCallback?.(undefined);
     };

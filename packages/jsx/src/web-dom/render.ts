@@ -4,21 +4,24 @@ import {
   COLLECTION_EMIT_TYPE_KEY_DELETE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
   COLLECTION_EMIT_TYPE_KEY_WRITE,
-} from '@metron/core/collection';
-import type { Disposer } from '@metron/core/emitter';
+} from '@metron/core/collection.js';
+import type { Disposer } from '@metron/core/emitter.js';
 import {
   LIST_EMIT_TYPE_APPEND,
   LIST_EMIT_TYPE_SPLICE,
   isAtomList,
   type AtomList,
-} from '@metron/core/list';
+} from '@metron/core/list.js';
 import {
   emitterKey,
   isAtom,
   untracked,
   type Atom,
-} from '@metron/core/particle';
-import { scheduleCleanup, setCleanupScheduler } from '@metron/core/schedulers';
+} from '@metron/core/particle.js';
+import {
+  scheduleCleanup,
+  setCleanupScheduler,
+} from '@metron/core/schedulers.js';
 import {
   NODE_TYPE_COMPONENT,
   NODE_TYPE_CONTEXT_PROVIDER,
@@ -32,6 +35,7 @@ import {
   type JsxProps,
 } from '../node.js';
 import { isIterable } from '../utils.js';
+import { createEffect } from '@metron/core/effect.js';
 
 setCleanupScheduler(window.requestIdleCallback);
 
@@ -43,8 +47,8 @@ interface DomRenderContextProps extends JsxProps {
 type JsxRender = {
   [key in JsxNode['nodeType']]: (
     parent: ParentNode,
-    nodeContainer: ChildNode[],
-    disposerContainer: Disposer[],
+    nodes: ChildNode[],
+    disposers: Disposer[],
     value: Extract<JsxNode, { nodeType: key }>,
     contextStore: ComponentContextStore,
     isOnlyChild?: boolean
@@ -58,31 +62,24 @@ export function render(
   { root, children }: DomRenderContextProps,
   contextStore: ComponentContextStore = {}
 ): Disposer {
-  const nodeContainer: ChildNode[] = [];
-  const disposerContainer: Disposer[] = [];
+  const nodes: ChildNode[] = [];
+  const disposers: Disposer[] = [];
 
-  renderInto(
-    root,
-    nodeContainer,
-    disposerContainer,
-    children,
-    contextStore,
-    true
-  );
+  renderInto(root, nodes, disposers, children, contextStore, true);
 
-  root.replaceChildren(...nodeContainer);
+  root.replaceChildren(...nodes);
 
   return () => {
-    dispose(disposerContainer);
-    disposerContainer.length = 0;
+    dispose(disposers);
+    disposers.length = 0;
   };
 }
 
 const jsxRender: JsxRender = {
   [NODE_TYPE_COMPONENT](
     parent,
-    nodeContainer,
-    disposerContainer,
+    nodes,
+    disposers,
     component,
     contextStore,
     isOnlyChild
@@ -93,36 +90,22 @@ const jsxRender: JsxRender = {
 
     const children = tag(props, componentContext);
 
-    renderInto(
-      parent,
-      nodeContainer,
-      disposerContainer,
-      children,
-      contextStore,
-      isOnlyChild
-    );
+    renderInto(parent, nodes, disposers, children, contextStore, isOnlyChild);
   },
   [NODE_TYPE_FRAGMENT](
     parent,
-    nodeContainer,
-    disposerContainer,
+    nodes,
+    disposers,
     { children },
     contextStore,
     isOnlyChild
   ) {
-    renderInto(
-      parent,
-      nodeContainer,
-      disposerContainer,
-      children,
-      contextStore,
-      isOnlyChild
-    );
+    renderInto(parent, nodes, disposers, children, contextStore, isOnlyChild);
   },
   [NODE_TYPE_INTRINSIC](
     parent,
-    nodeContainer,
-    disposerContainer,
+    nodes,
+    disposers,
     intrinsic,
     contextStore,
     isOnlyChild
@@ -131,64 +114,89 @@ const jsxRender: JsxRender = {
 
     const element = document.createElement(intrinsic.tag);
 
-    nodeContainer.push(element);
+    nodes.push(element);
 
     for (const [key, value] of Object.entries(props)) {
-      if (isAtom(value)) {
-        if (key.startsWith(EVENT_HANDLER_PREFIX)) {
-          const eventName = key.slice(EVENT_HANDLER_PREFIX_LENGTH);
-
-          let eventHandler = untracked(value);
-          // TODO: don't check typeof instead rely on intrinsic types to be correct
-          if (typeof eventHandler === 'function') {
-            element.addEventListener(eventName, eventHandler as () => void);
+      if (value === undefined) {
+        continue;
+      }
+      let [keySpecifier, keyName] = key.split(':', 2) as [string, string];
+      if (keySpecifier === key) {
+        keyName = keySpecifier;
+        keySpecifier = 'attr';
+      }
+      switch (keySpecifier) {
+        case 'prop':
+          if (isAtom(value)) {
+            disposers.push(
+              createEffect(value, () => {
+                // Expect the user knows what they are doing
+                (element as any)[key] = untracked(value);
+              })
+            );
+          } else {
+            // Expect the user knows what they are doing
+            (element as any)[key] = value;
           }
 
-          disposerContainer.push(
-            value[emitterKey](() => {
-              if (eventHandler) {
-                element.removeEventListener(
-                  eventName,
-                  eventHandler as () => void
-                );
-              }
+          break;
+        case 'attr':
+          if (isAtom(value)) {
+            const firstValue = untracked(value);
 
-              eventHandler = untracked(value);
-              if (typeof eventHandler === 'function') {
-                // TODO: don't check typeof instead rely on intrinsic types to be correct
-                element.addEventListener(eventName, eventHandler as () => void);
-              }
-            })
-          );
-        } else {
-          const firstValue = untracked(value);
-          if (firstValue !== undefined) {
-            // TODO: don't cast to string instead make Intrinsic Dom types only allow string
-            element.setAttribute(key, String(firstValue));
+            if (firstValue === true) {
+              element.toggleAttribute(key, true);
+            } else if (firstValue !== undefined && firstValue !== false) {
+              // setAttribute casts to string
+              element.setAttribute(key, firstValue as any);
+            }
+
+            disposers.push(
+              value[emitterKey](() => {
+                const innerValue = untracked(value);
+                switch (typeof innerValue) {
+                  case 'boolean':
+                    element.toggleAttribute(key, innerValue);
+                    break;
+                  case 'undefined':
+                    element.removeAttribute(key);
+                    break;
+                  default:
+                    // setAttribute casts to string
+                    element.setAttribute(key, innerValue as any);
+                    break;
+                }
+              })
+            );
+          } else if (value === true) {
+            element.toggleAttribute(keyName, true);
+          } else if (value !== false) {
+            element.setAttribute(keyName, value as string);
           }
+          break;
+        case 'on':
+          if (isAtom(value)) {
+            let eventHandler: EventListenerOrEventListenerObject | undefined;
+            disposers.push(
+              createEffect(value, () => {
+                if (eventHandler) {
+                  element.removeEventListener(key, eventHandler);
+                }
 
-          disposerContainer.push(
-            value[emitterKey](() => {
-              const newValue = untracked(value);
-              if (newValue === undefined) {
-                element.removeAttribute(key);
-              } else {
-                // TODO: don't cast to string instead make Intrinsic Dom types only allow string
-                element.setAttribute(key, String(newValue));
-              }
-            })
-          );
-        }
-      } else if (key.startsWith(EVENT_HANDLER_PREFIX)) {
-        if (typeof value === 'function') {
-          const eventName = key.slice(EVENT_HANDLER_PREFIX_LENGTH);
-          element.addEventListener(eventName, value as () => void);
-        } else {
-          throw new TypeError('Event handler must be a function');
-        }
-      } else if (value !== undefined) {
-        // TODO: don't cast to string instead make Intrinsic Dom types only allow string
-        element.setAttribute(key, String(value));
+                // Defer correctness to addEventListener error handling
+                eventHandler = untracked(value) as any;
+                if (eventHandler !== undefined) {
+                  element.addEventListener(key, eventHandler);
+                }
+              })
+            );
+          } else if (value !== undefined) {
+            // Defer to addEventListener error handling
+            element.addEventListener(keyName, value as any);
+          }
+          break;
+        default:
+          throw new TypeError(`Unsupported specifier "${keySpecifier}"`);
       }
     }
 
@@ -197,7 +205,7 @@ const jsxRender: JsxRender = {
     renderInto(
       element,
       childNodeContainer,
-      disposerContainer,
+      disposers,
       children,
       contextStore,
       true
@@ -208,12 +216,12 @@ const jsxRender: JsxRender = {
   [NODE_TYPE_CONTEXT_PROVIDER]() {
     throw new Error('Not Implemented');
   },
-  Raw(parent, nodeContainer, disposerContainer, { value, disposer }) {
+  Raw(parent, nodes, disposers, { value, disposer }) {
     if (disposer !== undefined) {
-      disposerContainer.push(disposer);
+      disposers.push(disposer);
     }
     if (value instanceof Element) {
-      nodeContainer.push(value);
+      nodes.push(value);
     }
   },
   [NODE_TYPE_RENDER_CONTEXT]() {
@@ -229,8 +237,8 @@ function dispose(disposers: Disposer[]): void {
 
 function renderInto(
   parent: ParentNode,
-  nodeContainer: ChildNode[],
-  disposerContainer: Disposer[],
+  nodes: ChildNode[],
+  disposers: Disposer[],
   value: unknown,
   contextStore: ComponentContextStore,
   isOnlyChild = false
@@ -242,45 +250,40 @@ function renderInto(
   if (isJsxNode(value)) {
     jsxRender[value.nodeType](
       parent,
-      nodeContainer,
-      disposerContainer,
+      nodes,
+      disposers,
       value as any,
       contextStore,
       isOnlyChild
     );
   } else if (isIterable(value) && typeof value === 'object') {
     for (const child of value) {
-      renderInto(parent, nodeContainer, disposerContainer, child, contextStore);
+      renderInto(parent, nodes, disposers, child, contextStore);
     }
   } else if (isAtom(value)) {
     if (isOnlyChild) {
-      renderOnlyChildAtomInto(
-        parent,
-        nodeContainer,
-        disposerContainer,
-        value,
-        contextStore
-      );
+      renderOnlyChildAtomInto(parent, nodes, disposers, value, contextStore);
     } else {
       throw new Error('Not implemented');
     }
   } else {
-    nodeContainer.push(document.createTextNode(String(value)));
+    // @ts-ignore createTextNode casts to string
+    nodes.push(document.createTextNode(value));
   }
 }
 
 function renderOnlyChildAtomInto(
   parent: ParentNode,
-  nodeContainer: ChildNode[],
-  disposerContainer: Disposer[],
+  nodes: ChildNode[],
+  disposers: Disposer[],
   atom: Atom,
   contextStore: ComponentContextStore
 ): void {
   if (isAtomList(atom)) {
     return renderOnlyChildAtomListInto(
       parent,
-      nodeContainer,
-      disposerContainer,
+      nodes,
+      disposers,
       atom,
       contextStore
     );
@@ -295,9 +298,9 @@ function renderOnlyChildAtomInto(
   const text = document.createTextNode(
     firstValue === undefined ? '' : String(firstValue)
   );
-  nodeContainer.push(text);
+  nodes.push(text);
 
-  disposerContainer.push(
+  disposers.push(
     atom[emitterKey](() => {
       const newValue = untracked(atom);
       text.textContent = newValue === undefined ? '' : String(newValue);
@@ -314,8 +317,8 @@ const EMPTY_ARRAY: IndexedEmpty = [];
 
 function renderOnlyChildAtomListInto(
   parent: ParentNode,
-  nodeContainer: ChildNode[],
-  disposerContainer: Disposer[],
+  firstNodes: ChildNode[],
+  disposers: Disposer[],
   list: AtomList<unknown>,
   contextStore: ComponentContextStore
 ) {
@@ -342,7 +345,7 @@ function renderOnlyChildAtomListInto(
         ? (childNodeContainer as NonEmptyChildNodes)
         : EMPTY_ARRAY
     );
-    nodeContainer.push(...childNodeContainer);
+    firstNodes.push(...childNodeContainer);
   }
 
   const listEmitDisposer = list[emitterKey]((message) => {
@@ -600,7 +603,7 @@ function renderOnlyChildAtomListInto(
     }
   });
 
-  disposerContainer.push(() => {
+  disposers.push(() => {
     listEmitDisposer();
     disposeIndexed(indexedDisposers);
   });

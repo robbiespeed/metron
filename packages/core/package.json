@@ -20,8 +20,10 @@
       "import": "./lib/mod.js"
     },
     "./*": {
-      "types": "./lib/*.d.ts",
-      "import": "./lib/*.js"
+      "import": "./lib/*"
+    },
+    "./*.js": {
+      "types": "./lib/*.d.ts"
     }
   }
 }

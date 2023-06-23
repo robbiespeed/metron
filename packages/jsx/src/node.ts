@@ -1,5 +1,5 @@
-import { createAtom, type AtomSetter } from '@metron/core/atom';
-import { type Atom } from '@metron/core/particle';
+import { createAtom, type AtomSetter } from '@metron/core/atom.js';
+import { type Atom } from '@metron/core/particle.js';
 
 export interface JsxBaseNode {
   readonly [nodeBrandKey]: true;
@@ -51,7 +51,7 @@ export type JsxNode =
 // export interface JsxProps {
 //   readonly [key: string]: unknown;
 // }
-export type JsxProps = object;
+export type JsxProps = Record<string, unknown>;
 
 export interface ComponentContextStore {
   readonly [key: string]: unknown;
