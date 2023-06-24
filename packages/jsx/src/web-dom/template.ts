@@ -10,6 +10,7 @@ import {
 import { isAtom, untracked } from '@metron/core/particle.js';
 import { createEffect } from '@metron/core/effect.js';
 import type { Disposer } from '@metron/core/emitter.js';
+import { scheduleTask } from '@metron/core/schedulers.js';
 
 interface InitDescriptor<TProps extends JsxProps = JsxProps> {
   index?: number;
@@ -17,6 +18,7 @@ interface InitDescriptor<TProps extends JsxProps = JsxProps> {
   attributes?: { key: string; initKey: keyof TProps }[];
   events?: { key: string; initKey: keyof TProps }[];
   nodes?: { index: number; initKey: keyof TProps }[];
+  refs?: (keyof TProps)[];
   childDescriptors?: InitDescriptor[];
 }
 
@@ -114,16 +116,31 @@ function renderTemplateNode(
   let attributeDescriptors: InitDescriptor['attributes'];
   let propDescriptors: InitDescriptor['props'];
   let eventDescriptors: InitDescriptor['events'];
+  let refDescriptors: InitDescriptor['refs'];
 
   for (const [key, value] of Object.entries(templateProps)) {
     if (value === undefined) {
       continue;
     }
 
-    let [keySpecifier, keyName] = key.split(':', 2) as [string, string];
+    let [keySpecifier, keyName] = key.split(':', 2) as [
+      string,
+      string | undefined
+    ];
     if (keySpecifier === key) {
       keyName = keySpecifier;
       keySpecifier = 'attr';
+    }
+
+    if (keySpecifier === 'ref') {
+      if (isSlot(value)) {
+        (refDescriptors ??= []).push(value.key);
+        continue;
+      } else {
+        throw new TypeError('Templates may only use slots to register refs');
+      }
+    } else if (keyName === undefined) {
+      throw new Error(`Specifier "${keySpecifier}" must have a keyName`);
     }
 
     switch (keySpecifier) {
@@ -158,7 +175,7 @@ function renderTemplateNode(
           });
         } else {
           throw new TypeError(
-            'Templates cannot register event handlers on themselves'
+            'Templates may only use slots to register event handlers'
           );
         }
         break;
@@ -219,12 +236,14 @@ function renderTemplateNode(
     childDescriptors ??
     eventDescriptors ??
     nodeDescriptors ??
+    refDescriptors ??
     propDescriptors
       ? {
           childDescriptors,
           attributes: attributeDescriptors,
           events: eventDescriptors,
           nodes: nodeDescriptors,
+          refs: refDescriptors,
           props: propDescriptors,
         }
       : undefined;
@@ -236,8 +255,15 @@ function initDynamic(
   element: Element,
   initProps: JsxProps,
   disposers: Disposer[],
-  { childDescriptors, attributes, events, nodes, props }: InitDescriptor
+  { childDescriptors, attributes, events, nodes, props, refs }: InitDescriptor
 ) {
+  if (refs !== undefined) {
+    for (const initKey of refs) {
+      const refSetter = initProps[initKey];
+      // If not callable then it's okay to throw
+      scheduleTask(() => (refSetter as any)(element));
+    }
+  }
   if (attributes !== undefined) {
     for (const { initKey, key } of attributes) {
       const initValue = initProps[initKey];

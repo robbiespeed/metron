@@ -145,6 +145,7 @@ export function createStaticComponent<
   return component as any;
 }
 
+// TODO refactor render context to account for disposers or remove and rely on Raw nodes for switching renderers
 const renderContextStore: Record<symbol, RenderContext | undefined> = {};
 
 type RenderReturnFromContext<TContext extends RenderContext> =
