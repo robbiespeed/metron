@@ -9,6 +9,7 @@
     "build:clean": "tsc -b tsconfig.build.json --clean && rm -rf packages/*/lib",
     "build:types": "tsc -b tsconfig.build.json --emitDeclarationOnly",
     "build:types:watch": "tsc -b tsconfig.build.json --emitDeclarationOnly --watch",
+    "prepublish": "pnpm build:clean && pnpm build",
     "test": "mocha --v8-expose-gc",
     "test:no-gc": "mocha",
     "test:watch": "mocha --v8-expose-gc --watch",

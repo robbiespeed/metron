@@ -17,6 +17,9 @@
     "url": "https://github.com/robbiespeed/metron.git",
     "directory": "packages/jsx"
   },
+  "files": [
+    "lib/*"
+  ],
   "license": "MIT",
   "type": "module",
   "exports": {
