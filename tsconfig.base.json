@@ -1,0 +1,38 @@
+{
+  "include": [],
+  "exclude": ["**/*.spec.ts", "**/*.spec.tsx"],
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": [],
+    "target": "ES2022",
+    "module": "Node16",
+    "verbatimModuleSyntax": true,
+    "composite": true,
+    "moduleResolution": "node16",
+    // TODO: Enable once rollup builds are setup, and rename imports to .ts (for Deno compatibility)
+    // In package.json exports use only *.ts mapped to lib/*.js or src/*.ts
+    // "allowImportingTsExtensions": true,
+    // "customConditions": ["deno"]
+    "esModuleInterop": true,
+    "allowJs": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "metron-jsx",
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noImplicitThis": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "useDefineForClassFields": true,
+    "useUnknownInCatchVariables": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "metron-core": ["./packages/core/src/mod.ts"],
+      "metron-core/*": ["./packages/core/src/*"],
+      "metron-test-utils": ["./packages/test-utils/src/mod.ts"],
+      "metron-test-utils/*": ["./packages/test-utils/src/*"],
+      "metron-jsx/*": ["./packages/jsx/src/*"]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "cSpell.words": [
+    "Computeds",
+    "Deno",
+    "esbenp",
+    "fedoraproject",
+    "jsxs",
+    "lcov",
+    "Metron",
+    "mocharc",
+    "NOPASSWD",
+    "tsbuildinfo",
+    "typecheck",
+    "userns"
+  ],
+  "cSpell.enableFiletypes": ["dockerfile", "ignore", "shellscript"],
+  "cSpell.ignorePaths": [
+    "pnpm-lock.yaml",
+    "node_modules",
+    ".pnpm-store",
+    ".git",
+    ".vscode"
+  ],
+  "editor.tabSize": 2,
+  "typescript.tsdk": "node_modules/typescript/lib"
+}

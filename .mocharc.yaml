@@ -1,0 +1,11 @@
+loader: '@esbuild-kit/esm-loader'
+# full-trace: true
+enable-source-maps: true
+spec:
+  - 'packages/*/src/**/*.spec.ts'
+  - 'packages/*/src/**/*.spec.tsx'
+extension:
+  - 'ts'
+  - 'tsx'
+watch-files:
+  - 'packages/*/src'
