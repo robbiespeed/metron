@@ -1,71 +1,72 @@
 import { expect } from 'chai';
-import { createSensor } from './sensor.js';
 import { garbageCollect } from '@metron/test-utils';
+import { createEmitter } from './emitter.js';
 
-describe('core: Sensor', () => {
+describe('core: Emitter', () => {
   it('should create', () => {
-    expect(createSensor()).to.exist;
+    expect(createEmitter()).to.have.lengthOf(2);
   });
   it('should send and emit', () => {
-    const sensor = createSensor();
+    const [emitter, send] = createEmitter();
     let count = 0;
-    sensor.emitter(() => {
+    emitter(() => {
       count++;
     });
-    sensor.send();
+    send();
     expect(count).to.equal(1);
   });
   it('should send and emit multiple', () => {
-    const sensor = createSensor();
+    const [emitter, send] = createEmitter();
     let countA = 0;
     let countB = 0;
-    sensor.emitter(() => {
+    emitter(() => {
       countA++;
     });
-    sensor.emitter(() => {
+    emitter(() => {
       countB++;
     });
-    sensor.send();
+    send();
     expect(countA).to.equal(1);
     expect(countB).to.equal(1);
   });
   it('should send data', () => {
-    const sensor = createSensor<string>();
+    const [emitter, send] = createEmitter<string>();
     let message = '';
-    sensor.emitter((data) => {
+    emitter((data) => {
       message = data;
     });
-    sensor.send('Hello');
+    send('Hello');
     expect(message).to.equal('Hello');
   });
   it('should terminate', () => {
-    const sensor = createSensor();
+    const [emitter, send] = createEmitter();
     let count = 0;
-    const clear = sensor.emitter(() => {
+    const clear = emitter(() => {
       count++;
     });
     clear();
-    sensor.send();
+    send();
     expect(count).to.equal(0);
   });
 
   function createActiveWeakSensor() {
-    const sensor = createSensor();
+    const [emitter, send] = createEmitter();
     const box = { count: 0 };
-    sensor.emitter(() => {
+    emitter(() => {
       box.count++;
     });
-    sensor.send();
-    return [new WeakRef(sensor), new WeakRef(box)] as const;
+    send();
+    return [new WeakRef(emitter), new WeakRef(send), new WeakRef(box)] as const;
   }
   it('should garbage collect when unreachable', async function () {
     if (!garbageCollect) {
       this.skip();
     }
 
-    const [weakSensor, weakBox] = createActiveWeakSensor();
+    const [weakEmitter, weakSend, weakBox] = createActiveWeakSensor();
     await garbageCollect();
-    expect(weakSensor.deref()).to.be.undefined;
+    expect(weakEmitter.deref()).to.be.undefined;
+    expect(weakSend.deref()).to.be.undefined;
     expect(weakBox.deref()).to.be.undefined;
   });
 });

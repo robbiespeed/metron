@@ -4,7 +4,7 @@ import { emitterKey, type Atom, toValueKey } from './particle.js';
 export interface Selector<T> {
   (match: T): Atom<boolean>;
   <U>(match: T, deriver: (isSelected: boolean) => U): Atom<U>;
-  [emitterKey]: Emitter;
+  [emitterKey]: Emitter<void>;
 }
 
 export function createSelector<T>(
@@ -34,7 +34,10 @@ export function createSelector<T>(
     senders.get(storedValue)?.(true);
   }
 
-  function selector<U>(match: T, deriver?: (isSelected: boolean) => U): Atom {
+  function selector<U>(
+    match: T,
+    deriver?: (isSelected: boolean) => U
+  ): Atom<unknown, unknown> {
     let matchEmitter = weakEmitters.get(match)?.deref();
 
     if (matchEmitter === undefined) {
@@ -61,7 +64,6 @@ export function createSelector<T>(
           [emitterKey]: matchEmitter,
         };
   }
-  // (selector as any)[emitterKey] = emitter;
   Object.defineProperty(selector, emitterKey, {
     get() {
       if (emitter === undefined) {

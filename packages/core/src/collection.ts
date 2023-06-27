@@ -1,4 +1,3 @@
-import { atomIteratorKey, type AtomIterator } from './iterable.js';
 import type { Atom } from './particle.js';
 
 export const collectionKeyToValueKey = Symbol('MetronAtomCollectionKeyToValue');
@@ -79,10 +78,6 @@ export interface AtomCollection<
 > extends Atom<TRaw, TEmitMap[keyof TEmitMap]> {
   readonly size: Atom<number>;
   [collectionKeyToValueKey](key: TKey): Atom<TValue | undefined>;
-  entries(): AtomIterator<[TKey, TValue]>;
-  keys(): AtomIterator<TKey>;
-  values(): AtomIterator<TValue>;
-  [atomIteratorKey](): AtomIterator<TValue, TEmitMap[keyof TEmitMap]>;
 }
 
 export function isAtomCollection(

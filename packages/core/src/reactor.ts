@@ -1,23 +1,24 @@
+import type { Disposer } from './emitter.js';
 import { createOrb, type OrbContext } from './orb.js';
 
 export function createReactor(
-  callback: (context: OrbContext) => void,
+  run: (context: OrbContext) => void,
   signalScheduler?: (callback: () => void) => void
 ) {
-  const { watch, context, clearWatched } = createOrb({ signalScheduler });
+  const { watch, context, dispose } = createOrb();
 
-  // TODO: If signalScheduler option is removed from orb,
-  // then signalScheduler can be used directly here instead
-  const disposer = watch(() => callback(context));
+  let disposer: Disposer;
 
   if (signalScheduler) {
-    signalScheduler(() => callback(context));
+    disposer = watch(() => signalScheduler(() => run(context)));
+    signalScheduler(() => run(context));
   } else {
-    callback(context);
+    disposer = watch(() => run(context));
+    run(context);
   }
 
   return () => {
     disposer();
-    clearWatched();
+    dispose();
   };
 }

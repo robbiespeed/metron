@@ -4,4 +4,5 @@ export const garbageCollect =
   (async () => {
     await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
     global.gc!();
+    await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
   });

@@ -1,4 +1,4 @@
-import { createAtom, type AtomSetter } from '@metron/core/atom.js';
+import { createAtom } from '@metron/core/atom.js';
 import { type Atom } from '@metron/core/particle.js';
 
 export interface JsxBaseNode {
@@ -74,9 +74,7 @@ export interface StaticComponent<
 
 // TODO: switch from atom to custom particle type without valueOf/untracked access
 // users will need useContext to gain access to stored values
-export interface ComponentContext extends Atom<ComponentContextStore> {
-  [setContextKey]: AtomSetter<ComponentContextStore>;
-}
+export interface ComponentContext extends Atom<ComponentContextStore> {}
 
 export interface RenderContext<
   TRootProps extends JsxProps = JsxProps,
@@ -117,13 +115,10 @@ export const NODE_TYPE_RENDER_CONTEXT = 'RenderContext';
 
 export const nodeBrandKey = Symbol('MetronJSXNodeBrand');
 
-const setContextKey = Symbol('MetronJSXSetContext');
-
 export function createContext(
   record: ComponentContextStore = {}
 ): ComponentContext {
-  const [context, setContext] = createAtom(record);
-  (context as ComponentContext)[setContextKey] = setContext;
+  const [context] = createAtom(record);
   return context as ComponentContext;
 }
 

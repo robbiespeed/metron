@@ -1,16 +1,24 @@
-import { toValueKey, type Atom, emitterKey, type Emitter } from '@metron/core';
+import type { Disposer, Emitter } from '@metron/core/emitter.js';
 import {
+  emitterKey,
+  isAtom,
+  runAndSubscribe,
+  toValueKey,
+  untracked,
+  type Atom,
+} from '@metron/core/particle.js';
+import { scheduleMicroTask } from '@metron/core/schedulers.js';
+import {
+  createStaticComponent,
+  isJsxNode,
   nodeBrandKey,
   type JsxNode,
-  type JsxRawNode,
-  isJsxNode,
-  createStaticComponent,
   type JsxProps,
+  type JsxRawNode,
 } from '../node.js';
-import { isAtom, untracked } from '@metron/core/particle.js';
-import { createEffect } from '@metron/core/effect.js';
-import type { Disposer } from '@metron/core/emitter.js';
-import { scheduleTask } from '@metron/core/schedulers.js';
+import { jsxRender, renderAtomListInto, renderInto } from './render.js';
+import { isIterable } from '../utils.js';
+import { isAtomList } from '@metron/core';
 
 interface InitDescriptor<TProps extends JsxProps = JsxProps> {
   index?: number;
@@ -261,7 +269,7 @@ function initDynamic(
     for (const initKey of refs) {
       const refSetter = initProps[initKey];
       // If not callable then it's okay to throw
-      scheduleTask(() => (refSetter as any)(element));
+      scheduleMicroTask(() => (refSetter as any)(element));
     }
   }
   if (attributes !== undefined) {
@@ -312,7 +320,7 @@ function initDynamic(
       if (isAtom(initValue)) {
         let eventHandler: EventListenerOrEventListenerObject | undefined;
         disposers.push(
-          createEffect(initValue, () => {
+          runAndSubscribe(initValue, () => {
             if (eventHandler) {
               element.removeEventListener(key, eventHandler);
             }
@@ -330,7 +338,6 @@ function initDynamic(
     }
   }
   if (nodes !== undefined) {
-    // TODO: handle JSX
     for (const { index, initKey } of nodes) {
       const initValue = initProps[initKey];
 
@@ -340,22 +347,65 @@ function initDynamic(
 
       const node = element.childNodes[index] as Text;
 
-      if (isAtom(initValue)) {
-        disposers.push(
-          createEffect(initValue, () => {
-            const value = untracked(initValue);
-            if (value === undefined) {
-              node.data = '';
-            } else {
-              // Data casts to string
-              node.data = value as any;
-            }
-          })
-        );
-      } else {
-        // Data casts to string
-        node.data = initValue as any;
+      if (typeof initValue === 'object') {
+        if (isAtom(initValue)) {
+          if (isAtomList(initValue)) {
+            const childNodes: ChildNode[] = [];
+            const isOnlyChild = element.childNodes.length === 1;
+
+            renderAtomListInto(
+              element,
+              childNodes,
+              disposers,
+              initValue,
+              {},
+              isOnlyChild
+            );
+
+            node.replaceWith(...childNodes);
+          } else {
+            disposers.push(
+              runAndSubscribe(initValue, () => {
+                const value = untracked(initValue);
+                if (value === undefined) {
+                  node.data = '';
+                } else {
+                  // Data casts to string
+                  node.data = value as any;
+                }
+              })
+            );
+          }
+          continue;
+        } else if (isJsxNode(initValue)) {
+          const childNodes: ChildNode[] = [];
+          const isOnlyChild = element.childNodes.length === 1;
+
+          // TODO: context passing
+          jsxRender[initValue.nodeType](
+            element,
+            childNodes,
+            disposers,
+            initValue as any,
+            {},
+            isOnlyChild
+          );
+
+          node.replaceWith(...childNodes);
+          continue;
+        } else if (isIterable(initValue) && typeof initValue === 'object') {
+          const childNodes: ChildNode[] = [];
+
+          for (const child of initValue) {
+            renderInto(element, childNodes, disposers, child, {});
+          }
+
+          node.replaceWith(...childNodes);
+          continue;
+        }
       }
+      // Data casts to string
+      node.data = initValue as any;
     }
   }
   if (props !== undefined) {
@@ -364,7 +414,7 @@ function initDynamic(
 
       if (isAtom(initValue)) {
         disposers.push(
-          createEffect(initValue, () => {
+          runAndSubscribe(initValue, () => {
             // Expect the user knows what they are doing
             (element as any)[key] = untracked(initValue);
           })

@@ -7,7 +7,7 @@ export interface Disposer {
 export type EmitHandler<TEmitData> = (data: TEmitData) => void;
 
 export interface Emitter<TEmitData = unknown> extends Particle<TEmitData> {
-  (callback: EmitHandler<TEmitData>): Disposer;
+  (handler: EmitHandler<TEmitData>): Disposer;
 }
 
 export function createEmitter(): [Emitter<undefined>, () => void];
@@ -16,49 +16,32 @@ export function createEmitter<TEmitData>(): [
   (message: TEmitData) => void
 ];
 export function createEmitter(): [Emitter, (message: unknown) => void] {
-  const strongHandlers: { handler?: EmitHandler<unknown> }[] = [];
-  const weakHandlers = new WeakRef(strongHandlers);
+  let handlers: { handler?: EmitHandler<unknown> }[] = [];
 
   function send(data: unknown) {
-    for (const { handler } of strongHandlers) {
+    for (const { handler } of handlers) {
       handler?.(data);
     }
   }
 
   let canScheduleClean = true;
-  function clean() {
-    const handlers = weakHandlers.deref();
-    if (handlers === undefined) {
-      return;
-    }
-    canScheduleClean = true;
 
-    handlers.splice(
-      0,
-      handlers.length,
-      ...handlers.filter((h) => h.handler !== undefined)
-    );
+  function clean() {
+    handlers = handlers.filter((h) => h.handler !== undefined);
+    canScheduleClean = true;
   }
 
   function emitter(handler: EmitHandler<unknown>) {
-    const handlers = weakHandlers.deref();
-    if (handlers === undefined) {
-      return;
-    }
-
     const handlerWrapper: { handler?: EmitHandler<unknown> } = { handler };
+    handlers.push(handlerWrapper);
 
-    const disposer = () => {
+    return () => {
       handlerWrapper.handler = undefined;
       if (canScheduleClean) {
         canScheduleClean = false;
         scheduleCleanup(clean);
       }
     };
-
-    handlers.push(handlerWrapper);
-
-    return disposer;
   }
   (emitter as any)[emitterKey] = emitter;
 

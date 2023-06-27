@@ -11,18 +11,19 @@ import {
   LIST_EMIT_TYPE_SPLICE,
   isAtomList,
   type AtomList,
+  type AtomListEmit,
 } from '@metron/core/list.js';
 import {
   emitterKey,
   isAtom,
   untracked,
-  type Atom,
+  runAndSubscribe,
 } from '@metron/core/particle.js';
 import {
   scheduleCleanup,
-  scheduleTask,
+  scheduleMicroTask,
   setCleanupScheduler,
-  setTaskScheduler,
+  setMicroTaskScheduler,
 } from '@metron/core/schedulers.js';
 import {
   NODE_TYPE_COMPONENT,
@@ -37,11 +38,10 @@ import {
   type JsxProps,
 } from '../node.js';
 import { isIterable } from '../utils.js';
-import { createEffect } from '@metron/core/effect.js';
 
 // TODO move to an init function
 setCleanupScheduler(requestIdleCallback);
-setTaskScheduler(queueMicrotask);
+setMicroTaskScheduler(queueMicrotask);
 
 interface DomRenderContextProps extends JsxProps {
   readonly root: ParentNode;
@@ -79,7 +79,10 @@ export function render(
   };
 }
 
-const jsxRender: JsxRender = {
+/**
+ * @private
+ */
+export const jsxRender: JsxRender = {
   [NODE_TYPE_COMPONENT](
     parent,
     nodes,
@@ -134,7 +137,7 @@ const jsxRender: JsxRender = {
       }
       if (keySpecifier === 'ref') {
         // If not callable then it's okay to throw
-        scheduleTask(() => (value as any)(element));
+        scheduleMicroTask(() => (value as any)(element));
         continue;
       } else if (keyName === undefined) {
         throw new Error(`Specifier "${keySpecifier}" must have a keyName`);
@@ -143,7 +146,7 @@ const jsxRender: JsxRender = {
         case 'prop':
           if (isAtom(value)) {
             disposers.push(
-              createEffect(value, () => {
+              runAndSubscribe(value, () => {
                 // Expect the user knows what they are doing
                 (element as any)[key] = untracked(value);
               })
@@ -191,7 +194,7 @@ const jsxRender: JsxRender = {
           if (isAtom(value)) {
             let eventHandler: EventListenerOrEventListenerObject | undefined;
             disposers.push(
-              createEffect(value, () => {
+              runAndSubscribe(value, () => {
                 if (eventHandler) {
                   element.removeEventListener(key, eventHandler);
                 }
@@ -248,7 +251,10 @@ function dispose(disposers: Disposer[]): void {
   }
 }
 
-function renderInto(
+/**
+ * @private
+ */
+export function renderInto(
   parent: ParentNode,
   nodes: ChildNode[],
   disposers: Disposer[],
@@ -260,74 +266,53 @@ function renderInto(
     return;
   }
 
-  if (isJsxNode(value)) {
-    return jsxRender[value.nodeType](
-      parent,
-      nodes,
-      disposers,
-      value as any,
-      contextStore,
-      isOnlyChild
-    );
-  } else if (isIterable(value) && typeof value === 'object') {
-    for (const child of value) {
-      renderInto(parent, nodes, disposers, child, contextStore);
-    }
-    return;
-  } else if (isAtom(value)) {
-    if (isAtomList(value)) {
-      return renderAtomListInto(
+  if (typeof value === 'object') {
+    if (isJsxNode(value)) {
+      return jsxRender[value.nodeType](
         parent,
         nodes,
         disposers,
-        value,
+        value as any,
         contextStore,
         isOnlyChild
       );
-    } else {
-      return renderAtomInto(
-        parent,
-        nodes,
-        disposers,
-        value,
-        contextStore,
-        isOnlyChild
-      );
+    } else if (isIterable(value) && typeof value === 'object') {
+      for (const child of value) {
+        renderInto(parent, nodes, disposers, child, contextStore);
+      }
+      return;
+    } else if (isAtom(value)) {
+      if (isAtomList(value)) {
+        return renderAtomListInto(
+          parent,
+          nodes,
+          disposers,
+          value,
+          contextStore,
+          isOnlyChild
+        );
+      } else {
+        const firstValue = untracked(value);
+
+        const text = document.createTextNode(
+          // createTextNode casts param to string
+          firstValue === undefined ? '' : (firstValue as any)
+        );
+        nodes.push(text);
+
+        disposers.push(
+          value[emitterKey](() => {
+            const newValue = untracked(value);
+            // Data casts to string
+            text.data = newValue === undefined ? '' : (newValue as any);
+          })
+        );
+        return;
+      }
     }
-  } else {
-    // createTextNode casts to string
-    nodes.push(document.createTextNode(value as any));
   }
-}
-
-function renderAtomInto(
-  parent: ParentNode,
-  nodes: ChildNode[],
-  disposers: Disposer[],
-  atom: Atom,
-  contextStore: ComponentContextStore,
-  isOnlyChild: boolean
-): void {
-  if (isOnlyChild === false) {
-    throw new Error('Not implemented');
-  }
-  const firstValue = untracked(atom);
-
-  if (firstValue !== null && typeof firstValue === 'object') {
-    throw new Error('Not implemented');
-  }
-
-  const text = document.createTextNode(
-    firstValue === undefined ? '' : String(firstValue)
-  );
-  nodes.push(text);
-
-  disposers.push(
-    atom[emitterKey](() => {
-      const newValue = untracked(atom);
-      text.textContent = newValue === undefined ? '' : String(newValue);
-    })
-  );
+  // createTextNode casts to string
+  nodes.push(document.createTextNode(value as any));
 }
 
 type NonEmptyChildNodes = [ChildNode, ...ChildNode[]];
@@ -337,7 +322,7 @@ type IndexedDisposers = Disposer[][];
 
 const EMPTY_ARRAY: Empty = [];
 
-function renderAtomListInto(
+export function renderAtomListInto(
   parent: ParentNode,
   firstNodes: ChildNode[],
   disposers: Disposer[],
@@ -434,7 +419,7 @@ function renderAtomListInto(
     }
   };
 
-  const listEmitDisposer = list[emitterKey]((message) => {
+  function listChangeHandler(message: AtomListEmit) {
     switch (message.type) {
       case COLLECTION_EMIT_TYPE_CLEAR: {
         const oldIndexedDisposers = indexedDisposers.slice();
@@ -687,7 +672,9 @@ function renderAtomListInto(
         throw new Error('Unhandled emit', { cause: message });
       }
     }
-  });
+  }
+
+  const listEmitDisposer = list[emitterKey](listChangeHandler);
 
   disposers.push(() => {
     listEmitDisposer();

@@ -1,3 +1,5 @@
+import { emptyCacheToken, type EmptyCacheToken } from './cache.js';
+import { cleanupRegistry } from './cleanup-registry.js';
 import {
   COLLECTION_EMIT_TYPE_CLEAR,
   collectionKeyToValueKey,
@@ -9,10 +11,7 @@ import {
   COLLECTION_EMIT_TYPE_KEY_DELETE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
 } from './collection.js';
-import { autoDisposeRegistry } from './effect.js';
 import { createEmitter, type Emitter } from './emitter.js';
-import { filterEmitter } from './filter-emitter.js';
-import { atomIteratorKey, type AtomIterator } from './iterable.js';
 import { emitterKey, toValueKey, type Atom } from './particle.js';
 
 export const LIST_EMIT_TYPE_APPEND = 'ListAppendEmit';
@@ -569,33 +568,46 @@ function createAtomListInternal<T>(
   rawList: RawAtomList<T>,
   listEmitter: Emitter<AtomListEmit>
 ): AtomList<T> {
+  let sizeEmitter: Emitter<void> | undefined;
+  // const [sizeEmitter, sendSize] = createEmitter<AtomListEmit>();
+
+  // // No need to hold disposer since size atom has same lifetime as listEmitter
+  // listEmitter((message) => {
+  //   const { size, oldSize } = message as unknown as Record<string, unknown>;
+  //   const shouldSendSize = oldSize === undefined ? false : size !== oldSize;
+  //   if (shouldSendSize) {
+  //     sendSize(message);
+  //   }
+  // });
+
   const sizeAtom: Atom<number> = {
     [toValueKey]() {
       return innerValues.length;
     },
-    [emitterKey]: filterEmitter(
-      listEmitter,
-      // TODO
-      () => true
-    ),
+    get [emitterKey]() {
+      if (sizeEmitter === undefined) {
+        const _ = createEmitter<void>();
+        sizeEmitter = _[0];
+        const sendSize = _[1];
+
+        // No need to hold disposer since size atom has same lifetime as listEmitter
+        listEmitter((message) => {
+          const { size, oldSize } = message as unknown as Record<
+            string,
+            unknown
+          >;
+          const shouldSendSize =
+            oldSize === undefined ? false : size !== oldSize;
+          if (shouldSendSize) {
+            sendSize();
+          }
+        });
+      }
+      return sizeEmitter;
+    },
   };
 
   const getKeyedParticle = createAtomKeyGetter(listEmitter, rawList.at);
-
-  const iteratorAtom: AtomIterator<T, AtomListEmit> = {
-    [toValueKey]: rawList.values,
-    [emitterKey]: listEmitter,
-  };
-
-  const entriesIteratorAtom: AtomIterator<[number, T], AtomListEmit> = {
-    [toValueKey]: rawList.entries,
-    [emitterKey]: listEmitter,
-  };
-
-  const keysIteratorAtom: AtomIterator<number, AtomListEmit> = {
-    [toValueKey]: rawList.keys,
-    [emitterKey]: listEmitter,
-  };
 
   function at(index: number) {
     return getKeyedParticle(Math.trunc(index));
@@ -612,9 +624,6 @@ function createAtomListInternal<T>(
       return rawList;
     },
     [emitterKey]: listEmitter,
-    [atomIteratorKey]() {
-      return iteratorAtom;
-    },
     map(mapper, type) {
       switch (type) {
         case 'deferred':
@@ -624,15 +633,6 @@ function createAtomListInternal<T>(
         default:
           return createMappedAtomListImmediate(list, innerValues, mapper);
       }
-    },
-    entries() {
-      return entriesIteratorAtom;
-    },
-    keys() {
-      return keysIteratorAtom;
-    },
-    values() {
-      return iteratorAtom;
     },
   };
 
@@ -687,17 +687,15 @@ function createMappedRawAtomList<T, U>(
   };
 }
 
-const mapCacheInvalidKey = Symbol('MetronAtomListMapCacheInvalid');
-
 function createMappedAtomListDeferred<T, U>(
   originalList: AtomList<T>,
   originalValues: T[],
   mapper: (value: T) => U
 ): AtomList<U> {
-  const cacheValues: (U | typeof mapCacheInvalidKey)[] = [];
+  const cacheValues: (U | EmptyCacheToken)[] = [];
 
-  function cacheMapper(value: U | typeof mapCacheInvalidKey, index: number): U {
-    if (value !== mapCacheInvalidKey) {
+  function cacheMapper(value: U | EmptyCacheToken, index: number): U {
+    if (value !== emptyCacheToken) {
       return value;
     }
 
@@ -716,9 +714,9 @@ function createMappedAtomListDeferred<T, U>(
         const { key, oldSize } = message;
 
         if (key === oldSize) {
-          cacheValues.push(mapCacheInvalidKey);
+          cacheValues.push(emptyCacheToken);
         } else {
-          cacheValues.splice(key, 0, mapCacheInvalidKey);
+          cacheValues.splice(key, 0, emptyCacheToken);
         }
         return;
       }
@@ -733,7 +731,7 @@ function createMappedAtomListDeferred<T, U>(
         return;
       }
       case COLLECTION_EMIT_TYPE_KEY_WRITE: {
-        cacheValues[message.key] = mapCacheInvalidKey;
+        cacheValues[message.key] = emptyCacheToken;
         return;
       }
       case COLLECTION_EMIT_TYPE_KEY_SWAP: {
@@ -745,7 +743,7 @@ function createMappedAtomListDeferred<T, U>(
       }
       case LIST_EMIT_TYPE_APPEND: {
         cacheValues.length = message.size;
-        cacheValues.fill(mapCacheInvalidKey, message.oldSize);
+        cacheValues.fill(emptyCacheToken, message.oldSize);
         return;
       }
       case LIST_EMIT_TYPE_REVERSE: {
@@ -765,9 +763,9 @@ function createMappedAtomListDeferred<T, U>(
         if (addCount === 0) {
           cacheValues.splice(start, deleteCount);
         } else {
-          const adds: (typeof mapCacheInvalidKey)[] = [];
+          const adds: EmptyCacheToken[] = [];
           adds.length = addCount;
-          adds.fill(mapCacheInvalidKey);
+          adds.fill(emptyCacheToken);
           cacheValues.splice(start, deleteCount, ...adds);
         }
         return;
@@ -779,7 +777,7 @@ function createMappedAtomListDeferred<T, U>(
   }
 
   const rawList = createMappedRawAtomList(cacheValues, cacheMapper);
-  autoDisposeRegistry.register(rawList, originalList[emitterKey](handleChange));
+  cleanupRegistry.register(rawList, originalList[emitterKey](handleChange));
 
   return createMappedAtomListInternal(
     originalList,
@@ -876,7 +874,7 @@ function createMappedAtomListImmediate<T, U>(
   }
 
   const rawList = createRawAtomList(mappedValues);
-  autoDisposeRegistry.register(rawList, originalList[emitterKey](handleChange));
+  cleanupRegistry.register(rawList, originalList[emitterKey](handleChange));
 
   return createMappedAtomListInternal(
     originalList,
@@ -912,21 +910,6 @@ function createMappedAtomListInternal<T, U>(
 
   const getKeyedParticle = createAtomKeyGetter(listEmitter, rawList.at);
 
-  const iteratorAtom: AtomIterator<U, AtomListEmit> = {
-    [toValueKey]: rawList.values,
-    [emitterKey]: listEmitter,
-  };
-
-  const entriesIteratorAtom: AtomIterator<[number, U], AtomListEmit> = {
-    [toValueKey]: rawList.entries,
-    [emitterKey]: listEmitter,
-  };
-
-  const keysIteratorAtom: AtomIterator<number, AtomListEmit> = {
-    [toValueKey]: rawList.keys,
-    [emitterKey]: listEmitter,
-  };
-
   function at(index: number) {
     return getKeyedParticle(Math.trunc(index));
   }
@@ -946,9 +929,6 @@ function createMappedAtomListInternal<T, U>(
       return rawList;
     },
     [emitterKey]: listEmitter,
-    [atomIteratorKey]() {
-      return iteratorAtom;
-    },
     map(mapper, type) {
       switch (type) {
         case 'deferred':
@@ -970,15 +950,6 @@ function createMappedAtomListInternal<T, U>(
             nestMapper(mapper)
           );
       }
-    },
-    entries() {
-      return entriesIteratorAtom;
-    },
-    keys() {
-      return keysIteratorAtom;
-    },
-    values() {
-      return iteratorAtom;
     },
   };
 
