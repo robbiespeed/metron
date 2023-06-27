@@ -1,5 +1,5 @@
-import type { Atom } from '@metron/core';
-import { jsx, jsxs, type JSX as BaseJSX } from '../jsx-runtime.js';
+import type { Atom } from 'metron-core';
+import { jsx, jsxs, Fragment, type JSX as BaseJSX } from '../jsx-runtime.js';
 
 interface EventHandler {
   (ev: Event): void;
@@ -34,4 +34,4 @@ declare namespace JSX {
 }
 
 export type { JSX };
-export { jsx, jsxs };
+export { jsx, jsxs, jsx as jsxDEV, jsxs as jsxsDEV, Fragment };

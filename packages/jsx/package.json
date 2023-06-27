@@ -1,35 +1,53 @@
 {
-  "name": "@metron/jsx",
-  "version": "1.0.0",
-  "description": "",
+  "name": "metron-jsx",
+  "version": "0.0.1",
+  "description": "Fine grained reactivity with jsx",
   "scripts": {
     "build": "tsc --build tsconfig.build.json tsconfig.build.json",
     "build:watch": "tsc --build tsconfig.build.json tsconfig.build.web.json --watch",
     "build:types": "tsc --build tsconfig.build.json tsconfig.build.web.json --emitDeclarationOnly",
     "build:types:watch": "tsc --build tsconfig.build.json tsconfig.build.web.json --emitDeclarationOnly --watch",
-    "test": "mocha",
-    "test:watch": "mocha --watch"
+    "test": "pnpm -w test -- -f jsx",
+    "test:watch": "mocha --watch -- -f jsx"
   },
   "keywords": [],
-  "author": "",
-  "license": "UNLICENSED",
+  "author": "Robbie Speed",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robbiespeed/metron.git",
+    "directory": "packages/jsx"
+  },
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./jsx-runtime": {
       "types": "./lib/jsx-runtime.d.ts",
       "import": "./lib/jsx-runtime.js"
     },
+    "./jsx-dev-runtime": {
+      "types": "./lib/jsx-runtime.d.ts",
+      "import": "./lib/jsx-runtime.js"
+    },
+    "./web-dom/jsx-runtime": {
+      "types": "./lib/web-dom/jsx-runtime.d.ts",
+      "import": "./lib/web-dom/jsx-runtime.js"
+    },
+    "./web-dom/jsx-dev-runtime": {
+      "types": "./lib/web-dom/jsx-runtime.d.ts",
+      "import": "./lib/web-dom/jsx-runtime.js"
+    },
     "./*": {
       "import": "./lib/*"
     },
     "./*.js": {
-      "types": "./lib/*.d.ts"
+      "types": "./lib/*.d.ts",
+      "import": "./lib/*.js"
     }
   },
   "dependencies": {
-    "@metron/core": "workspace:*"
+    "metron-core": "workspace:*"
   },
   "devDependencies": {
-    "@metron/jsx": "workspace:*"
+    "metron-jsx": "workspace:*"
   }
 }

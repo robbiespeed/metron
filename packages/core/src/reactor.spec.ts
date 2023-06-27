@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { createReactor } from './reactor.js';
-import { garbageCollect } from '@metron/test-utils';
+import { garbageCollect } from 'metron-test-utils';
 import { createEmitter } from './emitter.js';
 
 describe('core: Reactor', () => {

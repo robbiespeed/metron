@@ -14,10 +14,10 @@ import {
 import { createEmitter, type Emitter } from './emitter.js';
 import { emitterKey, toValueKey, type Atom } from './particle.js';
 
-export const LIST_EMIT_TYPE_APPEND = 'ListAppendEmit';
-export const LIST_EMIT_TYPE_REVERSE = 'ListReverseEmit';
-export const LIST_EMIT_TYPE_SPLICE = 'ListSpliceEmit';
-export const LIST_EMIT_TYPE_SORT = 'ListSortEmit';
+export const LIST_EMIT_TYPE_APPEND = 'ListAppend';
+export const LIST_EMIT_TYPE_REVERSE = 'ListReverse';
+export const LIST_EMIT_TYPE_SPLICE = 'ListSplice';
+export const LIST_EMIT_TYPE_SORT = 'ListSort';
 
 export interface AtomListEmitAppend {
   readonly type: typeof LIST_EMIT_TYPE_APPEND;

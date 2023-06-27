@@ -4,27 +4,29 @@ import {
   COLLECTION_EMIT_TYPE_KEY_DELETE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
   COLLECTION_EMIT_TYPE_KEY_WRITE,
-} from '@metron/core/collection.js';
-import type { Disposer } from '@metron/core/emitter.js';
+} from 'metron-core/collection.js';
+import type { Disposer } from 'metron-core/emitter.js';
 import {
   LIST_EMIT_TYPE_APPEND,
   LIST_EMIT_TYPE_SPLICE,
   isAtomList,
   type AtomList,
   type AtomListEmit,
-} from '@metron/core/list.js';
+  LIST_EMIT_TYPE_REVERSE,
+  LIST_EMIT_TYPE_SORT,
+} from 'metron-core/list.js';
 import {
   emitterKey,
   isAtom,
   untracked,
   runAndSubscribe,
-} from '@metron/core/particle.js';
+} from 'metron-core/particle.js';
 import {
   scheduleCleanup,
   scheduleMicroTask,
   setCleanupScheduler,
   setMicroTaskScheduler,
-} from '@metron/core/schedulers.js';
+} from 'metron-core/schedulers.js';
 import {
   NODE_TYPE_COMPONENT,
   NODE_TYPE_CONTEXT_PROVIDER,
@@ -668,6 +670,30 @@ export function renderAtomListInto(
 
         return;
       }
+      case LIST_EMIT_TYPE_REVERSE:
+        indexedNodes.reverse();
+        indexedDisposers.reverse();
+
+        for (const nodes of indexedNodes) {
+          append(...nodes);
+        }
+        break;
+      case LIST_EMIT_TYPE_SORT:
+        const { sortMap, size } = message;
+
+        const oldIndexedNodes = indexedNodes.slice();
+        const oldIndexedDisposers = indexedDisposers.slice();
+
+        for (let index = 0; index < size; index++) {
+          const mappedIndex = sortMap[index]!;
+          indexedNodes[index] = oldIndexedNodes[mappedIndex]!;
+          indexedDisposers[index] = oldIndexedDisposers[mappedIndex]!;
+        }
+
+        for (const nodes of indexedNodes) {
+          append(...nodes);
+        }
+        break;
       default: {
         throw new Error('Unhandled emit', { cause: message });
       }

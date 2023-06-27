@@ -1,18 +1,23 @@
 {
-  "name": "@metron/core",
-  "version": "1.0.0",
-  "description": "",
+  "name": "metron-core",
+  "version": "0.0.1",
+  "description": "Observable state management",
   "scripts": {
     "build": "tsc --build tsconfig.build.json",
     "build:watch": "tsc --build tsconfig.build.json --watch",
     "build:types": "tsc --build tsconfig.build.json --emitDeclarationOnly",
     "build:types:watch": "tsc --build tsconfig.build.json --emitDeclarationOnly --watch",
-    "test": "mocha",
-    "test:watch": "mocha --watch"
+    "test": "pnpm -w test -- -f core",
+    "test:watch": "mocha --watch -- -f core"
   },
   "keywords": [],
-  "author": "",
-  "license": "UNLICENSED",
+  "author": "Robbie Speed",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robbiespeed/metron.git",
+    "directory": "packages/core"
+  },
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -23,7 +28,8 @@
       "import": "./lib/*"
     },
     "./*.js": {
-      "types": "./lib/*.d.ts"
+      "types": "./lib/*.d.ts",
+      "import": "./lib/*.js"
     }
   }
 }

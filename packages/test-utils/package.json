@@ -1,16 +1,16 @@
 {
-  "name": "@metron/test-utils",
-  "version": "1.0.0",
+  "name": "metron-test-utils",
+  "version": "0.0.1",
   "description": "",
   "scripts": {
     "build:types": "tsc --build tsconfig.build.json --emitDeclarationOnly",
     "build:types:watch": "tsc --build tsconfig.build.json --emitDeclarationOnly --watch",
-    "test": "mocha",
-    "test:watch": "mocha --watch"
+    "test": "pnpm -w test -- -f test-utils",
+    "test:watch": "mocha --watch -- -f test-utils"
   },
   "keywords": [],
   "author": "",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {
@@ -21,6 +21,10 @@
     "./*": {
       "types": "./lib/*.d.ts",
       "import": "./lib/*"
+    },
+    "./*.js": {
+      "types": "./lib/*.d.ts",
+      "import": "./lib/*.js"
     }
   }
 }

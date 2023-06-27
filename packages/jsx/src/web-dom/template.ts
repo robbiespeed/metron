@@ -1,4 +1,4 @@
-import type { Disposer, Emitter } from '@metron/core/emitter.js';
+import type { Disposer, Emitter } from 'metron-core/emitter.js';
 import {
   emitterKey,
   isAtom,
@@ -6,8 +6,8 @@ import {
   toValueKey,
   untracked,
   type Atom,
-} from '@metron/core/particle.js';
-import { scheduleMicroTask } from '@metron/core/schedulers.js';
+} from 'metron-core/particle.js';
+import { scheduleMicroTask } from 'metron-core/schedulers.js';
 import {
   createStaticComponent,
   isJsxNode,
@@ -18,7 +18,7 @@ import {
 } from '../node.js';
 import { jsxRender, renderAtomListInto, renderInto } from './render.js';
 import { isIterable } from '../utils.js';
-import { isAtomList } from '@metron/core';
+import { isAtomList } from 'metron-core';
 
 interface InitDescriptor<TProps extends JsxProps = JsxProps> {
   index?: number;

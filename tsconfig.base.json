@@ -16,7 +16,7 @@
     "esModuleInterop": true,
     "allowJs": false,
     "jsx": "react-jsx",
-    "jsxImportSource": "@metron/jsx",
+    "jsxImportSource": "metron-jsx",
     "strict": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitAny": true,
@@ -28,11 +28,11 @@
     "useUnknownInCatchVariables": true,
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "@metron/core": ["./packages/core/src/mod.ts"],
-      "@metron/core/*": ["./packages/core/src/*"],
-      "@metron/test-utils": ["./packages/test-utils/src/mod.ts"],
-      "@metron/test-utils/*": ["./packages/test-utils/src/*"],
-      "@metron/jsx/*": ["./packages/jsx/src/*"]
+      "metron-core": ["./packages/core/src/mod.ts"],
+      "metron-core/*": ["./packages/core/src/*"],
+      "metron-test-utils": ["./packages/test-utils/src/mod.ts"],
+      "metron-test-utils/*": ["./packages/test-utils/src/*"],
+      "metron-jsx/*": ["./packages/jsx/src/*"]
     }
   }
 }

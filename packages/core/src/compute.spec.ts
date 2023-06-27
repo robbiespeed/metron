@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { compute } from './compute.js';
 import { emitterKey, immediateEmitterKey, untracked } from './particle.js';
 import { type Emitter, type EmitHandler, createEmitter } from './emitter.js';
-import { garbageCollect } from '@metron/test-utils';
+import { garbageCollect } from 'metron-test-utils';
 import { emptyCacheToken } from './cache.js';
 import { createAtom } from './atom.js';
 import { promiseMicroTask } from './schedulers.js';

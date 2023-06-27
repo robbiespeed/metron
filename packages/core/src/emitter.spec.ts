@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { garbageCollect } from '@metron/test-utils';
+import { garbageCollect } from 'metron-test-utils';
 import { createEmitter } from './emitter.js';
 
 describe('core: Emitter', () => {

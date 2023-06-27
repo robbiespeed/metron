@@ -1,36 +1,17 @@
-import { createRenderContext, renderNode } from '@metron/jsx/node';
-import { domRenderContext } from '@metron/jsx/web-dom/render';
+import { render } from 'metron-jsx/web-dom/render.js';
 import './style.css';
-import typescriptLogo from './typescript.svg';
-import viteLogo from '/vite.svg';
-import { Counter } from './counter.tsx';
-import { List } from './list.tsx';
+import { TodoList } from './todo-list.tsx';
 
-const appRoot = document.querySelector<HTMLDivElement>('#app')!;
-
-const Dom = createRenderContext(domRenderContext);
+const root = document.querySelector<HTMLDivElement>('#app')!;
 
 const App = (
-  <Dom root={appRoot}>
-    <a href="https://vitejs.dev" target="_blank">
-      <img src={viteLogo} class="logo" alt="Vite logo" />
-    </a>
-    <a href="https://www.typescriptlang.org/" target="_blank">
-      <img src={typescriptLogo} class="logo vanilla" alt="TypeScript logo" />
-    </a>
-    <h1>Vite + TypeScript</h1>
-    <div class="card">
-      <Counter />
-    </div>
-    <div class="card">
-      <List />
-    </div>
-    <p class="read-the-docs">
-      Click on the Vite and TypeScript logos to learn more
-    </p>
-  </Dom>
+  <>
+    <h1>Metron Todo</h1>
+    <TodoList />
+  </>
 );
 
-renderNode(App);
-
-// .appendChild(renderNode(App as JsxNode, {}, domRenderContext) as Node);
+render({
+  root,
+  children: App,
+});
