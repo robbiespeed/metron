@@ -1,6 +1,6 @@
 {
   "name": "metron-jsx",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Fine grained reactivity with jsx",
   "scripts": {
     "build": "tsc --build tsconfig.build.json tsconfig.build.json",
