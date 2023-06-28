@@ -1,6 +1,6 @@
 {
   "name": "metron-core",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Observable state management",
   "scripts": {
     "build": "tsc --build tsconfig.build.json",
