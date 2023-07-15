@@ -397,7 +397,9 @@ function initDynamic(
           const childNodes: ChildNode[] = [];
 
           for (const child of initValue) {
-            renderInto(element, childNodes, disposers, child, {});
+            if (child != null) {
+              renderInto(element, childNodes, disposers, child, {});
+            }
           }
 
           node.replaceWith(...childNodes);

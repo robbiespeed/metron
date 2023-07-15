@@ -38,6 +38,8 @@ import {
   type ComponentContextStore,
   type JsxNode,
   type JsxProps,
+  NODE_TYPE_RAW,
+  type JsxIntrinsicNode,
 } from '../node.js';
 import { isIterable } from '../utils.js';
 
@@ -68,6 +70,11 @@ export function render(
   { root, children }: DomRenderContextProps,
   contextStore: ComponentContextStore = {}
 ): Disposer {
+  if (children == null) {
+    root.replaceChildren();
+    return () => {};
+  }
+
   const nodes: ChildNode[] = [];
   const disposers: Disposer[] = [];
 
@@ -99,7 +106,9 @@ export const jsxRender: JsxRender = {
 
     const children = tag(props, componentContext);
 
-    renderInto(parent, nodes, disposers, children, contextStore, isOnlyChild);
+    if (children != null) {
+      renderInto(parent, nodes, disposers, children, contextStore, isOnlyChild);
+    }
   },
   [NODE_TYPE_FRAGMENT](
     parent,
@@ -109,7 +118,9 @@ export const jsxRender: JsxRender = {
     contextStore,
     isOnlyChild
   ) {
-    renderInto(parent, nodes, disposers, children, contextStore, isOnlyChild);
+    if (children != null) {
+      renderInto(parent, nodes, disposers, children, contextStore, isOnlyChild);
+    }
   },
   [NODE_TYPE_INTRINSIC](
     parent,
@@ -119,122 +130,12 @@ export const jsxRender: JsxRender = {
     contextStore,
     isOnlyChild
   ) {
-    const { children, ...props } = intrinsic.props as Record<string, unknown>;
-
-    const element = document.createElement(intrinsic.tag);
-
-    nodes.push(element);
-
-    for (const [key, value] of Object.entries(props)) {
-      if (value === undefined) {
-        continue;
-      }
-      let [keySpecifier, keyName] = key.split(':', 2) as [
-        string,
-        string | undefined
-      ];
-      if (keySpecifier === key) {
-        keyName = keySpecifier;
-        keySpecifier = 'attr';
-      }
-      if (keySpecifier === 'ref') {
-        // If not callable then it's okay to throw
-        scheduleMicroTask(() => (value as any)(element));
-        continue;
-      } else if (keyName === undefined) {
-        throw new Error(`Specifier "${keySpecifier}" must have a keyName`);
-      }
-      switch (keySpecifier) {
-        case 'prop':
-          if (isAtom(value)) {
-            disposers.push(
-              runAndSubscribe(value, () => {
-                // Expect the user knows what they are doing
-                (element as any)[key] = untracked(value);
-              })
-            );
-          } else {
-            // Expect the user knows what they are doing
-            (element as any)[key] = value;
-          }
-          break;
-        case 'attr':
-          if (isAtom(value)) {
-            const firstValue = untracked(value);
-
-            if (firstValue === true) {
-              element.toggleAttribute(key, true);
-            } else if (firstValue !== undefined && firstValue !== false) {
-              // setAttribute casts to string
-              element.setAttribute(key, firstValue as any);
-            }
-
-            disposers.push(
-              value[emitterKey](() => {
-                const innerValue = untracked(value);
-                switch (typeof innerValue) {
-                  case 'boolean':
-                    element.toggleAttribute(key, innerValue);
-                    break;
-                  case 'undefined':
-                    element.removeAttribute(key);
-                    break;
-                  default:
-                    // setAttribute casts to string
-                    element.setAttribute(key, innerValue as any);
-                    break;
-                }
-              })
-            );
-          } else if (value === true) {
-            element.toggleAttribute(keyName, true);
-          } else if (value !== false) {
-            element.setAttribute(keyName, value as string);
-          }
-          break;
-        case 'on':
-          if (isAtom(value)) {
-            let eventHandler: EventListenerOrEventListenerObject | undefined;
-            disposers.push(
-              runAndSubscribe(value, () => {
-                if (eventHandler) {
-                  element.removeEventListener(key, eventHandler);
-                }
-
-                // Defer correctness to addEventListener error handling
-                eventHandler = untracked(value) as any;
-                if (eventHandler !== undefined) {
-                  element.addEventListener(key, eventHandler);
-                }
-              })
-            );
-          } else if (value !== undefined) {
-            // Defer to addEventListener error handling
-            element.addEventListener(keyName, value as any);
-          }
-          break;
-        default:
-          throw new TypeError(`Unsupported specifier "${keySpecifier}"`);
-      }
-    }
-
-    const childNodeContainer: ChildNode[] = [];
-
-    renderInto(
-      element,
-      childNodeContainer,
-      disposers,
-      children,
-      contextStore,
-      true
-    );
-
-    element.append(...childNodeContainer);
+    nodes.push(renderIntrinsic(disposers, intrinsic, contextStore));
   },
   [NODE_TYPE_CONTEXT_PROVIDER]() {
     throw new Error('Not Implemented');
   },
-  Raw(parent, nodes, disposers, { value, disposer }) {
+  [NODE_TYPE_RAW](parent, nodes, disposers, { value, disposer }) {
     if (disposer !== undefined) {
       disposers.push(disposer);
     }
@@ -253,6 +154,124 @@ function dispose(disposers: Disposer[]): void {
   }
 }
 
+function renderIntrinsic(
+  disposers: Disposer[],
+  intrinsic: JsxIntrinsicNode,
+  contextStore: ComponentContextStore
+): HTMLElement {
+  const { children, ...props } = intrinsic.props as Record<string, unknown>;
+
+  const element = document.createElement(intrinsic.tag);
+
+  for (const [key, value] of Object.entries(props)) {
+    if (value === undefined) {
+      continue;
+    }
+    let [keySpecifier, keyName] = key.split(':', 2) as [
+      string,
+      string | undefined
+    ];
+    if (keySpecifier === key) {
+      keyName = keySpecifier;
+      keySpecifier = 'attr';
+    }
+    if (keySpecifier === 'ref') {
+      // If not callable then it's okay to throw
+      scheduleMicroTask(() => (value as any)(element));
+      continue;
+    } else if (keyName === undefined) {
+      throw new Error(`Specifier "${keySpecifier}" must have a keyName`);
+    }
+    switch (keySpecifier) {
+      case 'prop':
+        if (isAtom(value)) {
+          disposers.push(
+            runAndSubscribe(value, () => {
+              // Expect the user knows what they are doing
+              (element as any)[key] = untracked(value);
+            })
+          );
+        } else {
+          // Expect the user knows what they are doing
+          (element as any)[key] = value;
+        }
+        break;
+      case 'attr':
+        if (isAtom(value)) {
+          const firstValue = untracked(value);
+
+          if (firstValue === true) {
+            element.toggleAttribute(key, true);
+          } else if (firstValue !== undefined && firstValue !== false) {
+            // setAttribute casts to string
+            element.setAttribute(key, firstValue as any);
+          }
+
+          disposers.push(
+            value[emitterKey](() => {
+              const innerValue = untracked(value);
+              switch (typeof innerValue) {
+                case 'boolean':
+                  element.toggleAttribute(key, innerValue);
+                  break;
+                case 'undefined':
+                  element.removeAttribute(key);
+                  break;
+                default:
+                  // setAttribute casts to string
+                  element.setAttribute(key, innerValue as any);
+                  break;
+              }
+            })
+          );
+        } else if (value === true) {
+          element.toggleAttribute(keyName, true);
+        } else if (value !== false) {
+          element.setAttribute(keyName, value as string);
+        }
+        break;
+      case 'on':
+        if (isAtom(value)) {
+          let eventHandler: EventListenerOrEventListenerObject | undefined;
+          disposers.push(
+            runAndSubscribe(value, () => {
+              if (eventHandler) {
+                element.removeEventListener(key, eventHandler);
+              }
+
+              // Defer correctness to addEventListener error handling
+              eventHandler = untracked(value) as any;
+              if (eventHandler !== undefined) {
+                element.addEventListener(key, eventHandler);
+              }
+            })
+          );
+        } else if (value !== undefined) {
+          // Defer to addEventListener error handling
+          element.addEventListener(keyName, value as any);
+        }
+        break;
+      default:
+        throw new TypeError(`Unsupported specifier "${keySpecifier}"`);
+    }
+  }
+
+  if (children != null) {
+    const childNodeContainer: ChildNode[] = [];
+    renderInto(
+      element,
+      childNodeContainer,
+      disposers,
+      children,
+      contextStore,
+      true
+    );
+    element.append(...childNodeContainer);
+  }
+
+  return element;
+}
+
 /**
  * @private
  */
@@ -260,17 +279,13 @@ export function renderInto(
   parent: ParentNode,
   nodes: ChildNode[],
   disposers: Disposer[],
-  value: unknown,
+  value: {},
   contextStore: ComponentContextStore,
   isOnlyChild = false
 ): void {
-  if (value === undefined) {
-    return;
-  }
-
   if (typeof value === 'object') {
     if (isJsxNode(value)) {
-      return jsxRender[value.nodeType](
+      jsxRender[value.nodeType](
         parent,
         nodes,
         disposers,
@@ -278,14 +293,17 @@ export function renderInto(
         contextStore,
         isOnlyChild
       );
+      return;
     } else if (isIterable(value) && typeof value === 'object') {
       for (const child of value) {
-        renderInto(parent, nodes, disposers, child, contextStore);
+        if (child != null) {
+          renderInto(parent, nodes, disposers, child, contextStore);
+        }
       }
       return;
     } else if (isAtom(value)) {
       if (isAtomList(value)) {
-        return renderAtomListInto(
+        renderAtomListInto(
           parent,
           nodes,
           disposers,
@@ -309,17 +327,70 @@ export function renderInto(
             text.data = newValue === undefined ? '' : (newValue as any);
           })
         );
-        return;
       }
+      return;
     }
   }
   // createTextNode casts to string
   nodes.push(document.createTextNode(value as any));
 }
 
-type NonEmptyChildNodes = [ChildNode, ...ChildNode[]];
+/**
+ * @private
+ */
+export function renderChildNode(
+  disposers: Disposer[],
+  renderValue: {},
+  contextStore: ComponentContextStore
+): ChildNode | undefined {
+  if (typeof renderValue === 'object') {
+    if (isJsxNode(renderValue)) {
+      switch (renderValue.nodeType) {
+        case NODE_TYPE_RAW: {
+          const { disposer, value } = renderValue;
+          if (disposer !== undefined) {
+            disposers.push(disposer);
+          }
+          if (value instanceof Element) {
+            return value;
+          }
+          return;
+        }
+        case NODE_TYPE_INTRINSIC:
+          return renderIntrinsic(disposers, renderValue, contextStore);
+        default:
+          throw new Error('Node type must be raw or intrinsic');
+      }
+    } else if (isIterable(renderValue) && typeof renderValue === 'object') {
+      throw new Error('Cannot render iterable to single DOM node');
+    } else if (isAtom(renderValue)) {
+      if (isAtomList(renderValue)) {
+        throw new Error('Cannot render atom list to single DOM node');
+      } else {
+        const firstValue = untracked(renderValue);
+
+        const text = document.createTextNode(
+          // createTextNode casts param to string
+          firstValue === undefined ? '' : (firstValue as any)
+        );
+
+        disposers.push(
+          renderValue[emitterKey](() => {
+            const newValue = untracked(renderValue);
+            // Data casts to string
+            text.data = newValue === undefined ? '' : (newValue as any);
+          })
+        );
+        return text;
+      }
+    }
+  }
+  // createTextNode casts to string
+  return document.createTextNode(renderValue as any);
+}
+
 type Empty = [];
-type IndexedNodes = (NonEmptyChildNodes | Empty)[];
+type IndexedNodes = (ChildNode | undefined)[];
 type IndexedDisposers = Disposer[][];
 
 const EMPTY_ARRAY: Empty = [];
@@ -335,6 +406,9 @@ export function renderAtomListInto(
   const indexedDisposers: IndexedDisposers = [];
   const indexedNodes: IndexedNodes = [];
 
+  // TODO: bench reusing nextDisposerContainer
+  // let nextDisposerContainer: Disposer[] = [];
+
   const rawList = untracked(list);
 
   const markers: { s: ChildNode; e: ChildNode } | undefined = isOnlyChild
@@ -349,24 +423,29 @@ export function renderAtomListInto(
   }
 
   for (const value of rawList) {
-    const childDisposerContainer: Disposer[] = [];
-    const childNodeContainer: ChildNode[] = [];
-    renderInto(
-      parent,
-      childNodeContainer,
-      childDisposerContainer,
-      value,
-      contextStore
-    );
-    indexedDisposers.push(
-      childDisposerContainer.length > 0 ? childDisposerContainer : EMPTY_ARRAY
-    );
-    indexedNodes.push(
-      childNodeContainer.length > 0
-        ? (childNodeContainer as NonEmptyChildNodes)
-        : EMPTY_ARRAY
-    );
-    firstNodes.push(...childNodeContainer);
+    let renderedValue: ChildNode | undefined;
+    if (value != null) {
+      // TODO: bench reusing nextDisposerContainer
+      // const childDisposerContainer: Disposer[] = nextDisposerContainer;
+      const childDisposerContainer: Disposer[] = [];
+      renderedValue = renderChildNode(
+        childDisposerContainer,
+        value,
+        contextStore
+      );
+      indexedDisposers.push(
+        childDisposerContainer.length > 0 ? childDisposerContainer : EMPTY_ARRAY
+        // TODO: bench reusing nextDisposerContainer
+        // childDisposerContainer.length > 0 ? (nextDisposerContainer = [], childDisposerContainer) : EMPTY_ARRAY
+      );
+    } else {
+      indexedDisposers.push(EMPTY_ARRAY);
+    }
+
+    indexedNodes.push(renderedValue);
+    if (renderedValue !== undefined) {
+      firstNodes.push(renderedValue);
+    }
   }
 
   let clearNodes: () => void;
@@ -400,24 +479,13 @@ export function renderAtomListInto(
     prepend = parent.prepend.bind(parent);
   }
 
-  const swapNodeLists = (
-    aNodes: NonEmptyChildNodes,
-    bNodes: NonEmptyChildNodes
-  ) => {
-    const firstA = aNodes[0];
-    const lastB = bNodes.at(-1)!;
-    const afterB = lastB.nextSibling;
-    const beforeA = firstA.previousSibling;
-
-    if (afterB === null) {
-      append(...aNodes);
-    } else {
-      afterB.before(...aNodes);
-    }
+  const swapNodes = (aNode: ChildNode, bNode: ChildNode) => {
+    const beforeA = aNode.previousSibling;
+    bNode.after(aNode);
     if (beforeA === null) {
-      prepend(...bNodes);
+      prepend(bNode);
     } else {
-      beforeA.after(...bNodes);
+      beforeA.after(bNode);
     }
   };
 
@@ -435,29 +503,33 @@ export function renderAtomListInto(
         const { key, oldSize } = message;
 
         const value = rawList.at(key);
-        let newDisposers: Disposer[] = [];
-        let newNodes: ChildNode[] = [];
-
-        renderInto(parent, newNodes, newDisposers, value, contextStore);
-
-        newDisposers = newDisposers.length > 0 ? newDisposers : EMPTY_ARRAY;
-        newNodes = newNodes.length > 0 ? newNodes : EMPTY_ARRAY;
+        let renderedValue: ChildNode | undefined;
+        let newDisposers: Disposer[];
+        if (value != null) {
+          newDisposers = [];
+          renderedValue = renderChildNode(newDisposers, value, contextStore);
+          newDisposers = newDisposers.length > 0 ? newDisposers : EMPTY_ARRAY;
+        } else {
+          newDisposers = EMPTY_ARRAY;
+        }
 
         if (key === oldSize) {
-          append(...newNodes);
+          if (renderedValue !== undefined) {
+            append(renderedValue);
+          }
           indexedDisposers.push(newDisposers);
-          indexedNodes.push(newNodes as []);
+          indexedNodes.push(undefined);
         } else {
-          if (newNodes !== EMPTY_ARRAY) {
-            const rightIndex = findIndexOfNodesToRight(indexedNodes, key);
+          if (renderedValue !== undefined) {
+            const rightIndex = findIndexOfNodeToRight(indexedNodes, key);
             if (rightIndex < 0) {
-              append(...newNodes);
+              append(renderedValue);
             } else {
-              indexedNodes[rightIndex]![0]!.before(...newNodes);
+              indexedNodes[rightIndex]!.before(renderedValue);
             }
           }
           indexedDisposers.splice(key, 0, newDisposers);
-          indexedNodes.splice(key, 0, newNodes as []);
+          indexedNodes.splice(key, 0, renderedValue);
         }
 
         return;
@@ -469,8 +541,9 @@ export function renderAtomListInto(
         if (oldDisposers !== EMPTY_ARRAY) {
           scheduleCleanup(() => dispose(oldDisposers));
         }
-        for (const node of indexedNodes[key]!) {
-          parent.removeChild(node);
+        const oldNode = indexedNodes[key];
+        if (oldNode !== undefined) {
+          parent.removeChild(oldNode);
         }
 
         if (key === size) {
@@ -486,39 +559,37 @@ export function renderAtomListInto(
       case COLLECTION_EMIT_TYPE_KEY_SWAP: {
         const [keyA, keyB] = message.keySwap;
 
-        const aNodes = indexedNodes[keyA]!;
-        const bNodes = indexedNodes[keyB]!;
+        const aNode = indexedNodes[keyA];
+        const bNode = indexedNodes[keyB];
 
-        if (aNodes === bNodes) {
+        if (aNode === bNode) {
           // If A and B are the same they must both be EMPTY_ARRAY
           return;
         }
 
-        if (aNodes !== EMPTY_ARRAY) {
-          assertOverride<NonEmptyChildNodes>(aNodes);
-          if (bNodes !== EMPTY_ARRAY) {
-            assertOverride<NonEmptyChildNodes>(bNodes);
-            swapNodeLists(aNodes, bNodes);
+        if (aNode !== undefined) {
+          if (bNode !== undefined) {
+            swapNodes(aNode, bNode);
           } else {
-            const rightOfBIndex = findIndexOfNodesToRight(indexedNodes, keyB);
+            const rightOfBIndex = findIndexOfNodeToRight(indexedNodes, keyB);
             if (rightOfBIndex < 0) {
-              append(...aNodes);
+              append(aNode);
             } else {
-              indexedNodes[rightOfBIndex]![0]!.before(...aNodes);
+              indexedNodes[rightOfBIndex]!.before(aNode);
             }
           }
         } else {
-          const rightOfAIndex = findIndexOfNodesToRight(indexedNodes, keyA);
+          const rightOfAIndex = findIndexOfNodeToRight(indexedNodes, keyA);
           if (rightOfAIndex < keyB) {
-            indexedNodes[rightOfAIndex]![0]!.before(...bNodes);
+            indexedNodes[rightOfAIndex]!.before(bNode as ChildNode);
           }
         }
 
         const tmpDisposers = indexedDisposers[keyA]!;
         indexedDisposers[keyA] = indexedDisposers[keyB]!;
         indexedDisposers[keyB] = tmpDisposers;
-        indexedNodes[keyA] = bNodes;
-        indexedNodes[keyB] = aNodes;
+        indexedNodes[keyA] = bNode;
+        indexedNodes[keyB] = aNode;
 
         return;
       }
@@ -529,16 +600,27 @@ export function renderAtomListInto(
         const newValues = rawList.toArraySlice(oldSize);
 
         for (const child of newValues) {
-          const childNodes: ChildNode[] = [];
-          const childDisposers: Disposer[] = [];
-          renderInto(parent, childNodes, childDisposers, child, contextStore);
-          indexedDisposers.push(
-            childDisposers.length > 0 ? childDisposers : EMPTY_ARRAY
-          );
-          indexedNodes.push(
-            childNodes.length > 0 ? (childNodes as []) : EMPTY_ARRAY
-          );
-          newNodes.push(...childNodes);
+          let renderedValue: ChildNode | undefined;
+          if (child != null) {
+            const childDisposerContainer: Disposer[] = [];
+            renderedValue = renderChildNode(
+              childDisposerContainer,
+              child,
+              contextStore
+            );
+            indexedDisposers.push(
+              childDisposerContainer.length > 0
+                ? childDisposerContainer
+                : EMPTY_ARRAY
+            );
+          } else {
+            indexedDisposers.push(EMPTY_ARRAY);
+          }
+
+          indexedNodes.push(renderedValue);
+          if (renderedValue !== undefined) {
+            newNodes.push(renderedValue);
+          }
         }
 
         append(...newNodes);
@@ -553,33 +635,34 @@ export function renderAtomListInto(
           scheduleCleanup(() => dispose(oldDisposers));
         }
 
-        const oldNodes = indexedNodes[key]!;
+        const oldNode = indexedNodes[key];
 
         const newValue = rawList.at(key);
-        const newDisposers: Disposer[] = [];
-        const newNodes: ChildNode[] = [];
-        renderInto(parent, newNodes, newDisposers, newValue, contextStore);
-        indexedDisposers[key] =
-          newDisposers.length > 0 ? newDisposers : EMPTY_ARRAY;
-        if (newNodes.length > 0) {
-          indexedNodes[key] = newNodes as NonEmptyChildNodes;
+        let renderedValue: ChildNode | undefined;
 
-          if (oldNodes === EMPTY_ARRAY) {
-            const rightIndex = findIndexOfNodesToRight(indexedNodes, key);
-            if (rightIndex < 0) {
-              append(...newNodes);
-            } else {
-              indexedNodes[rightIndex]![0]!.before(...newNodes);
-            }
-          } else {
-            oldNodes[0]!.before(...newNodes);
-          }
+        if (newValue != null) {
+          const newDisposers: Disposer[] = [];
+          renderedValue = renderChildNode(newDisposers, newValue, contextStore);
+          indexedDisposers[key] =
+            newDisposers.length > 0 ? newDisposers : EMPTY_ARRAY;
         } else {
-          indexedNodes[key] = EMPTY_ARRAY;
+          indexedDisposers[key] = EMPTY_ARRAY;
         }
 
-        for (const node of oldNodes) {
-          parent.removeChild(node);
+        indexedNodes[key] = renderedValue;
+        if (renderedValue !== undefined) {
+          if (oldNode === undefined) {
+            const rightIndex = findIndexOfNodeToRight(indexedNodes, key);
+            if (rightIndex < 0) {
+              append(renderedValue);
+            } else {
+              indexedNodes[rightIndex]!.before(renderedValue);
+            }
+          } else {
+            oldNode.replaceWith(renderedValue);
+          }
+        } else if (oldNode !== undefined) {
+          oldNode.remove();
         }
 
         return;
@@ -597,16 +680,27 @@ export function renderAtomListInto(
           const newNodes: ChildNode[] = [];
 
           for (const child of rawList) {
-            const childNodes: ChildNode[] = [];
-            const childDisposers: Disposer[] = [];
-            renderInto(parent, childNodes, childDisposers, child, contextStore);
-            indexedDisposers.push(
-              childDisposers.length > 0 ? childDisposers : EMPTY_ARRAY
-            );
-            indexedNodes.push(
-              childNodes.length > 0 ? (childNodes as []) : EMPTY_ARRAY
-            );
-            newNodes.push(...childNodes);
+            let renderedValue: ChildNode | undefined;
+            if (child != null) {
+              const childDisposerContainer: Disposer[] = [];
+              renderedValue = renderChildNode(
+                childDisposerContainer,
+                child,
+                contextStore
+              );
+              indexedDisposers.push(
+                childDisposerContainer.length > 0
+                  ? childDisposerContainer
+                  : EMPTY_ARRAY
+              );
+            } else {
+              indexedDisposers.push(EMPTY_ARRAY);
+            }
+
+            indexedNodes.push(renderedValue);
+            if (renderedValue !== undefined) {
+              newNodes.push(renderedValue);
+            }
           }
 
           replaceChildren(...newNodes);
@@ -626,24 +720,35 @@ export function renderAtomListInto(
           const newNodes: ChildNode[] = [];
 
           for (const child of newValues) {
-            const childNodes: ChildNode[] = [];
-            const childDisposers: Disposer[] = [];
-            renderInto(parent, childNodes, childDisposers, child, contextStore);
-            addedIndexedDisposers.push(
-              childDisposers.length > 0 ? childDisposers : EMPTY_ARRAY
-            );
-            addedIndexedNodes.push(
-              childNodes.length > 0 ? (childNodes as []) : EMPTY_ARRAY
-            );
-            newNodes.push(...childNodes);
+            let renderedValue: ChildNode | undefined;
+            if (child != null) {
+              const childDisposerContainer: Disposer[] = [];
+              renderedValue = renderChildNode(
+                childDisposerContainer,
+                child,
+                contextStore
+              );
+              addedIndexedDisposers.push(
+                childDisposerContainer.length > 0
+                  ? childDisposerContainer
+                  : EMPTY_ARRAY
+              );
+            } else {
+              addedIndexedDisposers.push(EMPTY_ARRAY);
+            }
+
+            addedIndexedNodes.push(renderedValue);
+            if (renderedValue !== undefined) {
+              newNodes.push(renderedValue);
+            }
           }
 
           if (newNodes.length > 0) {
-            const rightIndex = findIndexOfNodesToRight(indexedNodes, start);
+            const rightIndex = findIndexOfNodeToRight(indexedNodes, start);
             if (rightIndex < 0) {
               append(...newNodes);
             } else {
-              indexedNodes[rightIndex]![0]!.before(...newNodes);
+              indexedNodes[rightIndex]!.before(...newNodes);
             }
           }
 
@@ -662,10 +767,8 @@ export function renderAtomListInto(
         if (deletedIndexedDisposers.length > 0) {
           scheduleCleanup(() => disposeIndexed(deletedIndexedDisposers));
         }
-        for (const nodes of deletedIndexedNodes) {
-          for (const node of nodes) {
-            parent.removeChild(node);
-          }
+        for (const node of deletedIndexedNodes) {
+          node?.remove();
         }
 
         return;
@@ -674,9 +777,11 @@ export function renderAtomListInto(
         indexedNodes.reverse();
         indexedDisposers.reverse();
 
-        for (const nodes of indexedNodes) {
-          append(...nodes);
-        }
+        replaceChildren(
+          ...indexedNodes.filter(
+            (node): node is ChildNode => node !== undefined
+          )
+        );
         break;
       case LIST_EMIT_TYPE_SORT:
         const { sortMap, size } = message;
@@ -690,9 +795,11 @@ export function renderAtomListInto(
           indexedDisposers[index] = oldIndexedDisposers[mappedIndex]!;
         }
 
-        for (const nodes of indexedNodes) {
-          append(...nodes);
-        }
+        replaceChildren(
+          ...indexedNodes.filter(
+            (node): node is ChildNode => node !== undefined
+          )
+        );
         break;
       default: {
         throw new Error('Unhandled emit', { cause: message });
@@ -716,13 +823,13 @@ function disposeIndexed(indexedDisposers: IndexedDisposers) {
   }
 }
 
-function findIndexOfNodesToRight(
+function findIndexOfNodeToRight(
   indexedNodes: IndexedNodes,
   index: number
 ): number {
   for (let i = index + 1; i < indexedNodes.length; i++) {
-    const nodes = indexedNodes[i];
-    if (nodes !== EMPTY_ARRAY) {
+    const node = indexedNodes[i];
+    if (node !== undefined) {
       return i;
     }
   }
@@ -730,4 +837,4 @@ function findIndexOfNodesToRight(
 }
 
 // TODO: move to shared package
-function assertOverride<T>(value: unknown): asserts value is T {}
+// function assertOverride<T>(value: unknown): asserts value is T {}

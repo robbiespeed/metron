@@ -1,7 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "include": ["./src/**/*"],
-  "exclude": ["./src/web-dom/**/*", "**/*.spec.ts", "**/*.spec.tsx"],
+  "exclude": [
+    "./src/web-dom/**/*",
+    "./src/**/*.web.ts",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
+  ],
   "compilerOptions": {
     "rootDir": "./src",
     "outDir": "./lib"

@@ -11,7 +11,10 @@
     "NOPASSWD",
     "tsbuildinfo",
     "typecheck",
-    "userns"
+    "userns",
+    "verts",
+    "webgpu",
+    "Workgroups"
   ],
   "cSpell.enableFiletypes": ["dockerfile", "ignore", "shellscript"],
   "cSpell.ignorePaths": [

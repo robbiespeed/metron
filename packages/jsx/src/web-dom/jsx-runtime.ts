@@ -1,28 +1,8 @@
-import type { Atom } from 'metron-core';
 import { jsx, jsxs, Fragment, type JSX as BaseJSX } from '../jsx-runtime.js';
-
-interface EventHandler {
-  (ev: Event): void;
-}
-
-type BaseIntrinsic = {
-  [fallback: string]: unknown;
-  [prop: `prop:${string}`]: unknown;
-  [attr: `attr:${string}`]:
-    | Atom<undefined | string | boolean>
-    | undefined
-    | string
-    | boolean;
-  [on: `on:${string}`]:
-    | Atom<EventHandler | undefined>
-    | EventHandler
-    | undefined;
-};
+import type { IntrinsicElements as BrowserIntrinsicElements } from '../dom-types/jsx.web.js';
 
 declare namespace JSX {
-  interface IntrinsicElements {
-    [tagName: string]: BaseIntrinsic;
-  }
+  type IntrinsicElements = BrowserIntrinsicElements;
 
   type IntrinsicAttributes = BaseJSX.IntrinsicAttributes;
 
