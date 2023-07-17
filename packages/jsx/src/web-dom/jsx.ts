@@ -1,12 +1,21 @@
-import type { GlobalHTMLAttributes } from './global-attributes.js';
-import type { AtomOrValue } from './shared.js';
+import type { GlobalHTMLAttributes } from '../dom-types/global-attributes.js';
+import type { AtomOrValue } from '../dom-types/shared.js';
+import type { EVENT_DATA_KEY } from './events.js';
 
-interface TargetedEvent<TEventTarget extends EventTarget> extends Event {
+export interface TargetedEvent<TEventTarget extends EventTarget> extends Event {
   currentTarget: TEventTarget;
 }
 
-interface EventHandler<TEventTarget extends EventTarget> {
+export interface EventHandler<TEventTarget extends EventTarget> {
   (this: void, event: TargetedEvent<TEventTarget>): void;
+}
+
+export interface DelegatedDataEventHandler<
+  TEventTarget extends EventTarget,
+  TData = unknown
+> {
+  (this: void, data: TData, event: TargetedEvent<TEventTarget>): void;
+  [EVENT_DATA_KEY]: TData;
 }
 
 type ScopedProps = {
@@ -14,6 +23,7 @@ type ScopedProps = {
 };
 
 interface EventHandlerProps<TEventTarget extends EventTarget> {
+  [setup: `setup:${string}`]: (element: HTMLElement) => void;
   [event: `on:${string}`]: AtomOrValue<undefined | EventHandler<TEventTarget>>;
 }
 

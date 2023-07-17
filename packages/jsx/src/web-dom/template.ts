@@ -7,7 +7,6 @@ import {
   untracked,
   type Atom,
 } from 'metron-core/particle.js';
-import { scheduleMicroTask } from 'metron-core/schedulers.js';
 import {
   createStaticComponent,
   isJsxNode,
@@ -26,7 +25,7 @@ interface InitDescriptor<TProps extends JsxProps = JsxProps> {
   attributes?: { key: string; initKey: keyof TProps }[];
   events?: { key: string; initKey: keyof TProps }[];
   nodes?: { index: number; initKey: keyof TProps }[];
-  refs?: (keyof TProps)[];
+  setups?: (keyof TProps)[];
   childDescriptors?: InitDescriptor[];
 }
 
@@ -124,34 +123,33 @@ function renderTemplateNode(
   let attributeDescriptors: InitDescriptor['attributes'];
   let propDescriptors: InitDescriptor['props'];
   let eventDescriptors: InitDescriptor['events'];
-  let refDescriptors: InitDescriptor['refs'];
+  let setupDescriptors: InitDescriptor['setups'];
 
   for (const [key, value] of Object.entries(templateProps)) {
     if (value === undefined) {
       continue;
     }
 
-    let [keySpecifier, keyName] = key.split(':', 2) as [
+    let [keySpecifier, _keyName] = key.split(':', 2) as [
       string,
       string | undefined
     ];
     if (keySpecifier === key) {
-      keyName = keySpecifier;
+      _keyName = keySpecifier;
       keySpecifier = 'attr';
     }
-
-    if (keySpecifier === 'ref') {
-      if (isSlot(value)) {
-        (refDescriptors ??= []).push(value.key);
-        continue;
-      } else {
-        throw new TypeError('Templates may only use slots to register refs');
-      }
-    } else if (keyName === undefined) {
-      throw new Error(`Specifier "${keySpecifier}" must have a keyName`);
-    }
+    const keyName = _keyName ?? keySpecifier;
 
     switch (keySpecifier) {
+      case 'setup':
+        if (isSlot(value)) {
+          (setupDescriptors ??= []).push(value.key);
+        } else {
+          throw new TypeError(
+            'Templates may only use slots to register setup functions'
+          );
+        }
+        continue;
       case 'prop':
         if (isSlot(value)) {
           (propDescriptors ??= []).push({
@@ -161,7 +159,7 @@ function renderTemplateNode(
         } else {
           (element as any)[keyName] = value;
         }
-        break;
+        continue;
       case 'attr':
         if (isSlot(value)) {
           (attributeDescriptors ??= []).push({
@@ -174,7 +172,7 @@ function renderTemplateNode(
           // setAttribute casts to string
           element.setAttribute(keyName, value as any);
         }
-        break;
+        continue;
       case 'on':
         if (isSlot(value)) {
           (eventDescriptors ??= []).push({
@@ -186,7 +184,7 @@ function renderTemplateNode(
             'Templates may only use slots to register event handlers'
           );
         }
-        break;
+        continue;
       default:
         throw new TypeError(`Unsupported specifier "${keySpecifier}"`);
     }
@@ -239,19 +237,19 @@ function renderTemplateNode(
     }
   }
 
-  const descriptor =
+  const descriptor: InitDescriptor | undefined =
     attributeDescriptors ??
     childDescriptors ??
     eventDescriptors ??
     nodeDescriptors ??
-    refDescriptors ??
+    setupDescriptors ??
     propDescriptors
       ? {
           childDescriptors,
           attributes: attributeDescriptors,
           events: eventDescriptors,
           nodes: nodeDescriptors,
-          refs: refDescriptors,
+          setups: setupDescriptors,
           props: propDescriptors,
         }
       : undefined;
@@ -263,13 +261,13 @@ function initDynamic(
   element: Element,
   initProps: JsxProps,
   disposers: Disposer[],
-  { childDescriptors, attributes, events, nodes, props, refs }: InitDescriptor
+  { childDescriptors, attributes, events, nodes, props, setups }: InitDescriptor
 ) {
-  if (refs !== undefined) {
-    for (const initKey of refs) {
-      const refSetter = initProps[initKey];
+  if (setups !== undefined) {
+    for (const initKey of setups) {
+      const setupHandler = initProps[initKey];
       // If not callable then it's okay to throw
-      scheduleMicroTask(() => (refSetter as any)(element));
+      (setupHandler as Function)(element);
     }
   }
   if (attributes !== undefined) {

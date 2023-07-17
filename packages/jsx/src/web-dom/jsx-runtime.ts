@@ -1,5 +1,5 @@
 import { jsx, jsxs, Fragment, type JSX as BaseJSX } from '../jsx-runtime.js';
-import type { IntrinsicElements as BrowserIntrinsicElements } from '../dom-types/jsx.web.js';
+import type { IntrinsicElements as BrowserIntrinsicElements } from './jsx.js';
 
 declare namespace JSX {
   type IntrinsicElements = BrowserIntrinsicElements;

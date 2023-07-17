@@ -23,7 +23,6 @@ import {
 } from 'metron-core/particle.js';
 import {
   scheduleCleanup,
-  scheduleMicroTask,
   setCleanupScheduler,
   setMicroTaskScheduler,
 } from 'metron-core/schedulers.js';
@@ -42,6 +41,7 @@ import {
   type JsxIntrinsicNode,
 } from '../node.js';
 import { isIterable } from '../utils.js';
+import { assertOverride } from './shared.js';
 
 // TODO move to an init function
 setCleanupScheduler(requestIdleCallback);
@@ -167,44 +167,42 @@ function renderIntrinsic(
     if (value === undefined) {
       continue;
     }
-    let [keySpecifier, keyName] = key.split(':', 2) as [
+    let [keySpecifier, _keyName] = key.split(':', 2) as [
       string,
       string | undefined
     ];
     if (keySpecifier === key) {
-      keyName = keySpecifier;
+      _keyName = keySpecifier;
       keySpecifier = 'attr';
     }
-    if (keySpecifier === 'ref') {
-      // If not callable then it's okay to throw
-      scheduleMicroTask(() => (value as any)(element));
-      continue;
-    } else if (keyName === undefined) {
-      throw new Error(`Specifier "${keySpecifier}" must have a keyName`);
-    }
+    const keyName = _keyName ?? keySpecifier;
+
     switch (keySpecifier) {
+      case 'setup':
+        (value as Function)(element);
+        continue;
       case 'prop':
         if (isAtom(value)) {
           disposers.push(
             runAndSubscribe(value, () => {
               // Expect the user knows what they are doing
-              (element as any)[key] = untracked(value);
+              (element as any)[keyName] = untracked(value);
             })
           );
         } else {
           // Expect the user knows what they are doing
-          (element as any)[key] = value;
+          (element as any)[keyName] = value;
         }
-        break;
+        continue;
       case 'attr':
         if (isAtom(value)) {
           const firstValue = untracked(value);
 
           if (firstValue === true) {
-            element.toggleAttribute(key, true);
+            element.toggleAttribute(keyName, true);
           } else if (firstValue !== undefined && firstValue !== false) {
             // setAttribute casts to string
-            element.setAttribute(key, firstValue as any);
+            element.setAttribute(keyName, firstValue as any);
           }
 
           disposers.push(
@@ -212,14 +210,14 @@ function renderIntrinsic(
               const innerValue = untracked(value);
               switch (typeof innerValue) {
                 case 'boolean':
-                  element.toggleAttribute(key, innerValue);
+                  element.toggleAttribute(keyName, innerValue);
                   break;
                 case 'undefined':
-                  element.removeAttribute(key);
+                  element.removeAttribute(keyName);
                   break;
                 default:
                   // setAttribute casts to string
-                  element.setAttribute(key, innerValue as any);
+                  element.setAttribute(keyName, innerValue as any);
                   break;
               }
             })
@@ -229,7 +227,7 @@ function renderIntrinsic(
         } else if (value !== false) {
           element.setAttribute(keyName, value as string);
         }
-        break;
+        continue;
       case 'on':
         if (isAtom(value)) {
           let eventHandler: EventListenerOrEventListenerObject | undefined;
@@ -250,7 +248,7 @@ function renderIntrinsic(
           // Defer to addEventListener error handling
           element.addEventListener(keyName, value as any);
         }
-        break;
+        continue;
       default:
         throw new TypeError(`Unsupported specifier "${keySpecifier}"`);
     }
@@ -285,7 +283,7 @@ export function renderInto(
 ): void {
   if (typeof value === 'object') {
     if (isJsxNode(value)) {
-      jsxRender[value.nodeType](
+      return jsxRender[value.nodeType](
         parent,
         nodes,
         disposers,
@@ -293,7 +291,6 @@ export function renderInto(
         contextStore,
         isOnlyChild
       );
-      return;
     } else if (isIterable(value) && typeof value === 'object') {
       for (const child of value) {
         if (child != null) {
@@ -303,7 +300,7 @@ export function renderInto(
       return;
     } else if (isAtom(value)) {
       if (isAtomList(value)) {
-        renderAtomListInto(
+        return renderAtomListInto(
           parent,
           nodes,
           disposers,
@@ -327,133 +324,30 @@ export function renderInto(
             text.data = newValue === undefined ? '' : (newValue as any);
           })
         );
+        return;
       }
-      return;
     }
   }
   // createTextNode casts to string
   nodes.push(document.createTextNode(value as any));
 }
 
-/**
- * @private
- */
-export function renderChildNode(
-  disposers: Disposer[],
-  renderValue: {},
-  contextStore: ComponentContextStore
-): ChildNode | undefined {
-  if (typeof renderValue === 'object') {
-    if (isJsxNode(renderValue)) {
-      switch (renderValue.nodeType) {
-        case NODE_TYPE_RAW: {
-          const { disposer, value } = renderValue;
-          if (disposer !== undefined) {
-            disposers.push(disposer);
-          }
-          if (value instanceof Element) {
-            return value;
-          }
-          return;
-        }
-        case NODE_TYPE_INTRINSIC:
-          return renderIntrinsic(disposers, renderValue, contextStore);
-        default:
-          throw new Error('Node type must be raw or intrinsic');
-      }
-    } else if (isIterable(renderValue) && typeof renderValue === 'object') {
-      throw new Error('Cannot render iterable to single DOM node');
-    } else if (isAtom(renderValue)) {
-      if (isAtomList(renderValue)) {
-        throw new Error('Cannot render atom list to single DOM node');
-      } else {
-        const firstValue = untracked(renderValue);
-
-        const text = document.createTextNode(
-          // createTextNode casts param to string
-          firstValue === undefined ? '' : (firstValue as any)
-        );
-
-        disposers.push(
-          renderValue[emitterKey](() => {
-            const newValue = untracked(renderValue);
-            // Data casts to string
-            text.data = newValue === undefined ? '' : (newValue as any);
-          })
-        );
-        return text;
-      }
-    }
-  }
-  // createTextNode casts to string
-  return document.createTextNode(renderValue as any);
+interface Bounds {
+  s: ChildNode;
+  e: ChildNode;
 }
 
-type Empty = [];
-type IndexedNodes = (ChildNode | undefined)[];
-type IndexedDisposers = Disposer[][];
-
-const EMPTY_ARRAY: Empty = [];
-
-export function renderAtomListInto(
+function createListDomOperators(
   parent: ParentNode,
   firstNodes: ChildNode[],
-  disposers: Disposer[],
-  list: AtomList<unknown>,
-  contextStore: ComponentContextStore,
-  isOnlyChild: boolean
+  bounds: Bounds | undefined
 ) {
-  const indexedDisposers: IndexedDisposers = [];
-  const indexedNodes: IndexedNodes = [];
-
-  // TODO: bench reusing nextDisposerContainer
-  // let nextDisposerContainer: Disposer[] = [];
-
-  const rawList = untracked(list);
-
-  const markers: { s: ChildNode; e: ChildNode } | undefined = isOnlyChild
-    ? undefined
-    : {
-        s: document.createTextNode(''),
-        e: document.createTextNode(''),
-      };
-
-  if (markers !== undefined) {
-    firstNodes.push(markers.s);
-  }
-
-  for (const value of rawList) {
-    let renderedValue: ChildNode | undefined;
-    if (value != null) {
-      // TODO: bench reusing nextDisposerContainer
-      // const childDisposerContainer: Disposer[] = nextDisposerContainer;
-      const childDisposerContainer: Disposer[] = [];
-      renderedValue = renderChildNode(
-        childDisposerContainer,
-        value,
-        contextStore
-      );
-      indexedDisposers.push(
-        childDisposerContainer.length > 0 ? childDisposerContainer : EMPTY_ARRAY
-        // TODO: bench reusing nextDisposerContainer
-        // childDisposerContainer.length > 0 ? (nextDisposerContainer = [], childDisposerContainer) : EMPTY_ARRAY
-      );
-    } else {
-      indexedDisposers.push(EMPTY_ARRAY);
-    }
-
-    indexedNodes.push(renderedValue);
-    if (renderedValue !== undefined) {
-      firstNodes.push(renderedValue);
-    }
-  }
-
   let clearNodes: () => void;
   let append: (...nodes: ChildNode[]) => void;
   let prepend: (...nodes: ChildNode[]) => void;
   let replaceChildren: (...nodes: ChildNode[]) => void;
-  if (markers !== undefined) {
-    const { s, e } = markers;
+  if (bounds !== undefined) {
+    const { s, e } = bounds;
     firstNodes.push(e);
     let range: Range | undefined;
 
@@ -479,15 +373,117 @@ export function renderAtomListInto(
     prepend = parent.prepend.bind(parent);
   }
 
-  const swapNodes = (aNode: ChildNode, bNode: ChildNode) => {
-    const beforeA = aNode.previousSibling;
-    bNode.after(aNode);
-    if (beforeA === null) {
-      prepend(bNode);
+  const swapNodeLists = (
+    aNodes: NonEmptyChildNodes,
+    bNodes: NonEmptyChildNodes
+  ) => {
+    const firstA = aNodes[0];
+    const lastB = bNodes.at(-1)!;
+    const afterB = lastB.nextSibling;
+    const beforeA = firstA.previousSibling;
+
+    if (afterB === null) {
+      append(...aNodes);
     } else {
-      beforeA.after(bNode);
+      afterB.before(...aNodes);
+    }
+    if (beforeA === null) {
+      prepend(...bNodes);
+    } else {
+      beforeA.after(...bNodes);
     }
   };
+
+  return {
+    clearNodes,
+    append,
+    prepend,
+    replaceChildren,
+    swapNodeLists,
+  };
+}
+
+type NonEmptyChildNodes = [ChildNode, ...ChildNode[]];
+type Empty = [];
+type IndexedNodes = (NonEmptyChildNodes | Empty)[];
+type IndexedDisposers = Disposer[][];
+
+const EMPTY_ARRAY: Empty = [];
+
+// TODO: bench reusing nextDisposerContainer
+// let nextDisposerContainer: Disposer[] = [];
+
+// Todo Instead of accepting render bucket, what about accepting an append method
+function renderListItemsInto(
+  listItems: Iterable<unknown>,
+  indexedDisposers: IndexedDisposers,
+  indexedNodes: IndexedNodes,
+  parent: ParentNode,
+  renderBucket: ChildNode[],
+  contextStore: ComponentContextStore
+) {
+  for (const value of listItems) {
+    if (value == null) {
+      indexedDisposers.push(EMPTY_ARRAY);
+      indexedNodes.push(EMPTY_ARRAY);
+      continue;
+    }
+    const childDisposerContainer: Disposer[] = [];
+    const childNodeContainer: ChildNode[] = [];
+    renderInto(
+      parent,
+      childNodeContainer,
+      childDisposerContainer,
+      value,
+      contextStore
+    );
+    indexedDisposers.push(
+      childDisposerContainer.length > 0 ? childDisposerContainer : EMPTY_ARRAY
+    );
+    indexedNodes.push(
+      childNodeContainer.length > 0
+        ? (childNodeContainer as NonEmptyChildNodes)
+        : EMPTY_ARRAY
+    );
+    renderBucket.push(...childNodeContainer);
+  }
+}
+
+export function renderAtomListInto(
+  parent: ParentNode,
+  firstNodes: ChildNode[],
+  disposers: Disposer[],
+  list: AtomList<unknown>,
+  contextStore: ComponentContextStore,
+  isOnlyChild: boolean
+) {
+  const indexedDisposers: IndexedDisposers = [];
+  const indexedNodes: IndexedNodes = [];
+
+  const rawList = untracked(list);
+
+  const bounds: { s: ChildNode; e: ChildNode } | undefined = isOnlyChild
+    ? undefined
+    : {
+        s: document.createTextNode(''),
+        e: document.createTextNode(''),
+      };
+
+  if (bounds !== undefined) {
+    firstNodes.push(bounds.s);
+  }
+
+  renderListItemsInto(
+    rawList,
+    indexedDisposers,
+    indexedNodes,
+    parent,
+    firstNodes,
+    contextStore
+  );
+
+  const { clearNodes, append, replaceChildren, swapNodeLists } =
+    createListDomOperators(parent, firstNodes, bounds);
 
   function listChangeHandler(message: AtomListEmit) {
     switch (message.type) {
@@ -503,33 +499,31 @@ export function renderAtomListInto(
         const { key, oldSize } = message;
 
         const value = rawList.at(key);
-        let renderedValue: ChildNode | undefined;
-        let newDisposers: Disposer[];
+        let newDisposers: Disposer[] = [];
+        let newNodes: ChildNode[] = [];
+
         if (value != null) {
-          newDisposers = [];
-          renderedValue = renderChildNode(newDisposers, value, contextStore);
-          newDisposers = newDisposers.length > 0 ? newDisposers : EMPTY_ARRAY;
-        } else {
-          newDisposers = EMPTY_ARRAY;
+          renderInto(parent, newNodes, newDisposers, value, contextStore);
         }
 
+        newDisposers = newDisposers.length > 0 ? newDisposers : EMPTY_ARRAY;
+        newNodes = newNodes.length > 0 ? newNodes : EMPTY_ARRAY;
+
         if (key === oldSize) {
-          if (renderedValue !== undefined) {
-            append(renderedValue);
-          }
+          append(...newNodes);
           indexedDisposers.push(newDisposers);
-          indexedNodes.push(undefined);
+          indexedNodes.push(newNodes as []);
         } else {
-          if (renderedValue !== undefined) {
-            const rightIndex = findIndexOfNodeToRight(indexedNodes, key);
+          if (newNodes !== EMPTY_ARRAY) {
+            const rightIndex = findIndexOfNodesToRight(indexedNodes, key);
             if (rightIndex < 0) {
-              append(renderedValue);
+              append(...newNodes);
             } else {
-              indexedNodes[rightIndex]!.before(renderedValue);
+              indexedNodes[rightIndex]![0]!.before(...newNodes);
             }
           }
           indexedDisposers.splice(key, 0, newDisposers);
-          indexedNodes.splice(key, 0, renderedValue);
+          indexedNodes.splice(key, 0, newNodes as []);
         }
 
         return;
@@ -541,9 +535,8 @@ export function renderAtomListInto(
         if (oldDisposers !== EMPTY_ARRAY) {
           scheduleCleanup(() => dispose(oldDisposers));
         }
-        const oldNode = indexedNodes[key];
-        if (oldNode !== undefined) {
-          parent.removeChild(oldNode);
+        for (const node of indexedNodes[key]!) {
+          parent.removeChild(node);
         }
 
         if (key === size) {
@@ -559,37 +552,39 @@ export function renderAtomListInto(
       case COLLECTION_EMIT_TYPE_KEY_SWAP: {
         const [keyA, keyB] = message.keySwap;
 
-        const aNode = indexedNodes[keyA];
-        const bNode = indexedNodes[keyB];
+        const aNodes = indexedNodes[keyA]!;
+        const bNodes = indexedNodes[keyB]!;
 
-        if (aNode === bNode) {
+        if (aNodes === bNodes) {
           // If A and B are the same they must both be EMPTY_ARRAY
           return;
         }
 
-        if (aNode !== undefined) {
-          if (bNode !== undefined) {
-            swapNodes(aNode, bNode);
+        if (aNodes !== EMPTY_ARRAY) {
+          assertOverride<NonEmptyChildNodes>(aNodes);
+          if (bNodes !== EMPTY_ARRAY) {
+            assertOverride<NonEmptyChildNodes>(bNodes);
+            swapNodeLists(aNodes, bNodes);
           } else {
-            const rightOfBIndex = findIndexOfNodeToRight(indexedNodes, keyB);
+            const rightOfBIndex = findIndexOfNodesToRight(indexedNodes, keyB);
             if (rightOfBIndex < 0) {
-              append(aNode);
+              append(...aNodes);
             } else {
-              indexedNodes[rightOfBIndex]!.before(aNode);
+              indexedNodes[rightOfBIndex]![0]!.before(...aNodes);
             }
           }
         } else {
-          const rightOfAIndex = findIndexOfNodeToRight(indexedNodes, keyA);
+          const rightOfAIndex = findIndexOfNodesToRight(indexedNodes, keyA);
           if (rightOfAIndex < keyB) {
-            indexedNodes[rightOfAIndex]!.before(bNode as ChildNode);
+            indexedNodes[rightOfAIndex]![0]!.before(...bNodes);
           }
         }
 
         const tmpDisposers = indexedDisposers[keyA]!;
         indexedDisposers[keyA] = indexedDisposers[keyB]!;
         indexedDisposers[keyB] = tmpDisposers;
-        indexedNodes[keyA] = bNode;
-        indexedNodes[keyB] = aNode;
+        indexedNodes[keyA] = bNodes;
+        indexedNodes[keyB] = aNodes;
 
         return;
       }
@@ -599,29 +594,14 @@ export function renderAtomListInto(
         const newNodes: ChildNode[] = [];
         const newValues = rawList.toArraySlice(oldSize);
 
-        for (const child of newValues) {
-          let renderedValue: ChildNode | undefined;
-          if (child != null) {
-            const childDisposerContainer: Disposer[] = [];
-            renderedValue = renderChildNode(
-              childDisposerContainer,
-              child,
-              contextStore
-            );
-            indexedDisposers.push(
-              childDisposerContainer.length > 0
-                ? childDisposerContainer
-                : EMPTY_ARRAY
-            );
-          } else {
-            indexedDisposers.push(EMPTY_ARRAY);
-          }
-
-          indexedNodes.push(renderedValue);
-          if (renderedValue !== undefined) {
-            newNodes.push(renderedValue);
-          }
-        }
+        renderListItemsInto(
+          newValues,
+          indexedDisposers,
+          indexedNodes,
+          parent,
+          newNodes,
+          contextStore
+        );
 
         append(...newNodes);
 
@@ -635,34 +615,39 @@ export function renderAtomListInto(
           scheduleCleanup(() => dispose(oldDisposers));
         }
 
-        const oldNode = indexedNodes[key];
+        const oldNodes = indexedNodes[key]!;
 
         const newValue = rawList.at(key);
-        let renderedValue: ChildNode | undefined;
 
-        if (newValue != null) {
+        if (newValue == null) {
+          indexedDisposers[key] = EMPTY_ARRAY;
+          indexedNodes[key] = EMPTY_ARRAY;
+        } else {
           const newDisposers: Disposer[] = [];
-          renderedValue = renderChildNode(newDisposers, newValue, contextStore);
+          const newNodes: ChildNode[] = [];
+          renderInto(parent, newNodes, newDisposers, newValue, contextStore);
           indexedDisposers[key] =
             newDisposers.length > 0 ? newDisposers : EMPTY_ARRAY;
-        } else {
-          indexedDisposers[key] = EMPTY_ARRAY;
-        }
+          if (newNodes.length > 0) {
+            indexedNodes[key] = newNodes as NonEmptyChildNodes;
 
-        indexedNodes[key] = renderedValue;
-        if (renderedValue !== undefined) {
-          if (oldNode === undefined) {
-            const rightIndex = findIndexOfNodeToRight(indexedNodes, key);
-            if (rightIndex < 0) {
-              append(renderedValue);
+            if (oldNodes === EMPTY_ARRAY) {
+              const rightIndex = findIndexOfNodesToRight(indexedNodes, key);
+              if (rightIndex < 0) {
+                append(...newNodes);
+              } else {
+                indexedNodes[rightIndex]![0]!.before(...newNodes);
+              }
             } else {
-              indexedNodes[rightIndex]!.before(renderedValue);
+              oldNodes[0]!.before(...newNodes);
             }
           } else {
-            oldNode.replaceWith(renderedValue);
+            indexedNodes[key] = EMPTY_ARRAY;
           }
-        } else if (oldNode !== undefined) {
-          oldNode.remove();
+        }
+
+        for (const node of oldNodes) {
+          parent.removeChild(node);
         }
 
         return;
@@ -679,29 +664,14 @@ export function renderAtomListInto(
 
           const newNodes: ChildNode[] = [];
 
-          for (const child of rawList) {
-            let renderedValue: ChildNode | undefined;
-            if (child != null) {
-              const childDisposerContainer: Disposer[] = [];
-              renderedValue = renderChildNode(
-                childDisposerContainer,
-                child,
-                contextStore
-              );
-              indexedDisposers.push(
-                childDisposerContainer.length > 0
-                  ? childDisposerContainer
-                  : EMPTY_ARRAY
-              );
-            } else {
-              indexedDisposers.push(EMPTY_ARRAY);
-            }
-
-            indexedNodes.push(renderedValue);
-            if (renderedValue !== undefined) {
-              newNodes.push(renderedValue);
-            }
-          }
+          renderListItemsInto(
+            rawList,
+            indexedDisposers,
+            indexedNodes,
+            parent,
+            newNodes,
+            contextStore
+          );
 
           replaceChildren(...newNodes);
           return;
@@ -719,36 +689,21 @@ export function renderAtomListInto(
           const newValues = rawList.toArraySlice(start, start + addCount);
           const newNodes: ChildNode[] = [];
 
-          for (const child of newValues) {
-            let renderedValue: ChildNode | undefined;
-            if (child != null) {
-              const childDisposerContainer: Disposer[] = [];
-              renderedValue = renderChildNode(
-                childDisposerContainer,
-                child,
-                contextStore
-              );
-              addedIndexedDisposers.push(
-                childDisposerContainer.length > 0
-                  ? childDisposerContainer
-                  : EMPTY_ARRAY
-              );
-            } else {
-              addedIndexedDisposers.push(EMPTY_ARRAY);
-            }
-
-            addedIndexedNodes.push(renderedValue);
-            if (renderedValue !== undefined) {
-              newNodes.push(renderedValue);
-            }
-          }
+          renderListItemsInto(
+            newValues,
+            addedIndexedDisposers,
+            addedIndexedNodes,
+            parent,
+            newNodes,
+            contextStore
+          );
 
           if (newNodes.length > 0) {
-            const rightIndex = findIndexOfNodeToRight(indexedNodes, start);
+            const rightIndex = findIndexOfNodesToRight(indexedNodes, start);
             if (rightIndex < 0) {
               append(...newNodes);
             } else {
-              indexedNodes[rightIndex]!.before(...newNodes);
+              indexedNodes[rightIndex]![0]!.before(...newNodes);
             }
           }
 
@@ -767,8 +722,10 @@ export function renderAtomListInto(
         if (deletedIndexedDisposers.length > 0) {
           scheduleCleanup(() => disposeIndexed(deletedIndexedDisposers));
         }
-        for (const node of deletedIndexedNodes) {
-          node?.remove();
+        for (const nodes of deletedIndexedNodes) {
+          for (const node of nodes) {
+            parent.removeChild(node);
+          }
         }
 
         return;
@@ -777,11 +734,9 @@ export function renderAtomListInto(
         indexedNodes.reverse();
         indexedDisposers.reverse();
 
-        replaceChildren(
-          ...indexedNodes.filter(
-            (node): node is ChildNode => node !== undefined
-          )
-        );
+        for (const nodes of indexedNodes) {
+          append(...nodes);
+        }
         break;
       case LIST_EMIT_TYPE_SORT:
         const { sortMap, size } = message;
@@ -795,11 +750,9 @@ export function renderAtomListInto(
           indexedDisposers[index] = oldIndexedDisposers[mappedIndex]!;
         }
 
-        replaceChildren(
-          ...indexedNodes.filter(
-            (node): node is ChildNode => node !== undefined
-          )
-        );
+        for (const nodes of indexedNodes) {
+          append(...nodes);
+        }
         break;
       default: {
         throw new Error('Unhandled emit', { cause: message });
@@ -823,18 +776,15 @@ function disposeIndexed(indexedDisposers: IndexedDisposers) {
   }
 }
 
-function findIndexOfNodeToRight(
+function findIndexOfNodesToRight(
   indexedNodes: IndexedNodes,
   index: number
 ): number {
   for (let i = index + 1; i < indexedNodes.length; i++) {
-    const node = indexedNodes[i];
-    if (node !== undefined) {
+    const nodes = indexedNodes[i];
+    if (nodes !== EMPTY_ARRAY) {
       return i;
     }
   }
   return -1;
 }
-
-// TODO: move to shared package
-// function assertOverride<T>(value: unknown): asserts value is T {}
