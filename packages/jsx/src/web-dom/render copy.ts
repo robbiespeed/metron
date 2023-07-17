@@ -52,10 +52,12 @@ interface DomRenderContextProps extends JsxProps {
   readonly children: unknown;
 }
 
+type NodeAppend = (...node: ChildNode[]) => void;
+
 type JsxRender = {
   [key in JsxNode['nodeType']]: (
     parent: ParentNode,
-    nodes: ChildNode[],
+    append: NodeAppend,
     disposers: Disposer[],
     value: Extract<JsxNode, { nodeType: key }>,
     contextStore: ComponentContextStore,
@@ -75,12 +77,10 @@ export function render(
     return () => {};
   }
 
-  const nodes: ChildNode[] = [];
+  const append = root.append.bind(root);
   const disposers: Disposer[] = [];
 
-  renderInto(root, nodes, disposers, children, contextStore, true);
-
-  root.replaceChildren(...nodes);
+  renderInto(root, append, disposers, children, contextStore, true);
 
   return () => {
     dispose(disposers);
@@ -275,7 +275,7 @@ function renderIntrinsic(
  */
 export function renderInto(
   parent: ParentNode,
-  nodes: ChildNode[],
+  append: (...nodes: ChildNode[]) => void,
   disposers: Disposer[],
   value: {},
   contextStore: ComponentContextStore,
@@ -339,7 +339,6 @@ interface Bounds {
 
 function createListDomOperators(
   parent: ParentNode,
-  firstNodes: ChildNode[],
   bounds: Bounds | undefined
 ) {
   let clearNodes: () => void;
@@ -348,7 +347,6 @@ function createListDomOperators(
   let replaceChildren: (...nodes: ChildNode[]) => void;
   if (bounds !== undefined) {
     const { s, e } = bounds;
-    firstNodes.push(e);
     let range: Range | undefined;
 
     function initRange() {
