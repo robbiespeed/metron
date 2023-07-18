@@ -56,12 +56,11 @@ type NodeAppend = (node: ChildNode) => void;
 
 type JsxRender = {
   [key in JsxNode['nodeType']]: (
-    parent: ParentNode,
+    parent: ParentNode | null,
     append: NodeAppend,
     disposers: Disposer[],
     value: Extract<JsxNode, { nodeType: key }>,
-    contextStore: ComponentContextStore,
-    isOnlyChild?: boolean
+    contextStore: ComponentContextStore
   ) => void;
 };
 
@@ -80,7 +79,7 @@ export function render(
   const append = root.appendChild.bind(root);
   const disposers: Disposer[] = [];
 
-  renderInto(root, append, disposers, children, contextStore, true);
+  renderInto(root, append, disposers, children, contextStore);
 
   return () => {
     dispose(disposers);
@@ -92,14 +91,7 @@ export function render(
  * @private
  */
 export const jsxRender: JsxRender = {
-  [NODE_TYPE_COMPONENT](
-    parent,
-    append,
-    disposers,
-    component,
-    contextStore,
-    isOnlyChild
-  ) {
+  [NODE_TYPE_COMPONENT](parent, append, disposers, component, contextStore) {
     const { tag, props } = component;
 
     const componentContext = createContext(contextStore);
@@ -107,48 +99,19 @@ export const jsxRender: JsxRender = {
     const children = tag(props, componentContext);
 
     if (children != null) {
-      renderInto(
-        parent,
-        append,
-        disposers,
-        children,
-        contextStore,
-        isOnlyChild
-      );
+      renderInto(parent, append, disposers, children, contextStore);
     }
   },
-  [NODE_TYPE_FRAGMENT](
-    parent,
-    append,
-    disposers,
-    { children },
-    contextStore,
-    isOnlyChild
-  ) {
+  [NODE_TYPE_FRAGMENT](parent, append, disposers, { children }, contextStore) {
     if (children != null) {
-      renderInto(
-        parent,
-        append,
-        disposers,
-        children,
-        contextStore,
-        isOnlyChild
-      );
+      renderInto(parent, append, disposers, children, contextStore);
     }
   },
-  [NODE_TYPE_INTRINSIC](
-    parent,
-    append,
-    disposers,
-    intrinsic,
-    contextStore,
-    isOnlyChild
-  ) {
-    append(renderIntrinsic(disposers, intrinsic, contextStore));
-  },
+  [NODE_TYPE_INTRINSIC]: renderIntrinsic,
   [NODE_TYPE_CONTEXT_PROVIDER]() {
     throw new Error('Not Implemented');
   },
+  // TODO: remove raw node type
   [NODE_TYPE_RAW](parent, append, disposers, { value, disposer }) {
     if (disposer !== undefined) {
       disposers.push(disposer);
@@ -168,11 +131,13 @@ function dispose(disposers: Disposer[]): void {
   }
 }
 
-function renderIntrinsic(
+export function renderIntrinsic(
+  parent: ParentNode | null,
+  append: NodeAppend,
   disposers: Disposer[],
   intrinsic: JsxIntrinsicNode,
   contextStore: ComponentContextStore
-): HTMLElement {
+): void {
   const { children, ...props } = intrinsic.props as Record<string, unknown>;
 
   const element = document.createElement(intrinsic.tag);
@@ -274,24 +239,22 @@ function renderIntrinsic(
       element.appendChild.bind(element),
       disposers,
       children,
-      contextStore,
-      true
+      contextStore
     );
   }
 
-  return element;
+  append(element);
 }
 
 /**
  * @private
  */
 export function renderInto(
-  parent: ParentNode,
+  parent: ParentNode | null,
   append: NodeAppend,
   disposers: Disposer[],
   value: {},
-  contextStore: ComponentContextStore,
-  isOnlyChild = false
+  contextStore: ComponentContextStore
 ): void {
   if (typeof value === 'object') {
     if (isJsxNode(value)) {
@@ -300,13 +263,12 @@ export function renderInto(
         append,
         disposers,
         value as any,
-        contextStore,
-        isOnlyChild
+        contextStore
       );
     } else if (isIterable(value) && typeof value === 'object') {
       for (const child of value) {
         if (child != null) {
-          renderInto(parent, append, disposers, child, contextStore);
+          renderInto(null, append, disposers, child, contextStore);
         }
       }
       return;
@@ -317,8 +279,7 @@ export function renderInto(
           append,
           disposers,
           value,
-          contextStore,
-          isOnlyChild
+          contextStore
         );
       } else {
         const firstValue = untracked(value);
@@ -338,6 +299,8 @@ export function renderInto(
         );
         return;
       }
+    } else if (value instanceof Element) {
+      append(value);
     }
   }
   // createTextNode casts to string
@@ -350,9 +313,24 @@ interface Bounds {
 }
 
 function createListDomOperators(
-  parent: ParentNode,
-  bounds: Bounds | undefined
+  initAppend: NodeAppend,
+  parent: ParentNode | null
 ) {
+  let bounds: Bounds | undefined;
+
+  if (parent === null) {
+    const s = document.createTextNode('');
+    bounds = {
+      s: document.createTextNode(''),
+      e: document.createTextNode(''),
+    };
+    initAppend(s);
+    parent = s.parentNode;
+    if (parent === null) {
+      throw new Error('Could not determine parent');
+    }
+  }
+
   const parentAppend = parent.appendChild.bind(parent);
   const parentInsertBefore = parent.insertBefore.bind(parent);
   let clearNodes: () => void;
@@ -381,8 +359,7 @@ function createListDomOperators(
     prepend = parent.prepend.bind(parent);
   }
 
-  type NodeRange = { s: ChildNode; e: ChildNode };
-  const swapNodeRanges = (a: NodeRange, b: NodeRange) => {
+  const swapNodeRanges = (a: Bounds, b: Bounds) => {
     const firstA = a.s;
     const lastA = a.e;
     const firstB = b.s;
@@ -413,17 +390,17 @@ function createListDomOperators(
     }
   };
 
-  const appendRange = ({ s, e }: NodeRange) => {
+  const parentAppendRange = ({ s, e }: Bounds) => {
     let next: ChildNode | null = s;
     while (next !== null) {
       const node: ChildNode = next;
-      append(node);
+      parentAppend(node);
       next = node === e ? null : next.nextSibling;
     }
   };
 
-  const insertRangeBeforeNode = (
-    { s, e }: NodeRange,
+  const parentInsertRangeBeforeNode = (
+    { s, e }: Bounds,
     beforeRef: ChildNode | null
   ) => {
     let next: ChildNode | null = s;
@@ -434,25 +411,26 @@ function createListDomOperators(
     }
   };
 
-  // const parentRemoveChild = parent.removeChild.bind(parent);
+  const parentRemoveChild = parent.removeChild.bind(parent);
 
-  // const removeRange = ({ s, e }: NodeRange) => {
-  //   let next: ChildNode | null = s;
-  //   while (next !== null) {
-  //     const node: ChildNode = next;
-  //     parentRemoveChild(node);
-  //     next = node === e ? null : next.nextSibling;
-  //   }
-  // };
+  const parentRemoveRange = (s: ChildNode, e?: ChildNode) => {
+    let next: ChildNode | null = s;
+    while (next !== null) {
+      const node: ChildNode = next;
+      parentRemoveChild(node);
+      next = node === e ? null : next.nextSibling;
+    }
+  };
 
   return {
+    bounds,
     clearNodes,
     append,
     prepend,
     swapNodeRanges,
-    appendRange,
-    insertRangeBeforeNode,
-    // removeRange,
+    parentAppendRange,
+    parentInsertRangeBeforeNode,
+    parentRemoveRange,
   };
 }
 
@@ -469,41 +447,22 @@ const EMPTY_ITEM: EmptyIndexedItem = Object.freeze({
   e: undefined,
 });
 
-function removeNodes(
-  parent: ParentNode,
-  start: ChildNode,
-  end: ChildNode | null = null
-) {
-  let next: ChildNode | null = start;
-  while (next !== null) {
-    const node: ChildNode = next;
-    parent.removeChild(node);
-    next = node === end ? null : next.nextSibling;
-  }
-}
-
 export function renderAtomListInto(
-  parent: ParentNode,
+  parent: ParentNode | null,
   initAppend: NodeAppend,
   disposers: Disposer[],
   list: AtomList<unknown>,
-  contextStore: ComponentContextStore,
-  isOnlyChild: boolean
+  contextStore: ComponentContextStore
 ) {
-  const bounds: { s: ChildNode; e: ChildNode } | undefined = isOnlyChild
-    ? undefined
-    : {
-        s: document.createTextNode(''),
-        e: document.createTextNode(''),
-      };
-
   const {
+    bounds,
     clearNodes,
     append,
     swapNodeRanges,
-    appendRange,
-    insertRangeBeforeNode,
-  } = createListDomOperators(parent, bounds);
+    parentAppendRange,
+    parentInsertRangeBeforeNode,
+    parentRemoveRange,
+  } = createListDomOperators(initAppend, parent);
 
   const rawList = untracked(list);
   let indexedItems: IndexedItems = new Array(rawList.size);
@@ -532,7 +491,7 @@ export function renderAtomListInto(
         e: undefined,
       };
       renderInto(
-        parent,
+        null,
         indexedAppend,
         childDisposerContainer,
         value,
@@ -544,9 +503,6 @@ export function renderAtomListInto(
     }
   }
 
-  if (bounds !== undefined) {
-    initAppend(bounds.s);
-  }
   let i = 0;
   for (const value of rawList) {
     renderValueToIndex(value, i);
@@ -585,7 +541,7 @@ export function renderAtomListInto(
             e: undefined,
           } as IndexedItem;
 
-          renderInto(parent, indexedAppend, newDisposers, value, contextStore);
+          renderInto(null, indexedAppend, newDisposers, value, contextStore);
           if (newDisposers.length === 0) {
             indexedItem.d = EMPTY_ARRAY;
           }
@@ -607,23 +563,11 @@ export function renderAtomListInto(
 
           const rightIndex = findIndexOfNodesToRight(indexedItems, key);
           if (rightIndex < 0) {
-            renderInto(
-              parent,
-              indexedAppend,
-              newDisposers,
-              value,
-              contextStore
-            );
+            renderInto(null, indexedAppend, newDisposers, value, contextStore);
           } else {
             const rightNode = indexedItems[rightIndex]!.s!;
             innerIndexedAppend = rightNode.before.bind(rightNode);
-            renderInto(
-              parent,
-              indexedAppend,
-              newDisposers,
-              value,
-              contextStore
-            );
+            renderInto(null, indexedAppend, newDisposers, value, contextStore);
             innerIndexedAppend = append;
           }
 
@@ -647,7 +591,7 @@ export function renderAtomListInto(
         }
         const s = oldIndexedItem.s;
         if (s !== undefined) {
-          removeNodes(parent, s, oldIndexedItem.e);
+          parentRemoveRange(s, oldIndexedItem.e);
         }
 
         if (key === size) {
@@ -677,9 +621,9 @@ export function renderAtomListInto(
           } else {
             const rightOfBIndex = findIndexOfNodesToRight(indexedItems, keyB);
             if (rightOfBIndex < 0) {
-              appendRange(aIndexedItem);
+              parentAppendRange(aIndexedItem);
             } else {
-              insertRangeBeforeNode(
+              parentInsertRangeBeforeNode(
                 aIndexedItem,
                 indexedItems[rightOfBIndex]!.s!
               );
@@ -689,7 +633,7 @@ export function renderAtomListInto(
           assertOverride<NonEmptyIndexedItem>(bIndexedItem);
           const rightOfAIndex = findIndexOfNodesToRight(indexedItems, keyA);
           if (rightOfAIndex < keyB) {
-            insertRangeBeforeNode(
+            parentInsertRangeBeforeNode(
               bIndexedItem,
               indexedItems[rightOfAIndex]!.s!
             );
@@ -723,7 +667,7 @@ export function renderAtomListInto(
           const rightIndex = findIndexOfNodesToRight(indexedItems, key);
           if (rightIndex < 0) {
             renderInto(
-              parent,
+              null,
               indexedAppend,
               newDisposers,
               newValue,
@@ -733,7 +677,7 @@ export function renderAtomListInto(
             const rightNode = indexedItems[rightIndex]!.s!;
             innerIndexedAppend = rightNode.before.bind(rightNode);
             renderInto(
-              parent,
+              null,
               indexedAppend,
               newDisposers,
               newValue,
@@ -747,7 +691,7 @@ export function renderAtomListInto(
         }
 
         if (oldStart !== undefined) {
-          removeNodes(parent, oldStart, oldEnd);
+          parentRemoveRange(oldStart, oldEnd);
         }
 
         indexedItem = EMPTY_ITEM;
@@ -824,7 +768,7 @@ export function renderAtomListInto(
 
         for (const { s, e } of deletedIndexedItems) {
           if (s !== undefined) {
-            removeNodes(parent, s, e);
+            parentRemoveRange(s, e);
           }
         }
 
@@ -835,7 +779,7 @@ export function renderAtomListInto(
 
         for (const item of indexedItems) {
           if (item.s !== undefined) {
-            appendRange(item);
+            parentAppendRange(item);
           }
         }
         break;
@@ -852,7 +796,7 @@ export function renderAtomListInto(
 
         for (const item of indexedItems) {
           if (item.s !== undefined) {
-            appendRange(item);
+            parentAppendRange(item);
           }
         }
         break;

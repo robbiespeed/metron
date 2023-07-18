@@ -20,13 +20,14 @@ import { isIterable } from '../utils.js';
 import { isAtomList } from 'metron-core';
 
 interface InitDescriptor<TProps extends JsxProps = JsxProps> {
-  index?: number;
   props?: { key: string; initKey: keyof TProps }[];
   attributes?: { key: string; initKey: keyof TProps }[];
   events?: { key: string; initKey: keyof TProps }[];
-  nodes?: { index: number; initKey: keyof TProps }[];
   setups?: (keyof TProps)[];
-  childDescriptors?: InitDescriptor[];
+  children?: {
+    [index: number]: InitDescriptor | keyof TProps;
+    lastIndex: number;
+  };
 }
 
 interface Slot<T = unknown> extends Atom<T> {
@@ -81,7 +82,7 @@ export function template<TProps extends JsxProps>(
     let disposers: Disposer[] | undefined;
     if (descriptor !== undefined) {
       disposers = [];
-      initDynamic(element, props, disposers, descriptor);
+      initElement(element, props, disposers, descriptor);
     }
 
     return {
@@ -190,8 +191,7 @@ function renderTemplateNode(
     }
   }
 
-  let nodeDescriptors: InitDescriptor['nodes'];
-  let childDescriptors: InitDescriptor['childDescriptors'];
+  let childDescriptors: InitDescriptor['children'];
 
   if (Array.isArray(children)) {
     const childNodes: ChildNode[] = [];
@@ -200,16 +200,22 @@ function renderTemplateNode(
     for (let i = 0; i < childrenCount; i++) {
       const child: unknown = children[i];
       if (isSlot(child)) {
+        if (childDescriptors === undefined) {
+          childDescriptors = { lastIndex: i, [i]: child.key };
+        } else {
+          childDescriptors.lastIndex = i;
+          childDescriptors[i] = child.key;
+        }
         childNodes.push(document.createTextNode(''));
-        (nodeDescriptors ??= []).push({
-          index: i,
-          initKey: child.key,
-        });
       } else if (isJsxNode(child)) {
         const [childElement, childDescriptor] = renderTemplateNode(child);
         if (childDescriptor !== undefined) {
-          childDescriptor.index = i;
-          (childDescriptors ??= []).push(childDescriptor);
+          if (childDescriptors === undefined) {
+            childDescriptors = { lastIndex: i, [i]: childDescriptor };
+          } else {
+            childDescriptors.lastIndex = i;
+            childDescriptors[i] = childDescriptor;
+          }
         }
         childNodes.push(childElement);
       } else if (typeof child === 'string') {
@@ -221,15 +227,13 @@ function renderTemplateNode(
     element.append(...childNodes);
   } else if (children !== undefined) {
     if (isSlot(children)) {
-      (nodeDescriptors ??= []).push({
-        index: 0,
-        initKey: children.key,
-      });
+      childDescriptors = { lastIndex: 0, 0: children.key };
       element.appendChild(document.createTextNode(''));
     } else if (isJsxNode(children)) {
       const [childElement, childDescriptor] = renderTemplateNode(children);
+
       if (childDescriptor !== undefined) {
-        (childDescriptors ??= []).push(childDescriptor);
+        childDescriptors = { lastIndex: 0, 0: childDescriptor };
       }
       element.appendChild(childElement);
     } else if (typeof children === 'string') {
@@ -241,14 +245,12 @@ function renderTemplateNode(
     attributeDescriptors ??
     childDescriptors ??
     eventDescriptors ??
-    nodeDescriptors ??
     setupDescriptors ??
     propDescriptors
       ? {
-          childDescriptors,
           attributes: attributeDescriptors,
+          children: childDescriptors,
           events: eventDescriptors,
-          nodes: nodeDescriptors,
           setups: setupDescriptors,
           props: propDescriptors,
         }
@@ -257,11 +259,11 @@ function renderTemplateNode(
   return [element, descriptor];
 }
 
-function initDynamic(
+function initElement(
   element: Element,
   initProps: JsxProps,
   disposers: Disposer[],
-  { childDescriptors, attributes, events, nodes, props, setups }: InitDescriptor
+  { children, attributes, events, props, setups }: InitDescriptor
 ) {
   if (setups !== undefined) {
     for (const initKey of setups) {
@@ -335,81 +337,6 @@ function initDynamic(
       }
     }
   }
-  if (nodes !== undefined) {
-    const append = element.appendChild.bind(element);
-
-    for (const { index, initKey } of nodes) {
-      const initValue = initProps[initKey];
-
-      if (initValue === undefined) {
-        continue;
-      }
-
-      const node = element.childNodes[index] as Text;
-
-      if (typeof initValue === 'object') {
-        if (isAtom(initValue)) {
-          if (isAtomList(initValue)) {
-            const childNodes: ChildNode[] = [];
-            const isOnlyChild = element.childNodes.length === 1;
-
-            renderAtomListInto(
-              element,
-              append,
-              disposers,
-              initValue,
-              {},
-              isOnlyChild
-            );
-
-            node.replaceWith(...childNodes);
-          } else {
-            disposers.push(
-              runAndSubscribe(initValue, () => {
-                const value = untracked(initValue);
-                if (value === undefined) {
-                  node.data = '';
-                } else {
-                  // Data casts to string
-                  node.data = value as any;
-                }
-              })
-            );
-          }
-          continue;
-        } else if (isJsxNode(initValue)) {
-          const childNodes: ChildNode[] = [];
-          const isOnlyChild = element.childNodes.length === 1;
-
-          // TODO: context passing
-          jsxRender[initValue.nodeType](
-            element,
-            append,
-            disposers,
-            initValue as any,
-            {},
-            isOnlyChild
-          );
-
-          node.replaceWith(...childNodes);
-          continue;
-        } else if (isIterable(initValue) && typeof initValue === 'object') {
-          const childNodes: ChildNode[] = [];
-
-          for (const child of initValue) {
-            if (child != null) {
-              renderInto(element, append, disposers, child, {});
-            }
-          }
-
-          node.replaceWith(...childNodes);
-          continue;
-        }
-      }
-      // Data casts to string
-      node.data = initValue as any;
-    }
-  }
   if (props !== undefined) {
     for (const { key, initKey } of props) {
       const initValue = initProps[initKey];
@@ -427,18 +354,100 @@ function initDynamic(
       }
     }
   }
-  if (childDescriptors !== undefined) {
-    for (const childDescriptor of childDescriptors) {
-      const { index } = childDescriptor;
-      initDynamic(
-        (index === undefined
-          ? element.firstChild
-          : element.childNodes[index]) as Element,
-        initProps,
-        disposers,
-        childDescriptor
-      );
+  if (children !== undefined) {
+    const { lastIndex } = children;
+
+    let node = element.firstChild;
+    const parent = element.lastChild === node ? element : null;
+    let i = 0;
+    while (node !== null) {
+      const childDescriptor = children[i];
+      switch (typeof childDescriptor) {
+        case 'string':
+          initSlottedChild(
+            parent,
+            initProps[childDescriptor],
+            node as Text,
+            disposers
+          );
+          break;
+        case 'object':
+          initElement(node as Element, initProps, disposers, childDescriptor);
+          break;
+      }
+
+      node = i < lastIndex ? node.nextSibling : null;
+      i++;
     }
+  }
+}
+
+function initSlottedChild(
+  parent: ParentNode | null,
+  initValue: unknown,
+  placeHolder: Text,
+  disposers: Disposer[]
+) {
+  switch (typeof initValue) {
+    case 'undefined':
+      break;
+    case 'object': {
+      if (isAtom(initValue)) {
+        if (isAtomList(initValue)) {
+          const newNodes: ChildNode[] = [];
+          renderAtomListInto(
+            parent,
+            newNodes.push.bind(newNodes),
+            disposers,
+            initValue,
+            {}
+          );
+          placeHolder.replaceWith(...newNodes);
+        } else {
+          disposers.push(
+            runAndSubscribe(initValue, () => {
+              const value = untracked(initValue);
+              if (value === undefined) {
+                placeHolder!.data = '';
+              } else {
+                // Data casts to string
+                placeHolder!.data = value as any;
+              }
+            })
+          );
+        }
+      } else if (isJsxNode(initValue)) {
+        // TODO: pass context
+        const newNodes: ChildNode[] = [];
+        jsxRender[initValue.nodeType](
+          parent,
+          newNodes.push.bind(newNodes),
+          disposers,
+          initValue as any,
+          {}
+        );
+        placeHolder.replaceWith(...newNodes);
+      } else if (isIterable(initValue) && typeof initValue === 'object') {
+        const newNodes: ChildNode[] = [];
+        for (const child of initValue) {
+          if (child != null) {
+            renderInto(
+              null,
+              newNodes.push.bind(newNodes),
+              disposers,
+              child,
+              {}
+            );
+          }
+        }
+        placeHolder.replaceWith(...newNodes);
+      }
+      break;
+    }
+    default:
+      // Data casts to string
+      placeHolder.data = initValue as any;
+      break;
   }
 }
 
