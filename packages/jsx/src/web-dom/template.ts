@@ -336,6 +336,8 @@ function initDynamic(
     }
   }
   if (nodes !== undefined) {
+    const append = element.appendChild.bind(element);
+
     for (const { index, initKey } of nodes) {
       const initValue = initProps[initKey];
 
@@ -353,7 +355,7 @@ function initDynamic(
 
             renderAtomListInto(
               element,
-              childNodes,
+              append,
               disposers,
               initValue,
               {},
@@ -382,7 +384,7 @@ function initDynamic(
           // TODO: context passing
           jsxRender[initValue.nodeType](
             element,
-            childNodes,
+            append,
             disposers,
             initValue as any,
             {},
@@ -396,7 +398,7 @@ function initDynamic(
 
           for (const child of initValue) {
             if (child != null) {
-              renderInto(element, childNodes, disposers, child, {});
+              renderInto(element, append, disposers, child, {});
             }
           }
 

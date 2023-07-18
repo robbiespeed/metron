@@ -31,7 +31,10 @@ export interface AtomCollectionEmitKeyDelete<TKey = unknown> {
 
 export interface AtomCollectionEmitKeySwap<TKey = unknown> {
   readonly type: typeof COLLECTION_EMIT_TYPE_KEY_SWAP;
-  readonly keySwap: readonly [TKey, TKey];
+  /**
+   * a < b
+   */
+  readonly keySwap: readonly [a: TKey, b: TKey];
   readonly size: number;
 }
 
