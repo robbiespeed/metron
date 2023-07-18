@@ -392,6 +392,7 @@ function initSlottedChild(
     case 'undefined':
       break;
     case 'object': {
+      // TODO: pass context
       if (isAtom(initValue)) {
         if (isAtomList(initValue)) {
           const newNodes: ChildNode[] = [];
@@ -417,7 +418,6 @@ function initSlottedChild(
           );
         }
       } else if (isJsxNode(initValue)) {
-        // TODO: pass context
         const newNodes: ChildNode[] = [];
         jsxRender[initValue.nodeType](
           parent,

@@ -318,26 +318,17 @@ function createListDomOperators(
 ) {
   let bounds: Bounds | undefined;
 
+  let append: (node: ChildNode) => void;
+  let clearNodes: () => void;
+  let insertBefore: (node: ChildNode, ref: ChildNode | null) => void;
+  let prepend: (node: ChildNode) => void;
+  let removeChild: (node: ChildNode) => void;
   if (parent === null) {
     const s = document.createTextNode('');
-    bounds = {
-      s: document.createTextNode(''),
-      e: document.createTextNode(''),
-    };
+    const e = document.createTextNode('');
+    bounds = { s, e };
     initAppend(s);
-    parent = s.parentNode;
-    if (parent === null) {
-      throw new Error('Could not determine parent');
-    }
-  }
 
-  const parentAppend = parent.appendChild.bind(parent);
-  const parentInsertBefore = parent.insertBefore.bind(parent);
-  let clearNodes: () => void;
-  let append: (node: ChildNode) => void;
-  let prepend: (node: ChildNode) => void;
-  if (bounds !== undefined) {
-    const { s, e } = bounds;
     let range: Range | undefined;
 
     function initRange() {
@@ -346,17 +337,26 @@ function createListDomOperators(
       range.setEndBefore(e);
       return range;
     }
-    const innerAppend = e.before;
+
+    append = e.before.bind(e);
     clearNodes = () => {
       (range ?? initRange()).deleteContents();
     };
-    append = innerAppend.bind(e);
+    insertBefore = (node, ref) => {
+      if (ref === null) {
+        append(node);
+      } else {
+        ref.before(node);
+      }
+    };
     prepend = s.after.bind(s);
+    removeChild = (node) => node.remove();
   } else {
-    const innerReplaceChildren = parent.replaceChildren;
-    clearNodes = innerReplaceChildren.bind(parent);
-    append = parentAppend;
+    append = parent.appendChild.bind(parent);
+    clearNodes = parent.replaceChildren.bind(parent);
+    insertBefore = parent.insertBefore.bind(parent);
     prepend = parent.prepend.bind(parent);
+    removeChild = parent.removeChild.bind(parent);
   }
 
   const swapNodeRanges = (a: Bounds, b: Bounds) => {
@@ -368,7 +368,7 @@ function createListDomOperators(
 
     if (firstA === lastA && firstB === lastB) {
       firstA.replaceWith(firstB);
-      parentInsertBefore(firstA, afterB);
+      insertBefore(firstA, afterB);
       return;
     }
 
@@ -377,7 +377,7 @@ function createListDomOperators(
       next = firstB;
       while (next !== null) {
         const node: ChildNode = next;
-        parentInsertBefore(node, firstA);
+        insertBefore(node, firstA);
         next = node === lastB ? null : next.nextSibling;
       }
     }
@@ -385,39 +385,37 @@ function createListDomOperators(
     next = firstA;
     while (next !== null) {
       const node: ChildNode = next;
-      parentInsertBefore(node, afterB);
+      insertBefore(node, afterB);
       next = node === lastA ? null : next.nextSibling;
     }
   };
 
-  const parentAppendRange = ({ s, e }: Bounds) => {
+  const appendRange = ({ s, e }: Bounds) => {
     let next: ChildNode | null = s;
     while (next !== null) {
       const node: ChildNode = next;
-      parentAppend(node);
+      append(node);
       next = node === e ? null : next.nextSibling;
     }
   };
 
-  const parentInsertRangeBeforeNode = (
+  const insertRangeBeforeNode = (
     { s, e }: Bounds,
     beforeRef: ChildNode | null
   ) => {
     let next: ChildNode | null = s;
     while (next !== null) {
       const node: ChildNode = next;
-      parentInsertBefore(node, beforeRef);
+      insertBefore(node, beforeRef);
       next = node === e ? null : next.nextSibling;
     }
   };
 
-  const parentRemoveChild = parent.removeChild.bind(parent);
-
-  const parentRemoveRange = (s: ChildNode, e?: ChildNode) => {
+  const removeUntil = (s: ChildNode, e?: ChildNode) => {
     let next: ChildNode | null = s;
     while (next !== null) {
       const node: ChildNode = next;
-      parentRemoveChild(node);
+      removeChild(node);
       next = node === e ? null : next.nextSibling;
     }
   };
@@ -428,9 +426,9 @@ function createListDomOperators(
     append,
     prepend,
     swapNodeRanges,
-    parentAppendRange,
-    parentInsertRangeBeforeNode,
-    parentRemoveRange,
+    appendRange,
+    insertRangeBeforeNode,
+    removeUntil,
   };
 }
 
@@ -459,9 +457,9 @@ export function renderAtomListInto(
     clearNodes,
     append,
     swapNodeRanges,
-    parentAppendRange,
-    parentInsertRangeBeforeNode,
-    parentRemoveRange,
+    appendRange,
+    insertRangeBeforeNode,
+    removeUntil,
   } = createListDomOperators(initAppend, parent);
 
   const rawList = untracked(list);
@@ -469,7 +467,7 @@ export function renderAtomListInto(
 
   let indexedItem: IndexedItem = EMPTY_ITEM;
 
-  let innerIndexedAppend = append;
+  let innerIndexedAppend = initAppend;
 
   function indexedAppend(node: ChildNode) {
     indexedItem.s ??= node;
@@ -512,6 +510,7 @@ export function renderAtomListInto(
   if (bounds !== undefined) {
     initAppend(bounds.e);
   }
+  innerIndexedAppend = append;
 
   function listChangeHandler(message: AtomListEmit) {
     switch (message.type) {
@@ -591,7 +590,7 @@ export function renderAtomListInto(
         }
         const s = oldIndexedItem.s;
         if (s !== undefined) {
-          parentRemoveRange(s, oldIndexedItem.e);
+          removeUntil(s, oldIndexedItem.e);
         }
 
         if (key === size) {
@@ -621,9 +620,9 @@ export function renderAtomListInto(
           } else {
             const rightOfBIndex = findIndexOfNodesToRight(indexedItems, keyB);
             if (rightOfBIndex < 0) {
-              parentAppendRange(aIndexedItem);
+              appendRange(aIndexedItem);
             } else {
-              parentInsertRangeBeforeNode(
+              insertRangeBeforeNode(
                 aIndexedItem,
                 indexedItems[rightOfBIndex]!.s!
               );
@@ -633,7 +632,7 @@ export function renderAtomListInto(
           assertOverride<NonEmptyIndexedItem>(bIndexedItem);
           const rightOfAIndex = findIndexOfNodesToRight(indexedItems, keyA);
           if (rightOfAIndex < keyB) {
-            parentInsertRangeBeforeNode(
+            insertRangeBeforeNode(
               bIndexedItem,
               indexedItems[rightOfAIndex]!.s!
             );
@@ -691,7 +690,7 @@ export function renderAtomListInto(
         }
 
         if (oldStart !== undefined) {
-          parentRemoveRange(oldStart, oldEnd);
+          removeUntil(oldStart, oldEnd);
         }
 
         indexedItem = EMPTY_ITEM;
@@ -768,7 +767,7 @@ export function renderAtomListInto(
 
         for (const { s, e } of deletedIndexedItems) {
           if (s !== undefined) {
-            parentRemoveRange(s, e);
+            removeUntil(s, e);
           }
         }
 
@@ -779,7 +778,7 @@ export function renderAtomListInto(
 
         for (const item of indexedItems) {
           if (item.s !== undefined) {
-            parentAppendRange(item);
+            appendRange(item);
           }
         }
         break;
@@ -796,7 +795,7 @@ export function renderAtomListInto(
 
         for (const item of indexedItems) {
           if (item.s !== undefined) {
-            parentAppendRange(item);
+            appendRange(item);
           }
         }
         break;
