@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["./src/web-dom/**/*", "./src/**/*.web.ts"],
+  "include": ["src/dom-client/**/*", "./src/**/*.web.ts"],
   "compilerOptions": {
     "lib": ["ES2022", "DOM"],
     "rootDir": "./src",

@@ -3,20 +3,17 @@ import {
   NODE_TYPE_INTRINSIC,
   nodeBrandKey,
   type Component,
-  type JsxComponentNode,
-  type JsxIntrinsicNode,
+  type JSXComponentNode,
+  type JSXIntrinsicNode,
   createStaticComponent,
   type StaticComponent,
   isStaticComponent,
-  type JsxProps,
-  NODE_TYPE_FRAGMENT,
-  type JsxNode,
-  isJsxNode,
+  type JSXProps,
 } from './node.js';
 
 declare namespace JSX {
   interface IntrinsicElements {
-    [tagName: string]: JsxProps;
+    [tagName: string]: JSXProps;
   }
 
   interface IntrinsicAttributes {}
@@ -26,26 +23,19 @@ declare namespace JSX {
   }
 
   type ElementType<TProps = unknown> =
-    // Jsx won't function unless any is the fallback type for TProps
-    | Component<TProps extends JsxProps ? TProps : any>
-    | StaticComponent<TProps extends JsxProps ? TProps : any>
+    // JSX won't function unless any is the fallback type for TProps
+    | Component<TProps extends JSXProps ? TProps : any>
+    | StaticComponent<TProps extends JSXProps ? TProps : any>
     | string;
 
-  type Element = JsxNode;
+  type Element = unknown;
 }
 
 export type { JSX };
 
 export const Fragment = createStaticComponent<{ children?: unknown[] }>(
   ({ children }) => {
-    if (isJsxNode(children)) {
-      return children;
-    }
-    return {
-      [nodeBrandKey]: true,
-      nodeType: NODE_TYPE_FRAGMENT,
-      children,
-    } as const;
+    return children;
   }
 );
 
@@ -55,11 +45,7 @@ export type PropsFromTag<TTag extends JSX.ElementType> = TTag extends string
   ? TProps
   : never;
 
-export function jsx(
-  tag: JSX.ElementType,
-  props: JsxProps,
-  key?: undefined
-): JsxNode {
+export function jsx(tag: JSX.ElementType, props: JSXProps): unknown {
   if (typeof tag === 'function') {
     if (isStaticComponent(tag)) {
       return tag(props);
@@ -69,14 +55,14 @@ export function jsx(
       nodeType: NODE_TYPE_COMPONENT,
       props,
       tag,
-    } satisfies JsxComponentNode;
+    } satisfies JSXComponentNode;
   } else {
     return {
       [nodeBrandKey]: true,
       nodeType: NODE_TYPE_INTRINSIC,
       props,
       tag,
-    } satisfies JsxIntrinsicNode;
+    } satisfies JSXIntrinsicNode;
   }
 }
 

@@ -1,30 +1,17 @@
 import type { GlobalHTMLAttributes } from '../dom-types/global-attributes.js';
-import type { AtomOrValue } from '../dom-types/shared.js';
-import type { EVENT_DATA_KEY } from './events.js';
-
-export interface TargetedEvent<TEventTarget extends EventTarget> extends Event {
-  currentTarget: TEventTarget;
-}
-
-export interface EventHandler<TEventTarget extends EventTarget> {
-  (this: void, event: TargetedEvent<TEventTarget>): void;
-}
-
-export interface DelegatedDataEventHandler<
-  TEventTarget extends EventTarget,
-  TData = unknown
-> {
-  (this: void, data: TData, event: TargetedEvent<TEventTarget>): void;
-  [EVENT_DATA_KEY]: TData;
-}
+import type { DataEventHandler, EventHandler } from './events.js';
+import type { Slot } from './template.js';
 
 type ScopedProps = {
   [key: `prop:${string}`]: unknown;
 };
 
+type SlotOrValue<T> = Slot<T> | T;
+
 interface EventHandlerProps<TEventTarget extends EventTarget> {
   [setup: `setup:${string}`]: (element: HTMLElement) => void;
-  [event: `on:${string}`]: AtomOrValue<undefined | EventHandler<TEventTarget>>;
+  [event: `on:${string}`]: SlotOrValue<EventHandler<TEventTarget>>;
+  [event: `on-data:${string}`]: SlotOrValue<DataEventHandler<TEventTarget>>;
 }
 
 type ScopedGlobalAttributes = {

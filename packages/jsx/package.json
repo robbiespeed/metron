@@ -31,13 +31,13 @@
       "types": "./lib/jsx-runtime.d.ts",
       "import": "./lib/jsx-runtime.js"
     },
-    "./web-dom/jsx-runtime": {
-      "types": "./lib/web-dom/jsx-runtime.d.ts",
-      "import": "./lib/web-dom/jsx-runtime.js"
+    "./dom-client/jsx-runtime": {
+      "types": "./lib/dom-client/jsx-runtime.d.ts",
+      "import": "./lib/dom-client/jsx-runtime.js"
     },
-    "./web-dom/jsx-dev-runtime": {
-      "types": "./lib/web-dom/jsx-runtime.d.ts",
-      "import": "./lib/web-dom/jsx-runtime.js"
+    "./dom-client/jsx-dev-runtime": {
+      "types": "./lib/dom-client/jsx-runtime.d.ts",
+      "import": "./lib/dom-client/jsx-runtime.js"
     },
     "./*": {
       "import": "./lib/*"

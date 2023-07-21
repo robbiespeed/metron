@@ -1,6 +1,6 @@
-import { isJsxNode, type JsxNode } from '../node.js';
+import { isJSXNode, type JSXNode } from '../node.js';
 
-export function renderStatic(intrinsic: JsxNode): Element {
+export function renderStatic(intrinsic: JSXNode): Element {
   if (intrinsic.nodeType !== 'Intrinsic') {
     throw new TypeError('Static render may only contain intrinsic nodes');
   }
@@ -37,7 +37,7 @@ export function renderStatic(intrinsic: JsxNode): Element {
   if (Array.isArray(children)) {
     const childNodes: ChildNode[] = [];
     for (const child of children) {
-      if (isJsxNode(child)) {
+      if (isJSXNode(child)) {
         const childElement = renderStatic(child);
         childNodes.push(childElement);
       } else if (typeof child === 'string') {
@@ -46,7 +46,7 @@ export function renderStatic(intrinsic: JsxNode): Element {
     }
     element.append(...childNodes);
   } else if (children !== undefined) {
-    if (isJsxNode(children)) {
+    if (isJSXNode(children)) {
       const childElement = renderStatic(children);
       element.appendChild(childElement);
     } else if (typeof children === 'string') {

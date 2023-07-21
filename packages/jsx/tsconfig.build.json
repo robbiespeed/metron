@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "include": ["./src/**/*"],
   "exclude": [
-    "./src/web-dom/**/*",
+    "src/dom-client/**/*",
     "./src/**/*.web.ts",
     "**/*.spec.ts",
     "**/*.spec.tsx"

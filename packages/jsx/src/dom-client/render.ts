@@ -29,38 +29,46 @@ import {
 import {
   NODE_TYPE_COMPONENT,
   NODE_TYPE_CONTEXT_PROVIDER,
-  NODE_TYPE_FRAGMENT,
   NODE_TYPE_INTRINSIC,
-  NODE_TYPE_RENDER_CONTEXT,
-  createContext,
-  isJsxNode,
-  type ComponentContextStore,
-  type JsxNode,
-  type JsxProps,
-  NODE_TYPE_RAW,
-  type JsxIntrinsicNode,
+  isJSXNode,
+  type JSXNode,
+  type JSXIntrinsicNode,
 } from '../node.js';
-import { isIterable } from '../utils.js';
-import { assertOverride } from './shared.js';
+import {
+  type JSXContext,
+  createRootContext,
+  createChildContext,
+} from '../context.js';
+import { isIterable, assertOverride, dispose } from '../utils.js';
+import {
+  eventDelegatorContextKey,
+  dataEventDelegatorContextKey,
+  DATA_EVENT_KEY_PREFIX,
+  EVENT_KEY_PREFIX,
+} from './events.js';
+import type {
+  EventHandler,
+  DataEventHandler,
+  DelegatedEventTarget,
+} from './events.js';
 
 // TODO move to an init function
 setCleanupScheduler(requestIdleCallback);
 setMicroTaskScheduler(queueMicrotask);
 
-interface DomRenderContextProps extends JsxProps {
+interface DomRenderContextProps {
   readonly root: ParentNode;
   readonly children: unknown;
 }
 
 type NodeAppend = (node: ChildNode) => void;
 
-type JsxRender = {
-  [key in JsxNode['nodeType']]: (
+type JSXRender = {
+  [key in JSXNode['nodeType']]: (
     parent: ParentNode | null,
     append: NodeAppend,
-    disposers: Disposer[],
-    value: Extract<JsxNode, { nodeType: key }>,
-    contextStore: ComponentContextStore
+    value: Extract<JSXNode, { nodeType: key }>,
+    context: JSXContext
   ) => void;
 };
 
@@ -69,7 +77,7 @@ export const EVENT_HANDLER_PREFIX_LENGTH = EVENT_HANDLER_PREFIX.length;
 
 export function render(
   { root, children }: DomRenderContextProps,
-  contextStore: ComponentContextStore = {}
+  context?: JSXContext
 ): Disposer {
   if (children == null) {
     root.replaceChildren();
@@ -79,7 +87,14 @@ export function render(
   const append = root.appendChild.bind(root);
   const disposers: Disposer[] = [];
 
-  renderInto(root, append, disposers, children, contextStore);
+  const addDisposer = disposers.push.bind(disposers);
+
+  context =
+    context === undefined
+      ? createRootContext(addDisposer)
+      : { ...context, addDisposer };
+
+  renderInto(root, append, children, context);
 
   return () => {
     dispose(disposers);
@@ -90,79 +105,61 @@ export function render(
 /**
  * @private
  */
-export const jsxRender: JsxRender = {
-  [NODE_TYPE_COMPONENT](parent, append, disposers, component, contextStore) {
+export const jsxRender: JSXRender = {
+  [NODE_TYPE_COMPONENT](parent, append, component, context) {
     const { tag, props } = component;
 
-    const componentContext = createContext(contextStore);
-
-    const children = tag(props, componentContext);
+    const children = tag(props, context);
 
     if (children != null) {
-      renderInto(parent, append, disposers, children, contextStore);
-    }
-  },
-  [NODE_TYPE_FRAGMENT](parent, append, disposers, { children }, contextStore) {
-    if (children != null) {
-      renderInto(parent, append, disposers, children, contextStore);
+      renderInto(parent, append, children, context);
     }
   },
   [NODE_TYPE_INTRINSIC]: renderIntrinsic,
-  [NODE_TYPE_CONTEXT_PROVIDER]() {
-    throw new Error('Not Implemented');
-  },
-  // TODO: remove raw node type
-  [NODE_TYPE_RAW](parent, append, disposers, { value, disposer }) {
-    if (disposer !== undefined) {
-      disposers.push(disposer);
+  [NODE_TYPE_CONTEXT_PROVIDER](
+    parent,
+    append,
+    { assignments, children },
+    context
+  ) {
+    const childContext = createChildContext(context, assignments);
+    if (children != null) {
+      renderInto(parent, append, children, childContext);
     }
-    if (value instanceof Element) {
-      append(value);
-    }
-  },
-  [NODE_TYPE_RENDER_CONTEXT]() {
-    throw new Error('Not Implemented');
   },
 };
-
-function dispose(disposers: Disposer[]): void {
-  for (const d of disposers) {
-    d();
-  }
-}
 
 export function renderIntrinsic(
   parent: ParentNode | null,
   append: NodeAppend,
-  disposers: Disposer[],
-  intrinsic: JsxIntrinsicNode,
-  contextStore: ComponentContextStore
+  intrinsic: JSXIntrinsicNode,
+  context: JSXContext
 ): void {
   const { children, ...props } = intrinsic.props as Record<string, unknown>;
 
   const element = document.createElement(intrinsic.tag);
 
+  const { addDisposer } = context;
+
+  let hasEventDelegator: undefined | boolean;
+  let hasDataEventDelegator: undefined | boolean;
+
   for (const [key, value] of Object.entries(props)) {
     if (value === undefined) {
       continue;
     }
-    let [keySpecifier, _keyName] = key.split(':', 2) as [
-      string,
-      string | undefined
-    ];
+    let [keySpecifier, keyName] = key.split(':', 2) as [string, string];
     if (keySpecifier === key) {
-      _keyName = keySpecifier;
+      keyName = keySpecifier;
       keySpecifier = 'attr';
     }
-    const keyName = _keyName ?? keySpecifier;
-
     switch (keySpecifier) {
       case 'setup':
         (value as Function)(element);
         continue;
-      case 'prop':
+      case 'prop': {
         if (isAtom(value)) {
-          disposers.push(
+          addDisposer(
             runAndSubscribe(value, () => {
               // Expect the user knows what they are doing
               (element as any)[keyName] = untracked(value);
@@ -173,7 +170,8 @@ export function renderIntrinsic(
           (element as any)[keyName] = value;
         }
         continue;
-      case 'attr':
+      }
+      case 'attr': {
         if (isAtom(value)) {
           const firstValue = untracked(value);
 
@@ -184,7 +182,7 @@ export function renderIntrinsic(
             element.setAttribute(keyName, firstValue as any);
           }
 
-          disposers.push(
+          addDisposer(
             value[emitterKey](() => {
               const innerValue = untracked(value);
               switch (typeof innerValue) {
@@ -207,40 +205,58 @@ export function renderIntrinsic(
           element.setAttribute(keyName, value as string);
         }
         continue;
-      case 'on':
-        if (isAtom(value)) {
-          let eventHandler: EventListenerOrEventListenerObject | undefined;
-          disposers.push(
-            runAndSubscribe(value, () => {
-              if (eventHandler) {
-                element.removeEventListener(key, eventHandler);
-              }
+      }
+      case 'on': {
+        hasEventDelegator ??= context.use(eventDelegatorContextKey) ?? false;
 
-              // Defer correctness to addEventListener error handling
-              eventHandler = untracked(value) as any;
-              if (eventHandler !== undefined) {
-                element.addEventListener(key, eventHandler);
-              }
-            })
-          );
-        } else if (value !== undefined) {
-          // Defer to addEventListener error handling
-          element.addEventListener(keyName, value as any);
+        if (value === undefined) {
+          continue;
+        }
+
+        // TODO: maybe add back atoms as event handlers?
+        if (hasEventDelegator) {
+          assertOverride<EventHandler<EventTarget>>(value);
+          assertOverride<DelegatedEventTarget>(element);
+
+          element[`${EVENT_KEY_PREFIX}:${keyName}`] = value;
+        } else {
+          assertOverride<EventListener>(value);
+          element.addEventListener(keyName, value, { passive: true });
         }
         continue;
+      }
+      case 'on-data': {
+        hasDataEventDelegator ??=
+          context.use(dataEventDelegatorContextKey) ?? false;
+
+        if (value === undefined) {
+          continue;
+        }
+
+        if (hasEventDelegator) {
+          assertOverride<DataEventHandler<EventTarget>>(value);
+          assertOverride<DelegatedEventTarget>(element);
+          element[`${DATA_EVENT_KEY_PREFIX}:${keyName}`] = value;
+        } else {
+          assertOverride<DataEventHandler<EventTarget>>(value);
+          const boundHandler = value.handler.bind(
+            undefined,
+            value.data
+          ) as EventListener;
+          element.addEventListener(keyName, boundHandler, {
+            passive: true,
+          });
+        }
+
+        continue;
+      }
       default:
         throw new TypeError(`Unsupported specifier "${keySpecifier}"`);
     }
   }
 
   if (children != null) {
-    renderInto(
-      element,
-      element.appendChild.bind(element),
-      disposers,
-      children,
-      contextStore
-    );
+    renderInto(element, element.appendChild.bind(element), children, context);
   }
 
   append(element);
@@ -252,35 +268,22 @@ export function renderIntrinsic(
 export function renderInto(
   parent: ParentNode | null,
   append: NodeAppend,
-  disposers: Disposer[],
   value: {},
-  contextStore: ComponentContextStore
+  context: JSXContext
 ): void {
   if (typeof value === 'object') {
-    if (isJsxNode(value)) {
-      return jsxRender[value.nodeType](
-        parent,
-        append,
-        disposers,
-        value as any,
-        contextStore
-      );
+    if (isJSXNode(value)) {
+      return jsxRender[value.nodeType](parent, append, value as any, context);
     } else if (isIterable(value) && typeof value === 'object') {
       for (const child of value) {
         if (child != null) {
-          renderInto(null, append, disposers, child, contextStore);
+          renderInto(null, append, child, context);
         }
       }
       return;
     } else if (isAtom(value)) {
       if (isAtomList(value)) {
-        return renderAtomListInto(
-          parent,
-          append,
-          disposers,
-          value,
-          contextStore
-        );
+        return renderAtomListInto(parent, append, value, context);
       } else {
         const firstValue = untracked(value);
 
@@ -290,7 +293,7 @@ export function renderInto(
         );
         append(text);
 
-        disposers.push(
+        context.addDisposer(
           value[emitterKey](() => {
             const newValue = untracked(value);
             // Data casts to string
@@ -301,6 +304,7 @@ export function renderInto(
       }
     } else if (value instanceof Element) {
       append(value);
+      return;
     }
   }
   // createTextNode casts to string
@@ -445,12 +449,12 @@ const EMPTY_ITEM: EmptyIndexedItem = Object.freeze({
   e: undefined,
 });
 
+// TODO: instead of passing in parent and creating dom operators, require that renderAtomListInto be passed dom operators directly
 export function renderAtomListInto(
   parent: ParentNode | null,
   initAppend: NodeAppend,
-  disposers: Disposer[],
   list: AtomList<unknown>,
-  contextStore: ComponentContextStore
+  context: JSXContext
 ) {
   const {
     bounds,
@@ -482,22 +486,16 @@ export function renderAtomListInto(
     if (value == null) {
       indexedItems[i] = EMPTY_ITEM;
     } else {
-      const childDisposerContainer: Disposer[] = [];
+      const childDisposers: Disposer[] = [];
       indexedItems[i] = indexedItem = {
-        d: childDisposerContainer,
+        d: childDisposers,
         s: undefined,
         e: undefined,
       };
-      renderInto(
-        null,
-        indexedAppend,
-        childDisposerContainer,
-        value,
-        contextStore
-      );
-      if (childDisposerContainer.length === 0) {
-        indexedItem.d = EMPTY_ARRAY;
-      }
+      renderInto(null, indexedAppend, value, {
+        ...context,
+        addDisposer: childDisposers.push.bind(childDisposers),
+      });
     }
   }
 
@@ -540,10 +538,10 @@ export function renderAtomListInto(
             e: undefined,
           } as IndexedItem;
 
-          renderInto(null, indexedAppend, newDisposers, value, contextStore);
-          if (newDisposers.length === 0) {
-            indexedItem.d = EMPTY_ARRAY;
-          }
+          renderInto(null, indexedAppend, value, {
+            ...context,
+            addDisposer: newDisposers.push.bind(newDisposers),
+          });
 
           indexedItems.push(indexedItem);
         } else {
@@ -562,16 +560,18 @@ export function renderAtomListInto(
 
           const rightIndex = findIndexOfNodesToRight(indexedItems, key);
           if (rightIndex < 0) {
-            renderInto(null, indexedAppend, newDisposers, value, contextStore);
+            renderInto(null, indexedAppend, value, {
+              ...context,
+              addDisposer: newDisposers.push.bind(newDisposers),
+            });
           } else {
             const rightNode = indexedItems[rightIndex]!.s!;
             innerIndexedAppend = rightNode.before.bind(rightNode);
-            renderInto(null, indexedAppend, newDisposers, value, contextStore);
+            renderInto(null, indexedAppend, value, {
+              ...context,
+              addDisposer: newDisposers.push.bind(newDisposers),
+            });
             innerIndexedAppend = append;
-          }
-
-          if (newDisposers.length === 0) {
-            indexedItem.d = EMPTY_ARRAY;
           }
 
           indexedItems.splice(key, 0, indexedItem);
@@ -665,28 +665,19 @@ export function renderAtomListInto(
 
           const rightIndex = findIndexOfNodesToRight(indexedItems, key);
           if (rightIndex < 0) {
-            renderInto(
-              null,
-              indexedAppend,
-              newDisposers,
-              newValue,
-              contextStore
-            );
+            renderInto(null, indexedAppend, newValue, {
+              ...context,
+              addDisposer: newDisposers.push.bind(newDisposers),
+            });
           } else {
             const rightNode = indexedItems[rightIndex]!.s!;
             innerIndexedAppend = rightNode.before.bind(rightNode);
-            renderInto(
-              null,
-              indexedAppend,
-              newDisposers,
-              newValue,
-              contextStore
-            );
+            renderInto(null, indexedAppend, newValue, {
+              ...context,
+              addDisposer: newDisposers.push.bind(newDisposers),
+            });
             innerIndexedAppend = append;
           }
-
-          indexedItem.d =
-            newDisposers.length === 0 ? EMPTY_ARRAY : newDisposers;
         }
 
         if (oldStart !== undefined) {
@@ -807,7 +798,7 @@ export function renderAtomListInto(
 
   const listEmitDisposer = list[emitterKey](listChangeHandler);
 
-  disposers.push(() => {
+  context.addDisposer(() => {
     listEmitDisposer();
     disposeIndexed(indexedItems);
   });
