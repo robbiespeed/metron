@@ -2,7 +2,6 @@ import type { Emitter } from 'metron-core/emitter.js';
 import {
   emitterKey,
   isAtom,
-  runAndSubscribe,
   toValueKey,
   untracked,
   type Atom,
@@ -18,20 +17,18 @@ import { jsxRender, renderAtomListInto, renderInto } from './render.js';
 import { assertOverride, isIterable } from '../utils.js';
 import { isAtomList } from 'metron-core';
 import {
-  eventDelegatorContextKey,
   type DelegatedEventTarget,
-  type EventHandler,
   EVENT_KEY_PREFIX,
-  dataEventDelegatorContextKey,
-  DATA_EVENT_KEY_PREFIX,
-  type DataEventHandler,
+  EVENT_DATA_KEY_PREFIX,
+  type DelegatedEventParams,
 } from './events.js';
+import { renderSubscribe, runAndRenderSubscribe } from './shared.js';
 
 interface InitDescriptor<TProps extends JSXProps = Record<string, unknown>> {
   props?: { key: string; initKey: keyof TProps }[];
   attributes?: { key: string; initKey: keyof TProps }[];
   events?: { key: string; initKey: keyof TProps }[];
-  dataEvents?: { key: string; initKey: keyof TProps }[];
+  delegatedEvents?: { key: string; initKey: keyof TProps }[];
   setups?: (keyof TProps)[];
   children?: {
     [index: number]: InitDescriptor | keyof TProps;
@@ -138,7 +135,7 @@ function renderTemplateNode(
   let attributeDescriptors: InitDescriptor['attributes'];
   let propDescriptors: InitDescriptor['props'];
   let eventDescriptors: InitDescriptor['events'];
-  let dataEventDescriptors: InitDescriptor['dataEvents'];
+  let delegatedEventDescriptors: InitDescriptor['delegatedEvents'];
   let setupDescriptors: InitDescriptor['setups'];
 
   for (const [key, value] of Object.entries(templateProps)) {
@@ -196,9 +193,9 @@ function renderTemplateNode(
           );
         }
         continue;
-      case 'on-data':
+      case 'delegate':
         if (isSlot(value)) {
-          (dataEventDescriptors ??= []).push({
+          (delegatedEventDescriptors ??= []).push({
             key: keyName,
             initKey: value.key,
           });
@@ -266,14 +263,14 @@ function renderTemplateNode(
   const descriptor: InitDescriptor | undefined =
     attributeDescriptors ??
     childDescriptors ??
-    dataEventDescriptors ??
+    delegatedEventDescriptors ??
     eventDescriptors ??
     setupDescriptors ??
     propDescriptors
       ? {
           attributes: attributeDescriptors,
           children: childDescriptors,
-          dataEvents: dataEventDescriptors,
+          delegatedEvents: delegatedEventDescriptors,
           events: eventDescriptors,
           setups: setupDescriptors,
           props: propDescriptors,
@@ -287,7 +284,14 @@ function initElement(
   element: Element,
   initProps: Record<string, unknown>,
   context: JSXContext,
-  { children, attributes, dataEvents, events, props, setups }: InitDescriptor
+  {
+    children,
+    attributes,
+    delegatedEvents,
+    events,
+    props,
+    setups,
+  }: InitDescriptor
 ) {
   if (setups !== undefined) {
     for (const initKey of setups) {
@@ -318,7 +322,7 @@ function initElement(
         }
 
         addDisposer(
-          initValue[emitterKey](() => {
+          renderSubscribe(initValue, () => {
             const value = untracked(initValue);
             switch (typeof value) {
               case 'boolean':
@@ -340,34 +344,27 @@ function initElement(
       }
     }
   }
-  if (dataEvents !== undefined) {
-    const hasDataEventDelegator = context.use(dataEventDelegatorContextKey);
-    for (const { initKey, key } of dataEvents) {
+  if (delegatedEvents !== undefined) {
+    // TODO: Dev mode only
+    // const delegatedEventTypes = use(eventDelegatorContextKey);
+
+    for (const { initKey, key } of delegatedEvents) {
       const value = initProps[initKey];
 
       if (value === undefined) {
         continue;
       }
 
-      if (hasDataEventDelegator) {
-        assertOverride<DataEventHandler<EventTarget>>(value);
-        assertOverride<DelegatedEventTarget>(element);
+      // TODO: Dev mode only, check if key is in delegatedEventTypes and warn if not
 
-        element[`${DATA_EVENT_KEY_PREFIX}:${key}`] = value;
-      } else {
-        assertOverride<DataEventHandler<EventTarget>>(value);
-        const boundHandler = value.handler.bind(
-          undefined,
-          value.data
-        ) as EventListener;
-        element.addEventListener(key, boundHandler, {
-          passive: true,
-        });
-      }
+      assertOverride<DelegatedEventParams<unknown, EventTarget>>(value);
+      assertOverride<DelegatedEventTarget>(element);
+
+      element[`${EVENT_KEY_PREFIX}:${key}`] = value.handler;
+      element[`${EVENT_DATA_KEY_PREFIX}:${key}`] = value.data;
     }
   }
   if (events !== undefined) {
-    const hasEventDelegator = context.use(eventDelegatorContextKey);
     for (const { initKey, key } of events) {
       const value = initProps[initKey];
 
@@ -375,15 +372,8 @@ function initElement(
         continue;
       }
 
-      if (hasEventDelegator) {
-        assertOverride<EventHandler<EventTarget>>(value);
-        assertOverride<DelegatedEventTarget>(element);
-
-        element[`${EVENT_KEY_PREFIX}:${key}`] = value;
-      } else {
-        assertOverride<EventListener>(value);
-        element.addEventListener(key, value, { passive: true });
-      }
+      assertOverride<EventListener>(value);
+      element.addEventListener(key, value, { passive: true });
     }
   }
   if (props !== undefined) {
@@ -392,7 +382,7 @@ function initElement(
 
       if (isAtom(initValue)) {
         addDisposer(
-          runAndSubscribe(initValue, () => {
+          runAndRenderSubscribe(initValue, () => {
             // Expect the user knows what they are doing
             (element as any)[key] = untracked(initValue);
           })
@@ -442,29 +432,27 @@ function initSlottedChild(
       break;
     case 'object': {
       // TODO: pass context
-      if (isAtom(initValue)) {
-        if (isAtomList(initValue)) {
-          const newNodes: ChildNode[] = [];
-          renderAtomListInto(
-            parent,
-            newNodes.push.bind(newNodes),
-            initValue,
-            context
-          );
-          placeHolder.replaceWith(...newNodes);
-        } else {
-          context.addDisposer(
-            runAndSubscribe(initValue, () => {
-              const value = untracked(initValue);
-              if (value === undefined) {
-                placeHolder!.data = '';
-              } else {
-                // Data casts to string
-                placeHolder!.data = value as any;
-              }
-            })
-          );
-        }
+      if (isAtomList(initValue)) {
+        const newNodes: ChildNode[] = [];
+        renderAtomListInto(
+          parent,
+          newNodes.push.bind(newNodes),
+          initValue,
+          context
+        );
+        placeHolder.replaceWith(...newNodes);
+      } else if (isAtom(initValue)) {
+        context.addDisposer(
+          runAndRenderSubscribe(initValue, () => {
+            const value = untracked(initValue);
+            if (value === undefined) {
+              placeHolder!.data = '';
+            } else {
+              // Data casts to string
+              placeHolder!.data = value as any;
+            }
+          })
+        );
       } else if (isJSXNode(initValue)) {
         const newNodes: ChildNode[] = [];
         jsxRender[initValue.nodeType](

@@ -1,75 +1,57 @@
-import {
-  createStaticComponent,
-  nodeBrandKey,
-  type JSXContextProviderNode,
-  type StaticComponent,
-} from 'metron-jsx/node.js';
-
 export interface TargetedEvent<TEventTarget extends EventTarget> extends Event {
   currentTarget: TEventTarget;
+}
+
+export interface DelegatedEvent<TEventTarget extends EventTarget>
+  extends TargetedEvent<TEventTarget> {
+  stopDelegatedPropagation(): void;
 }
 
 export interface EventHandler<TEventTarget extends EventTarget> {
   (this: void, event: TargetedEvent<TEventTarget>): void;
 }
 
-export interface DataEventHandler<
-  TEventTarget extends EventTarget,
-  TData = unknown
+export interface DelegatedEventHandler<
+  TData,
+  TEventTarget extends EventTarget
 > {
-  handler(this: void, data: TData, event: TargetedEvent<TEventTarget>): void;
+  (this: void, data: TData, event: TargetedEvent<TEventTarget>): void;
+}
+
+export type DelegatedEventParams<TData, TEventTarget extends EventTarget> = {
   data: TData;
-}
+  handler: DelegatedEventHandler<TData, TEventTarget>;
+};
 
-// export interface DelegatedEventRegister {
-//   (type: string, target: EventTarget, handler: EventHandler<any>): void;
-// }
-
-// export interface DelegatedDataEventRegister {
-//   (type: string, target: EventTarget, handler: DataEventHandler<any>): void;
-// }
-
-declare module '../context.js' {
-  interface JSXContextStore {
-    [eventDelegatorContextKey]: true;
-    [dataEventDelegatorContextKey]: true;
-  }
-}
-
-export const eventDelegatorContextKey = Symbol('Event Delegator');
-export const dataEventDelegatorContextKey = Symbol('Data Event Delegator');
-
-export const DATA_EVENT_KEY_PREFIX = '__METRON_EVENT_DATA';
+export const EVENT_DATA_KEY_PREFIX = '__METRON_EVENT_DATA';
 export const EVENT_KEY_PREFIX = '__METRON_EVENT';
 
 export interface DelegatedEventTarget extends EventTarget {
-  [
-    eventData: `${typeof DATA_EVENT_KEY_PREFIX}:${string}`
-  ]: DataEventHandler<EventTarget>;
-  [
-    eventHandler: `${typeof EVENT_KEY_PREFIX}:${string}`
-  ]: EventHandler<EventTarget>;
+  [eventData: `${typeof EVENT_DATA_KEY_PREFIX}:${string}`]: unknown;
+  [eventHandler: `${typeof EVENT_KEY_PREFIX}:${string}`]: DelegatedEventHandler<
+    unknown,
+    EventTarget
+  >;
 }
 
-const stopPropagation = Event.prototype.stopPropagation;
-const stopImmediatePropagation = Event.prototype.stopImmediatePropagation;
-
 interface EventDelegationOptions {
-  capture?: boolean;
   passive?: boolean;
 }
 
 export function createEventDelegator(
   types: string[],
   eventOptions: EventDelegationOptions | undefined = { passive: true }
-): [
-  init: (delegationRoot: EventTarget) => void,
-  provider: StaticComponent<{ children: unknown }, JSXContextProviderNode>
-] {
-  function init(root: EventTarget) {
+): (delegationRoot: EventTarget) => void {
+  return function init(root: EventTarget) {
+    // TODO: Dev mode only
+    // const eventTypeDictionary: Record<string, true> = {};
+
     for (const type of types) {
+      // TODO: Dev mode only
+      // eventTypeDictionary[type] = true;
+
       const eventKey = `${EVENT_KEY_PREFIX}:${type}` as const;
-      const dataEventKey = `${DATA_EVENT_KEY_PREFIX}:${type}` as const;
+      const eventDataKey = `${EVENT_DATA_KEY_PREFIX}:${type}` as const;
 
       function rootListener(evt: Event) {
         let node: EventTarget | null = evt.target;
@@ -83,59 +65,32 @@ export function createEventDelegator(
 
         let isStopped = false;
 
-        Object.defineProperty(evt, 'stopPropagation', {
-          configurable: true,
-          get() {
-            return function () {
-              isStopped = true;
-              stopPropagation.call(evt);
-            };
-          },
-        });
-        Object.defineProperty(evt, 'stopImmediatePropagation', {
-          configurable: true,
-          get() {
-            return function () {
-              isStopped = true;
-              stopImmediatePropagation.call(evt);
-            };
-          },
-        });
+        (evt as DelegatedEvent<any>).stopDelegatedPropagation = () => {
+          isStopped = true;
+        };
 
-        while (node !== null) {
-          const dataEventHandler = (node as DelegatedEventTarget)[dataEventKey];
-          if (dataEventHandler !== undefined) {
-            dataEventHandler.handler(dataEventHandler.data, evt as any);
-          } else {
-            const eventHandler = (node as DelegatedEventTarget)[eventKey];
-            if (eventHandler !== undefined) {
-              eventHandler(evt as any);
+        do {
+          const eventHandler = (node as DelegatedEventTarget)[eventKey];
+          if (eventHandler !== undefined) {
+            eventHandler(
+              (node as DelegatedEventTarget)[eventDataKey],
+              evt as any
+            );
+            if (isStopped) {
+              return;
             }
           }
 
-          node =
-            node === root || isStopped
-              ? null
-              : ((node as ChildNode).parentNode as EventTarget | null);
-        }
+          node = (node as ChildNode).parentNode as EventTarget | null;
+        } while (node !== null && node !== root);
       }
 
       root.addEventListener(type, rootListener, eventOptions);
     }
-  }
 
-  return [
-    init,
-    createStaticComponent(({ children }) => ({
-      [nodeBrandKey]: true,
-      nodeType: 'ContextProvider',
-      assignments: {
-        [eventDelegatorContextKey]: true,
-        [dataEventDelegatorContextKey]: true,
-      },
-      children,
-    })),
-  ];
+    // TODO: Dev mode only
+    // root.__METRON_DEV_DELEGATED_TYPES = eventTypeDictionary;
+  };
 }
 
 // export function setupEventDelegator(type: string) {

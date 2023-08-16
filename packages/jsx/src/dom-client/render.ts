@@ -15,12 +15,7 @@ import {
   LIST_EMIT_TYPE_REVERSE,
   LIST_EMIT_TYPE_SORT,
 } from 'metron-core/list.js';
-import {
-  emitterKey,
-  isAtom,
-  untracked,
-  runAndSubscribe,
-} from 'metron-core/particle.js';
+import { emitterKey, isAtom, untracked } from 'metron-core/particle.js';
 import {
   scheduleCleanup,
   setCleanupScheduler,
@@ -40,17 +35,9 @@ import {
   createChildContext,
 } from '../context.js';
 import { isIterable, assertOverride, dispose } from '../utils.js';
-import {
-  eventDelegatorContextKey,
-  dataEventDelegatorContextKey,
-  DATA_EVENT_KEY_PREFIX,
-  EVENT_KEY_PREFIX,
-} from './events.js';
-import type {
-  EventHandler,
-  DataEventHandler,
-  DelegatedEventTarget,
-} from './events.js';
+import { EVENT_DATA_KEY_PREFIX, EVENT_KEY_PREFIX } from './events.js';
+import type { DelegatedEventTarget, DelegatedEventParams } from './events.js';
+import { renderSubscribe, runAndRenderSubscribe } from './shared.js';
 
 // TODO move to an init function
 setCleanupScheduler(requestIdleCallback);
@@ -141,16 +128,13 @@ export function renderIntrinsic(
 
   const { addDisposer } = context;
 
-  let hasEventDelegator: undefined | boolean;
-  let hasDataEventDelegator: undefined | boolean;
-
-  for (const [key, value] of Object.entries(props)) {
+  for (const [fullKey, value] of Object.entries(props)) {
     if (value === undefined) {
       continue;
     }
-    let [keySpecifier, keyName] = key.split(':', 2) as [string, string];
-    if (keySpecifier === key) {
-      keyName = keySpecifier;
+    let [keySpecifier, key] = fullKey.split(':', 2) as [string, string];
+    if (keySpecifier === fullKey) {
+      key = keySpecifier;
       keySpecifier = 'attr';
     }
     switch (keySpecifier) {
@@ -160,14 +144,14 @@ export function renderIntrinsic(
       case 'prop': {
         if (isAtom(value)) {
           addDisposer(
-            runAndSubscribe(value, () => {
+            runAndRenderSubscribe(value, () => {
               // Expect the user knows what they are doing
-              (element as any)[keyName] = untracked(value);
+              (element as any)[key] = untracked(value);
             })
           );
         } else {
           // Expect the user knows what they are doing
-          (element as any)[keyName] = value;
+          (element as any)[key] = value;
         }
         continue;
       }
@@ -176,77 +160,58 @@ export function renderIntrinsic(
           const firstValue = untracked(value);
 
           if (firstValue === true) {
-            element.toggleAttribute(keyName, true);
+            element.toggleAttribute(key, true);
           } else if (firstValue !== undefined && firstValue !== false) {
             // setAttribute casts to string
-            element.setAttribute(keyName, firstValue as any);
+            element.setAttribute(key, firstValue as any);
           }
 
           addDisposer(
-            value[emitterKey](() => {
+            renderSubscribe(value, () => {
               const innerValue = untracked(value);
               switch (typeof innerValue) {
                 case 'boolean':
-                  element.toggleAttribute(keyName, innerValue);
+                  element.toggleAttribute(key, innerValue);
                   break;
                 case 'undefined':
-                  element.removeAttribute(keyName);
+                  element.removeAttribute(key);
                   break;
                 default:
                   // setAttribute casts to string
-                  element.setAttribute(keyName, innerValue as any);
+                  element.setAttribute(key, innerValue as any);
                   break;
               }
             })
           );
         } else if (value === true) {
-          element.toggleAttribute(keyName, true);
+          element.toggleAttribute(key, true);
         } else if (value !== false) {
-          element.setAttribute(keyName, value as string);
+          element.setAttribute(key, value as string);
         }
         continue;
       }
       case 'on': {
-        hasEventDelegator ??= context.use(eventDelegatorContextKey) ?? false;
-
         if (value === undefined) {
           continue;
         }
 
-        // TODO: maybe add back atoms as event handlers?
-        if (hasEventDelegator) {
-          assertOverride<EventHandler<EventTarget>>(value);
-          assertOverride<DelegatedEventTarget>(element);
+        assertOverride<EventListener>(value);
+        element.addEventListener(key, value, { passive: true });
 
-          element[`${EVENT_KEY_PREFIX}:${keyName}`] = value;
-        } else {
-          assertOverride<EventListener>(value);
-          element.addEventListener(keyName, value, { passive: true });
-        }
         continue;
       }
-      case 'on-data': {
-        hasDataEventDelegator ??=
-          context.use(dataEventDelegatorContextKey) ?? false;
-
+      case 'delegate': {
         if (value === undefined) {
           continue;
         }
 
-        if (hasEventDelegator) {
-          assertOverride<DataEventHandler<EventTarget>>(value);
-          assertOverride<DelegatedEventTarget>(element);
-          element[`${DATA_EVENT_KEY_PREFIX}:${keyName}`] = value;
-        } else {
-          assertOverride<DataEventHandler<EventTarget>>(value);
-          const boundHandler = value.handler.bind(
-            undefined,
-            value.data
-          ) as EventListener;
-          element.addEventListener(keyName, boundHandler, {
-            passive: true,
-          });
-        }
+        // TODO: Dev mode only, check if key is in delegatedEventTypes and warn if not
+
+        assertOverride<DelegatedEventParams<unknown, EventTarget>>(value);
+        assertOverride<DelegatedEventTarget>(element);
+
+        element[`${EVENT_KEY_PREFIX}:${key}`] = value.handler;
+        element[`${EVENT_DATA_KEY_PREFIX}:${key}`] = value.data;
 
         continue;
       }
@@ -281,27 +246,25 @@ export function renderInto(
         }
       }
       return;
+    } else if (isAtomList(value)) {
+      return renderAtomListInto(parent, append, value, context);
     } else if (isAtom(value)) {
-      if (isAtomList(value)) {
-        return renderAtomListInto(parent, append, value, context);
-      } else {
-        const firstValue = untracked(value);
+      const firstValue = untracked(value);
 
-        const text = document.createTextNode(
-          // createTextNode casts param to string
-          firstValue === undefined ? '' : (firstValue as any)
-        );
-        append(text);
+      const text = document.createTextNode(
+        // createTextNode casts param to string
+        firstValue === undefined ? '' : (firstValue as any)
+      );
+      append(text);
 
-        context.addDisposer(
-          value[emitterKey](() => {
-            const newValue = untracked(value);
-            // Data casts to string
-            text.data = newValue === undefined ? '' : (newValue as any);
-          })
-        );
-        return;
-      }
+      context.addDisposer(
+        renderSubscribe(value, () => {
+          const newValue = untracked(value);
+          // Data casts to string
+          text.data = newValue === undefined ? '' : (newValue as any);
+        })
+      );
+      return;
     } else if (value instanceof Element) {
       append(value);
       return;

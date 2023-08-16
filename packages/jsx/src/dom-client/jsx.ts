@@ -1,5 +1,5 @@
 import type { GlobalHTMLAttributes } from '../dom-types/global-attributes.js';
-import type { DataEventHandler, EventHandler } from './events.js';
+import type { DelegatedEventParams, EventHandler } from './events.js';
 import type { Slot } from './template.js';
 
 type ScopedProps = {
@@ -11,7 +11,9 @@ type SlotOrValue<T> = Slot<T> | T;
 interface EventHandlerProps<TEventTarget extends EventTarget> {
   [setup: `setup:${string}`]: (element: HTMLElement) => void;
   [event: `on:${string}`]: SlotOrValue<EventHandler<TEventTarget>>;
-  [event: `on-data:${string}`]: SlotOrValue<DataEventHandler<TEventTarget>>;
+  [event: `delegate:${string}`]: SlotOrValue<
+    DelegatedEventParams<unknown, TEventTarget>
+  >;
 }
 
 type ScopedGlobalAttributes = {
