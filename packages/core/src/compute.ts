@@ -1,41 +1,34 @@
 import type { Atom } from './atom.js';
 import { emptyCacheToken, type EmptyCacheToken } from './cache.js';
 import { cleanupRegistry } from './cleanup-registry.js';
-import { createEmitter, type Emitter } from './emitter.js';
+import { createEmitter } from './emitter.js';
 import { createOrb, type OrbContext } from './orb.js';
-import { emitterKey, toValueKey, immediateEmitterKey } from './particle.js';
-import { scheduleMicroTask } from './schedulers.js';
+import { emitterKey, toValueKey } from './particle.js';
+import { scheduleCleanup } from './schedulers.js';
 
 export interface ComputedAtom<T> extends Atom<T> {
   readonly cachedValue: T | EmptyCacheToken;
   readonly isStable: boolean;
-  readonly [immediateEmitterKey]: Emitter<void>;
 }
 
 export function compute<T>(run: (context: OrbContext) => T): ComputedAtom<T> {
   const [emitter, send] = createEmitter();
-  const [immediateEmitter, immediateSend] = createEmitter();
 
   const orb = createOrb({ autoStabilize: false });
 
-  const { stabilize, watch, dispose } = orb;
+  const { watch, dispose, stabilize } = orb;
 
   let cachedValue: T | EmptyCacheToken = emptyCacheToken;
-  let isNoEmitScheduled = true;
 
-  function emit() {
-    stabilize();
-    send();
-    isNoEmitScheduled = true;
-  }
+  let canScheduleStabilize = true;
 
   watch(() => {
     cachedValue = emptyCacheToken;
-    if (isNoEmitScheduled) {
-      isNoEmitScheduled = false;
-      scheduleMicroTask(emit);
+    send();
+    if (canScheduleStabilize) {
+      canScheduleStabilize = false;
+      scheduleCleanup(stabilize);
     }
-    immediateSend();
   });
 
   const { context } = orb;
@@ -59,6 +52,5 @@ export function compute<T>(run: (context: OrbContext) => T): ComputedAtom<T> {
     },
     [toValueKey]: getValue,
     [emitterKey]: emitter,
-    [immediateEmitterKey]: immediateEmitter,
   };
 }

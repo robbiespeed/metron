@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { compute } from './compute.js';
-import { emitterKey, immediateEmitterKey, untracked } from './particle.js';
+import { emitterKey, untracked } from './particle.js';
 import { type Emitter, type EmitHandler, createEmitter } from './emitter.js';
 import { garbageCollect } from 'metron-test-utils';
 import { emptyCacheToken } from './cache.js';
@@ -36,8 +36,9 @@ describe('core: Compute', () => {
     const [aAtom, setA] = createAtom(0);
     const [bAtom, setB] = createAtom(0);
     let computeCount = 0;
-    const computed = compute(({ get }) => {
-      const [a, b] = get(aAtom, bAtom);
+    const computed = compute(({ read }) => {
+      const a = read(aAtom),
+        b = read(bAtom);
       computeCount++;
       return a + b;
     });
@@ -55,36 +56,30 @@ describe('core: Compute', () => {
     expect(untracked(computed)).to.equal(1);
     setB(2);
     expect(untracked(computed)).to.equal(3);
-    expect(emitCount).to.equal(0);
+    expect(emitCount).to.equal(2);
     expect(computeCount).to.equal(3);
     await promiseMicroTask();
-    expect(emitCount).to.equal(1);
+    expect(emitCount).to.equal(2);
   });
   it('should compute with chained computed', async () => {
     const [aAtom, setA] = createAtom(0);
     const [bAtom, setB] = createAtom(0);
     let computeCountX = 0;
-    const computedX = compute(({ get }) => {
-      const [a, b] = get(aAtom, bAtom);
+    const computedX = compute(({ readAll }) => {
+      const [a, b] = readAll(aAtom, bAtom);
       computeCountX++;
       return a + b;
     });
-    let emitCountX = 0;
-    computedX[emitterKey](() => emitCountX++);
     let immediateEmitCountX = 0;
-    computedX[immediateEmitterKey](() => immediateEmitCountX++);
+    computedX[emitterKey](() => immediateEmitCountX++);
     let computeCountY = 0;
-    const computedY = compute(({ get }) => {
-      const [x] = get(computedX);
+    const computedY = compute(({ read }) => {
+      const x = read(computedX);
       computeCountY++;
       return x * 2;
     });
-    let emitCountY = 0;
-    computedY[emitterKey](() => emitCountY++);
     let immediateEmitCountY = 0;
-    computedY[immediateEmitterKey](() => immediateEmitCountY++);
-    expect(emitCountX).to.equal(0);
-    expect(emitCountY).to.equal(0);
+    computedY[emitterKey](() => immediateEmitCountY++);
     expect(computeCountX).to.equal(0);
     expect(computeCountY).to.equal(0);
     expect(computedX.cachedValue).to.equal(emptyCacheToken);
@@ -106,15 +101,11 @@ describe('core: Compute', () => {
     expect(immediateEmitCountY).to.equal(2);
     expect(untracked(computedX)).to.equal(3);
     expect(untracked(computedY)).to.equal(6);
-    expect(emitCountX).to.equal(0);
-    expect(emitCountY).to.equal(0);
     expect(computeCountX).to.equal(3);
     expect(computeCountY).to.equal(3);
     await promiseMicroTask();
     expect(immediateEmitCountX).to.equal(2);
     expect(immediateEmitCountY).to.equal(2);
-    expect(emitCountX).to.equal(1);
-    expect(emitCountY).to.equal(1);
   });
   function createWeakComputed() {
     let subCount = 0;

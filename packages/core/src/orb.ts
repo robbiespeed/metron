@@ -5,7 +5,6 @@ import {
   type ParticleOrNonParticle,
   toValueKey,
   type Atom,
-  immediateEmitterKey,
 } from './particle.js';
 
 // TODO: derived has similar types, they could be shared
@@ -22,11 +21,17 @@ type ValueFromMaybeParticles<T extends readonly ParticleOrNonParticle[]> = {
 };
 
 export interface OrbContext {
-  get: {
+  readAll: {
     <const T extends readonly Atom[]>(...particles: T): ValueFromParticles<T>;
-    multiform<const T extends readonly ParticleOrNonParticle[]>(
+    any<const T extends readonly ParticleOrNonParticle[]>(
       ...maybeParticles: T
     ): ValueFromMaybeParticles<T>;
+  };
+  read: {
+    <const T>(particle: Atom<T>): T;
+    any<const T extends ParticleOrNonParticle>(
+      maybeParticle: T
+    ): ValueFromMaybeParticle<T>;
   };
   /**
    * Connects the particle to the orb, triggering the orb to change when the
@@ -34,7 +39,7 @@ export interface OrbContext {
    */
   connect: {
     (...particles: Particle[]): void;
-    multiform(...items: ParticleOrNonParticle[]): void;
+    any(...items: ParticleOrNonParticle[]): void;
   };
 }
 
@@ -164,49 +169,56 @@ export function createOrb(options?: OrbOptions): Orb {
 
   function connect(...particles: Particle[]) {
     for (const p of particles) {
-      connectEmitter(p[immediateEmitterKey] ?? p[emitterKey]);
+      connectEmitter(p[emitterKey]);
     }
   }
-  connect.multiform = (...maybeParticles: ParticleOrNonParticle[]) => {
+  function connectAny(...maybeParticles: ParticleOrNonParticle[]) {
     for (const p of maybeParticles) {
-      const emitter = p[immediateEmitterKey] ?? p[emitterKey];
+      const emitter = p[emitterKey];
       if (emitter) {
         connectEmitter(emitter);
       }
     }
-  };
+  }
+  connect.any = connectAny;
 
-  function get<const T extends readonly Atom[]>(
+  function read<const T>(particle: Atom<T>): T {
+    connectEmitter(particle[emitterKey]);
+    return particle[toValueKey]();
+  }
+  function readAny<const T extends ParticleOrNonParticle>(
+    maybeParticle: T
+  ): ValueFromMaybeParticle<T> {
+    const emitter = maybeParticle[emitterKey];
+    if (emitter) {
+      connectEmitter(emitter);
+      const valueOf = maybeParticle[toValueKey];
+      if (valueOf) {
+        return valueOf() as any;
+      }
+    }
+
+    return maybeParticle as any;
+  }
+  read.any = readAny;
+
+  function readAll<const T extends readonly Atom[]>(
     ...particles: T
   ): ValueFromParticles<T> {
-    return particles.map((p) => {
-      connectEmitter(p[immediateEmitterKey] ?? p[emitterKey]);
-
-      return p[toValueKey]();
-    }) as ValueFromParticles<T>;
+    return particles.map(read) as ValueFromParticles<T>;
   }
-  get.multiform = <const T extends readonly ParticleOrNonParticle[]>(
+  function readAllAny<const T extends readonly ParticleOrNonParticle[]>(
     ...maybeParticles: T
-  ): ValueFromMaybeParticles<T> => {
-    return maybeParticles.map((p) => {
-      const emitter = p[immediateEmitterKey] ?? p[emitterKey];
-
-      if (emitter) {
-        connectEmitter(emitter);
-        const valueOf = p[toValueKey];
-        if (valueOf) {
-          return valueOf();
-        }
-      }
-
-      return p;
-    }) as ValueFromMaybeParticles<T>;
-  };
+  ) {
+    return maybeParticles.map(readAny) as ValueFromMaybeParticles<T>;
+  }
+  readAll.any = readAllAny;
 
   return {
     context: {
       connect,
-      get,
+      read,
+      readAll,
     },
     [emitterKey]: orbEmitter,
     watch: orbEmitter,

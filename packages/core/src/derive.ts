@@ -1,19 +1,16 @@
 import type { Atom } from './atom.js';
 import { emptyCacheToken, type EmptyCacheToken } from './cache.js';
 import { cleanupRegistry } from './cleanup-registry.js';
-import { createEmitter, type Emitter } from './emitter.js';
+import { createEmitter } from './emitter.js';
 import {
   emitterKey,
   toValueKey,
   type MaybeAtomParticle,
   type ExtractAtomArrayValues,
-  immediateEmitterKey,
 } from './particle.js';
-import { scheduleMicroTask } from './schedulers.js';
 
 export interface DerivedAtom<T> extends Atom<T> {
   readonly cachedValue: T | EmptyCacheToken;
-  readonly [immediateEmitterKey]: Emitter<void>;
 }
 
 export function derive<const D extends readonly MaybeAtomParticle[], T>(
@@ -21,30 +18,19 @@ export function derive<const D extends readonly MaybeAtomParticle[], T>(
   run: (...values: ExtractAtomArrayValues<D>) => T
 ): DerivedAtom<T> {
   const [emitter, send] = createEmitter();
-  const [immediateEmitter, immediateSend] = createEmitter();
 
   let cachedValue: T | EmptyCacheToken = emptyCacheToken;
-  let isNoEmitScheduled = true;
-
-  function emit() {
-    send();
-    isNoEmitScheduled = true;
-  }
 
   function trackedEmitHandler() {
     if (cachedValue === emptyCacheToken) {
       return;
     }
     cachedValue = emptyCacheToken;
-    if (isNoEmitScheduled) {
-      isNoEmitScheduled = false;
-      scheduleMicroTask(emit);
-    }
-    immediateSend();
+    send();
   }
 
   const disposers = dependencies.map((atom) =>
-    (atom[immediateEmitterKey] ?? atom[emitterKey])(trackedEmitHandler)
+    atom[emitterKey](trackedEmitHandler)
   );
 
   function getValue() {
@@ -72,6 +58,5 @@ export function derive<const D extends readonly MaybeAtomParticle[], T>(
     },
     [toValueKey]: getValue,
     [emitterKey]: emitter,
-    [immediateEmitterKey]: immediateEmitter,
   };
 }
