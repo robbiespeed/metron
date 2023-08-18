@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { compute } from './compute.js';
 import { emitterKey, untracked } from './particle.js';
-import { type Emitter, type EmitHandler, createEmitter } from './emitter.js';
+import { Emitter } from './emitter.js';
 import { garbageCollect } from 'metron-test-utils';
 import { emptyCacheToken } from './cache.js';
 import { createAtom } from './atom.js';
@@ -18,7 +18,7 @@ describe('core: Compute', () => {
     expect(computed.cachedValue).to.equal(1);
   });
   it('should compute with connected sensor', async () => {
-    const [emitter, send] = createEmitter();
+    const { emitter, update } = Emitter.withUpdater<void>();
     let count = 0;
     const computed = compute(({ connect }) => {
       connect(emitter);
@@ -28,7 +28,7 @@ describe('core: Compute', () => {
     expect(computed.cachedValue).to.equal(emptyCacheToken);
     expect(untracked(computed)).to.equal(1);
     expect(computed.cachedValue).to.equal(1);
-    send();
+    update();
     expect(untracked(computed)).to.equal(2);
     expect(count).to.equal(2);
   });
@@ -43,7 +43,7 @@ describe('core: Compute', () => {
       return a + b;
     });
     let emitCount = 0;
-    computed[emitterKey](() => emitCount++);
+    computed[emitterKey].subscribe(() => emitCount++);
     expect(emitCount).to.equal(0);
     expect(computeCount).to.equal(0);
     expect(computed.cachedValue).to.equal(emptyCacheToken);
@@ -71,7 +71,7 @@ describe('core: Compute', () => {
       return a + b;
     });
     let immediateEmitCountX = 0;
-    computedX[emitterKey](() => immediateEmitCountX++);
+    computedX[emitterKey].subscribe(() => immediateEmitCountX++);
     let computeCountY = 0;
     const computedY = compute(({ read }) => {
       const x = read(computedX);
@@ -79,7 +79,7 @@ describe('core: Compute', () => {
       return x * 2;
     });
     let immediateEmitCountY = 0;
-    computedY[emitterKey](() => immediateEmitCountY++);
+    computedY[emitterKey].subscribe(() => immediateEmitCountY++);
     expect(computeCountX).to.equal(0);
     expect(computeCountY).to.equal(0);
     expect(computedX.cachedValue).to.equal(emptyCacheToken);
@@ -108,43 +108,35 @@ describe('core: Compute', () => {
     expect(immediateEmitCountY).to.equal(2);
   });
   function createWeakComputed() {
-    let subCount = 0;
-    let emitterCallback: EmitHandler<undefined> | undefined;
-    const emitter = ((cb) => {
-      subCount++;
-      emitterCallback = cb;
-      return () => {
-        emitterCallback = undefined;
-      };
-    }) as Emitter<undefined>;
-    (emitter as any)[emitterKey] = emitter;
-    const send = () => {
-      emitterCallback?.(undefined);
-    };
-    const mockSensor = {
-      send,
+    const { emitter, update } = Emitter.withUpdater<void>();
+
+    const mockParticle = {
+      update,
       emitter,
-      checkEmitterCallbackIsCleared: () => emitterCallback === undefined,
-      checkEmitterSubCount: () => subCount,
       [emitterKey]: emitter,
     };
     let computeCount = 0;
     const computed = compute(({ connect }) => {
-      connect(mockSensor);
+      connect(mockParticle);
       computeCount++;
       return computeCount;
     });
     untracked(computed);
-    return [mockSensor, new WeakRef(computed)] as const;
+    return [
+      mockParticle,
+      new WeakRef(computed),
+      new WeakRef(computed[emitterKey]),
+    ] as const;
   }
   it('should cleanup sensor when garbage collected', async function () {
     if (!garbageCollect) {
       this.skip();
     }
-    const [mockSensor, computedRef] = createWeakComputed();
+    const [mockParticle, computedRef, compEmitterRef] = createWeakComputed();
     await garbageCollect();
-    expect(mockSensor.checkEmitterSubCount()).to.equal(1);
+    expect(mockParticle).to.exist;
     expect(computedRef.deref()).to.equal(undefined);
-    expect(mockSensor.checkEmitterCallbackIsCleared()).to.equal(true);
+    await garbageCollect();
+    expect(compEmitterRef.deref()).to.equal(undefined);
   });
 });

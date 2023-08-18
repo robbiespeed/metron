@@ -1,62 +1,68 @@
 import { expect } from 'chai';
 import { garbageCollect } from 'metron-test-utils';
-import { createEmitter } from './emitter.js';
+import { Emitter } from './emitter.js';
 
 describe('core: Emitter', () => {
   it('should create', () => {
-    expect(createEmitter()).to.have.lengthOf(2);
+    expect(new Emitter()).to.exist;
   });
-  it('should send and emit', () => {
-    const [emitter, send] = createEmitter();
+  it('should update and run update handler', () => {
     let count = 0;
-    emitter(() => {
+    const { update } = Emitter.withUpdater(() => {
       count++;
     });
-    send();
+    update();
     expect(count).to.equal(1);
   });
-  it('should send and emit multiple', () => {
-    const [emitter, send] = createEmitter();
+  it('should update and emit multiple', () => {
+    const { emitter, update } = Emitter.withUpdater();
     let countA = 0;
     let countB = 0;
-    emitter(() => {
+    emitter.subscribe(() => {
       countA++;
     });
-    emitter(() => {
+    emitter.subscribe(() => {
       countB++;
     });
-    send();
+    update();
     expect(countA).to.equal(1);
     expect(countB).to.equal(1);
   });
   it('should send data', () => {
-    const [emitter, send] = createEmitter<string>();
+    const { emitter, update } = Emitter.withUpdater<string>();
     let message = '';
-    emitter((data) => {
+    emitter.subscribe((data) => {
       message = data;
     });
-    send('Hello');
+    update('Hello');
     expect(message).to.equal('Hello');
+    update('World');
+    expect(message).to.equal('World');
   });
   it('should terminate', () => {
-    const [emitter, send] = createEmitter();
+    const { emitter, update } = Emitter.withUpdater();
     let count = 0;
-    const clear = emitter(() => {
+    const clear = emitter.subscribe(() => {
       count++;
     });
+    update();
+    expect(count).to.equal(1);
     clear();
-    send();
-    expect(count).to.equal(0);
+    update();
+    expect(count).to.equal(1);
   });
 
   function createActiveWeakSensor() {
-    const [emitter, send] = createEmitter();
-    const box = { count: 0 };
-    emitter(() => {
+    const { emitter, update } = Emitter.withUpdater(() => {
       box.count++;
     });
-    send();
-    return [new WeakRef(emitter), new WeakRef(send), new WeakRef(box)] as const;
+    const box = { count: 0 };
+    update();
+    return [
+      new WeakRef(emitter),
+      new WeakRef(update),
+      new WeakRef(box),
+    ] as const;
   }
   it('should garbage collect when unreachable', async function () {
     if (!garbageCollect) {

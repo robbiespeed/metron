@@ -11,7 +11,7 @@ import {
   COLLECTION_EMIT_TYPE_KEY_DELETE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
 } from './collection.js';
-import { createEmitter, type Emitter } from './emitter.js';
+import { Emitter } from './emitter.js';
 import { emitterKey, toValueKey, type Atom } from './particle.js';
 
 export const LIST_EMIT_TYPE_APPEND = 'ListAppend';
@@ -121,7 +121,8 @@ export function createAtomList<T>(
 ): [list: AtomList<T>, listUpdater: AtomListWriter<T>] {
   const innerValues = values ? [...values] : [];
 
-  const [listEmitter, sendListEmit] = createEmitter<AtomListEmit>();
+  const { emitter: listEmitter, update: sendListEmit } =
+    Emitter.withUpdater<AtomListEmit>();
 
   const rawList = createRawAtomList(innerValues);
 
@@ -519,7 +520,7 @@ function createAtomKeyGetter<T>(
     let atom: Atom<T | undefined> | undefined = weakAtom?.deref();
 
     if (!atom) {
-      const [keyEmitter, sendForKey] = createEmitter();
+      const { emitter: keyEmitter, update: sendForKey } = Emitter.withUpdater();
       keyEmitSenders[key] = sendForKey;
       atom = {
         [toValueKey]() {
@@ -532,7 +533,7 @@ function createAtomKeyGetter<T>(
       finalizationRegistry.register(keyEmitter, key);
 
       if (listEmitTerminator === undefined) {
-        listEmitTerminator = listEmitter(emitHandler);
+        listEmitTerminator = listEmitter.subscribe(emitHandler);
       }
 
       weakAtoms[key] = freshWeakAtom;
@@ -586,12 +587,12 @@ function createAtomListInternal<T>(
     },
     get [emitterKey]() {
       if (sizeEmitter === undefined) {
-        const _ = createEmitter<void>();
-        sizeEmitter = _[0];
-        const sendSize = _[1];
+        const _ = Emitter.withUpdater<void>();
+        sizeEmitter = _.emitter;
+        const sendSize = _.update;
 
         // No need to hold disposer since size atom has same lifetime as listEmitter
-        listEmitter((message) => {
+        listEmitter.subscribe((message) => {
           const { size, oldSize } = message as unknown as Record<
             string,
             unknown
@@ -777,7 +778,10 @@ function createMappedAtomListDeferred<T, U>(
   }
 
   const rawList = createMappedRawAtomList(cacheValues, cacheMapper);
-  cleanupRegistry.register(rawList, originalList[emitterKey](handleChange));
+  cleanupRegistry.register(
+    rawList,
+    originalList[emitterKey].subscribe(handleChange)
+  );
 
   return createMappedAtomListInternal(
     originalList,
@@ -874,7 +878,10 @@ function createMappedAtomListImmediate<T, U>(
   }
 
   const rawList = createRawAtomList(mappedValues);
-  cleanupRegistry.register(rawList, originalList[emitterKey](handleChange));
+  cleanupRegistry.register(
+    rawList,
+    originalList[emitterKey].subscribe(handleChange)
+  );
 
   return createMappedAtomListInternal(
     originalList,

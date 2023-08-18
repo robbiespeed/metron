@@ -759,7 +759,7 @@ export function renderAtomListInto(
     }
   }
 
-  const listEmitDisposer = list[emitterKey](listChangeHandler);
+  const listEmitDisposer = list[emitterKey].subscribe(listChangeHandler);
 
   context.addDisposer(() => {
     listEmitDisposer();

@@ -1,4 +1,4 @@
-import { createEmitter } from './emitter.js';
+import { Emitter } from './emitter.js';
 import { emitterKey, toValueKey, type Atom } from './particle.js';
 
 export interface AtomSetter<T> {
@@ -10,7 +10,7 @@ export type { Atom };
 export function createAtom<T>(
   value: T
 ): [atom: Atom<T>, setAtom: AtomSetter<T>] {
-  const [emitter, send] = createEmitter();
+  const { emitter, update } = Emitter.withUpdater<void>();
 
   let storedValue = value;
 
@@ -29,7 +29,7 @@ export function createAtom<T>(
       }
 
       storedValue = value;
-      send();
+      update();
 
       return value;
     },
@@ -43,7 +43,7 @@ export interface AtomMutator<T> {
 export function createMutatorAtom<T>(
   value: T
 ): [atom: Atom<T>, mutateAtom: AtomMutator<T>] {
-  const [emitter, send] = createEmitter();
+  const { emitter, update } = Emitter.withUpdater<void>();
 
   let storedValue = value;
 
@@ -63,7 +63,7 @@ export function createMutatorAtom<T>(
       }
 
       storedValue = value;
-      send();
+      update();
 
       return value;
     },

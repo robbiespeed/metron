@@ -1,52 +1,41 @@
 import type { Atom } from './atom.js';
 import { emptyCacheToken, type EmptyCacheToken } from './cache.js';
-import { cleanupRegistry } from './cleanup-registry.js';
-import { createEmitter } from './emitter.js';
-import { createOrb, type OrbContext } from './orb.js';
+import { Emitter } from './emitter.js';
+import {
+  createReactiveContext,
+  type ReactiveContext,
+} from './reactive-context.js';
 import { emitterKey, toValueKey } from './particle.js';
-import { scheduleCleanup } from './schedulers.js';
+// import { scheduleCleanup } from './schedulers.js';
 
-export interface ComputedAtom<T> extends Atom<T> {
+export interface ComputedAtom<T> extends Atom<T, void> {
   readonly cachedValue: T | EmptyCacheToken;
-  readonly isStable: boolean;
 }
 
-export function compute<T>(run: (context: OrbContext) => T): ComputedAtom<T> {
-  const [emitter, send] = createEmitter();
-
-  const orb = createOrb({ autoStabilize: false });
-
-  const { watch, dispose, stabilize } = orb;
-
+export function compute<T>(
+  run: (context: ReactiveContext) => T
+): ComputedAtom<T> {
   let cachedValue: T | EmptyCacheToken = emptyCacheToken;
 
-  let canScheduleStabilize = true;
-
-  watch(() => {
+  const emitter = new Emitter<void>((send) => {
     cachedValue = emptyCacheToken;
     send();
-    if (canScheduleStabilize) {
-      canScheduleStabilize = false;
-      scheduleCleanup(stabilize);
-    }
   });
 
-  const { context } = orb;
+  const { connectToParent } = emitter;
+
+  const context = createReactiveContext(connectToParent);
 
   function getValue() {
     if (cachedValue === emptyCacheToken) {
       cachedValue = run(context);
+      // TODO: stabilize here? Maybe after x runs?
+      emitter.stabilize();
     }
     return cachedValue!;
   }
 
-  cleanupRegistry.register(emitter, dispose);
-
-  // TODO: untracked could be broken since the orb is still doing tracking work
   return {
-    get isStable() {
-      return orb.isStable;
-    },
     get cachedValue() {
       return cachedValue;
     },

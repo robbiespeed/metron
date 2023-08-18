@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { derive } from './derive.js';
 import { emitterKey, untracked } from './particle.js';
-import { type Emitter, type EmitHandler, createEmitter } from './emitter.js';
+import { Emitter, type EmitHandler } from './emitter.js';
 import { garbageCollect } from 'metron-test-utils';
 import { emptyCacheToken } from './cache.js';
 import { createAtom } from './atom.js';
@@ -18,7 +18,7 @@ describe('core: Derive', () => {
     expect(derived.cachedValue).to.equal(1);
   });
   it('should derive with connected sensor', () => {
-    const [emitter, send] = createEmitter();
+    const { emitter, update } = Emitter.withUpdater();
     let count = 0;
     const derived = derive([emitter], () => {
       count++;
@@ -27,7 +27,7 @@ describe('core: Derive', () => {
     expect(derived.cachedValue).to.equal(emptyCacheToken);
     expect(untracked(derived)).to.equal(1);
     expect(derived.cachedValue).to.equal(1);
-    send();
+    update();
     expect(untracked(derived)).to.equal(2);
   });
   it('should derive with connected atoms', async () => {
@@ -39,7 +39,7 @@ describe('core: Derive', () => {
       return a + b;
     });
     let emitCount = 0;
-    derived[emitterKey](() => emitCount++);
+    derived[emitterKey].subscribe(() => emitCount++);
     expect(emitCount).to.equal(0);
     expect(computeCount).to.equal(0);
     expect(derived.cachedValue).to.equal(emptyCacheToken);
@@ -66,14 +66,14 @@ describe('core: Derive', () => {
       return a + b;
     });
     let immediateEmitCountX = 0;
-    derivedX[emitterKey](() => immediateEmitCountX++);
+    derivedX[emitterKey].subscribe(() => immediateEmitCountX++);
     let computeCountY = 0;
     const derivedY = derive([derivedX], (x) => {
       computeCountY++;
       return x * 2;
     });
     let immediateEmitCountY = 0;
-    derivedY[emitterKey](() => immediateEmitCountY++);
+    derivedY[emitterKey].subscribe(() => immediateEmitCountY++);
     expect(computeCountX).to.equal(0);
     expect(computeCountY).to.equal(0);
     expect(derivedX.cachedValue).to.equal(emptyCacheToken);
@@ -102,42 +102,34 @@ describe('core: Derive', () => {
     expect(immediateEmitCountY).to.equal(2);
   });
   function createWeakDerived() {
-    let subCount = 0;
-    let emitterCallback: EmitHandler<undefined> | undefined;
-    const emitter: Emitter<undefined> = ((cb) => {
-      subCount++;
-      emitterCallback = cb;
-      return () => {
-        emitterCallback = undefined;
-      };
-    }) as Emitter<undefined>;
-    (emitter as any)[emitterKey] = emitter;
-    const send = () => {
-      emitterCallback?.(undefined);
-    };
-    const mockSensor = {
-      send,
+    const { emitter, update } = Emitter.withUpdater<void>();
+
+    const mockParticle = {
+      update,
       emitter,
-      checkEmitterCallbackIsCleared: () => emitterCallback === undefined,
-      checkEmitterSubCount: () => subCount,
       [emitterKey]: emitter,
     };
     let computeCount = 0;
-    const derived = derive([mockSensor], () => {
+    const derived = derive([mockParticle], () => {
       computeCount++;
       return computeCount;
     });
     untracked(derived);
-    return [mockSensor, new WeakRef(derived)] as const;
+    return [
+      mockParticle,
+      new WeakRef(derived),
+      new WeakRef(derived[emitterKey]),
+    ] as const;
   }
   it('should cleanup sensor when garbage collected', async function () {
     if (!garbageCollect) {
       this.skip();
     }
-    const [mockSensor, derivedRef] = createWeakDerived();
+    const [mockParticle, derivedRef, derEmitterRef] = createWeakDerived();
     await garbageCollect();
-    expect(mockSensor.checkEmitterSubCount()).to.equal(1);
+    expect(mockParticle).to.exist;
     expect(derivedRef.deref()).to.equal(undefined);
-    expect(mockSensor.checkEmitterCallbackIsCleared()).to.equal(true);
+    await garbageCollect();
+    expect(derEmitterRef.deref()).to.equal(undefined);
   });
 });

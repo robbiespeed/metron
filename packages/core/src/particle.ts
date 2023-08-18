@@ -3,7 +3,7 @@ import { scheduleMicroTask } from './schedulers.js';
 
 export const emitterKey = Symbol('MetronEmitter');
 
-export interface Particle<TEmitData = void> {
+export interface Particle<TEmitData = unknown> {
   readonly [emitterKey]: Emitter<TEmitData>;
 }
 
@@ -30,7 +30,7 @@ export type ExtractParticleArrayEmits<T extends readonly Particle[]> = [
   }
 ];
 
-export interface MaybeAtomParticle extends Particle {
+export interface MaybeAtomParticle extends Particle<any> {
   [toValueKey]?: () => unknown;
 }
 
@@ -53,7 +53,7 @@ export function isAtom(value: unknown): value is Atom {
   return (value as any)?.[toValueKey] !== undefined;
 }
 
-export function untracked<T>(atom: Atom<T, unknown>): T {
+export function untracked<T>(atom: Atom<T, any>): T {
   return atom[toValueKey]();
 }
 
@@ -61,7 +61,7 @@ export function subscribe<TEmit>(
   particle: Particle<TEmit>,
   handler: EmitHandler<TEmit>
 ): Disposer {
-  return particle[emitterKey](handler);
+  return particle[emitterKey].subscribe(handler);
 }
 
 export function runAndSubscribe<TEmit>(
@@ -69,7 +69,7 @@ export function runAndSubscribe<TEmit>(
   handler: EmitHandler<TEmit | void>
 ): Disposer {
   handler();
-  return particle[emitterKey](handler);
+  return particle[emitterKey].subscribe(handler);
 }
 
 export function microtaskSubscribe<TEmit>(
@@ -78,7 +78,7 @@ export function microtaskSubscribe<TEmit>(
 ): Disposer {
   let isScheduled = false;
   let isActive = true;
-  const disposer = particle[emitterKey](() => {
+  const disposer = particle[emitterKey].subscribe(() => {
     if (isScheduled) {
       return;
     }
@@ -104,7 +104,7 @@ export function runAndMicrotaskSubscribe<TEmit>(
   handler();
   let isScheduled = false;
   let isActive = true;
-  const disposer = particle[emitterKey](() => {
+  const disposer = particle[emitterKey].subscribe(() => {
     if (isScheduled) {
       return;
     }

@@ -1,15 +1,15 @@
-import { createEmitter, type Emitter } from './emitter.js';
+import { Emitter } from './emitter.js';
 import { emitterKey, type Atom, toValueKey } from './particle.js';
 
 export interface Selector<T> {
-  (match: T): Atom<boolean>;
-  <U>(match: T, deriver: (isSelected: boolean) => U): Atom<U>;
+  (match: T): Atom<boolean, boolean>;
+  <U>(match: T, deriver: (isSelected: boolean) => U): Atom<U, boolean>;
 }
 
 export function createSelector<T>(
   initial: T
 ): [Selector<T>, (value: T) => void] {
-  const weakEmitters = new Map<T, WeakRef<Emitter>>();
+  const weakEmitters = new Map<T, WeakRef<Emitter<boolean>>>();
   const senders = new Map<T, (isSelected: boolean) => void>();
 
   let storedValue = initial;
@@ -32,11 +32,12 @@ export function createSelector<T>(
   function selector<U>(
     match: T,
     deriver?: (isSelected: boolean) => U
-  ): Atom<unknown, unknown> {
+  ): Atom<unknown, boolean> {
     let matchEmitter = weakEmitters.get(match)?.deref();
 
     if (matchEmitter === undefined) {
-      const [freshMatchEmitter, matchSend] = createEmitter();
+      const { emitter: freshMatchEmitter, update: matchSend } =
+        Emitter.withUpdater<boolean>();
       matchEmitter = freshMatchEmitter;
 
       senders.set(match, matchSend);

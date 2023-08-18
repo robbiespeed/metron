@@ -7,7 +7,7 @@ export function renderSubscribe<TEmit>(
 ): Disposer {
   let isScheduled = false;
   let isActive = true;
-  const disposer = particle[emitterKey](() => {
+  const disposer = particle[emitterKey].subscribe(() => {
     if (isScheduled) {
       return;
     }
@@ -33,7 +33,7 @@ export function runAndRenderSubscribe<TEmit>(
   handler();
   let isScheduled = false;
   let isActive = true;
-  const disposer = particle[emitterKey](() => {
+  const disposer = particle[emitterKey].subscribe(() => {
     if (isScheduled) {
       return;
     }

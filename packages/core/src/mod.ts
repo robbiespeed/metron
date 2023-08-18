@@ -1,7 +1,7 @@
 export type { Atom, AtomSetter, AtomMutator } from './atom.js';
 export type { ComputedAtom } from './compute.js';
 export type { DerivedAtom } from './derive.js';
-export type { Emitter, EmitHandler, Disposer } from './emitter.js';
+export type { EmitHandler, Disposer } from './emitter.js';
 export type {
   AtomList,
   AtomListEmit,
@@ -13,7 +13,7 @@ export type { Selector } from './selector.js';
 export { createAtom, createMutatorAtom } from './atom.js';
 export { compute } from './compute.js';
 export { derive } from './derive.js';
-export { createEmitter } from './emitter.js';
+export { Emitter } from './emitter.js';
 export { createAtomList, isAtomList } from './list.js';
 export {
   isAtom,

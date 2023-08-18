@@ -1,24 +1,36 @@
-import type { Disposer } from './emitter.js';
-import { createOrb, type OrbContext } from './orb.js';
+import { Emitter } from './emitter.js';
+import {
+  createAsyncReactiveContext,
+  type AsyncReactiveContext,
+} from './reactive-context.js';
+import { scheduleCleanup } from './schedulers.js';
 
 export function createReactor(
-  run: (context: OrbContext) => void,
+  reaction: (context: AsyncReactiveContext) => void,
   signalScheduler?: (callback: () => void) => void
 ) {
-  const { watch, context, dispose } = createOrb();
+  let canScheduleStabilize = true;
 
-  let disposer: Disposer;
+  let context: AsyncReactiveContext;
+  const innerRun = () => {
+    context.done();
+    context = createAsyncReactiveContext(connectToParent);
 
-  if (signalScheduler) {
-    disposer = watch(() => signalScheduler(() => run(context)));
-    signalScheduler(() => run(context));
-  } else {
-    disposer = watch(() => run(context));
-    run(context);
-  }
+    reaction(context);
+    if (canScheduleStabilize) {
+      canScheduleStabilize = false;
+      scheduleCleanup(stabilize);
+    }
+  };
+
+  const run = signalScheduler ? () => signalScheduler(innerRun) : innerRun;
+
+  const { connectToParent, stabilize, clear } = new Emitter(run);
+  context = createAsyncReactiveContext(connectToParent);
+  run();
 
   return () => {
-    disposer();
-    dispose();
+    context.done();
+    clear();
   };
 }
