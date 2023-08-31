@@ -392,3 +392,15 @@ export class Emitter<TEmitData = void> implements Particle<TEmitData> {
     };
   }
 }
+
+/**
+ * TODO:
+ * - make API match interface from question responses.
+ * - add Emitter.batch to schedule multiple updates (combined into one traversal) to run at the end of the batch
+ * - add Emitter.asyncBatch with possibly better name... Bad idea until AsyncContext
+ * - look at preact signals implementation for insp
+ * - could try reactively impl, but use weak ref on child array, also keep the current reduced connections code marking on the record
+ *
+ * - No Emitter.batch but there should be a way to batch for libs...
+ * - (Emitter.createBatch(): { run: () => void, end: () => void })
+ */
