@@ -2,20 +2,22 @@ import { scheduleCleanup } from './schedulers.js';
 
 interface SignalLink {
   isDynamic: boolean;
-  consumer: WeakRef<SignalNode<any, any>>;
+  consumer: WeakRef<SignalNode<any>>;
   consumerId: string;
   consumerVersion: number;
-  source: WeakRef<SignalNode<any, any>>;
+  source: WeakRef<SignalNode<any>>;
   sourceConsumerSlot: number;
   sourceId: string;
 }
 
-interface Disposer {
+export interface Disposer {
   (): void;
 }
 
-interface SignalSubscription<TMessage> {
-  handler?: (message: TMessage) => void;
+interface Subscription {
+  handler: () => void;
+  next?: Subscription;
+  prev?: Subscription;
 }
 
 interface InternalSignalNode {
@@ -23,14 +25,12 @@ interface InternalSignalNode {
   version: number;
   consumerLinks: SignalLink[];
   sourceLinks: Record<string, SignalLink>;
-  subscriptions: SignalSubscription<any>[];
+  subscriptionHead?: Subscription;
 }
 
-const scheduledLinkTrims = new Set<WeakRef<SignalNode<any, any>>>();
-const scheduledSubscriptionTrims = new Set<WeakRef<SignalNode<any, any>>>();
+const scheduledLinkTrims = new Set<WeakRef<SignalNode<any>>>();
 
 let canScheduleLinkTrim = true;
-let canScheduleSubscriptionTrim = true;
 
 function trimNodeLinks(node: InternalSignalNode, maxAge: number) {
   // In place filtering of consumer links
@@ -79,32 +79,6 @@ function trimNodeLinks(node: InternalSignalNode, maxAge: number) {
   consumerLinks.length = linkCount;
 }
 
-function scheduleTrimSubscriptions(): void {
-  if (canScheduleSubscriptionTrim) {
-    canScheduleSubscriptionTrim = false;
-    scheduleCleanup(trimScheduledSubscriptions);
-  }
-}
-
-function trimScheduledSubscriptions() {
-  for (const ref of scheduledSubscriptionTrims) {
-    const node = ref.deref() as InternalSignalNode | undefined;
-    if (node) {
-      node.subscriptions = node.subscriptions.filter(
-        (handler) => handler !== undefined
-      );
-    }
-  }
-  canScheduleSubscriptionTrim = true;
-}
-
-function scheduleTrimLinks() {
-  if (canScheduleLinkTrim) {
-    canScheduleLinkTrim = false;
-    scheduleCleanup(trimScheduledLinks);
-  }
-}
-
 function trimScheduledLinks() {
   for (const ref of scheduledLinkTrims) {
     const node = ref.deref() as InternalSignalNode | undefined;
@@ -117,12 +91,19 @@ function trimScheduledLinks() {
   canScheduleLinkTrim = true;
 }
 
+function scheduleTrimLinks() {
+  if (canScheduleLinkTrim) {
+    canScheduleLinkTrim = false;
+    scheduleCleanup(trimScheduledLinks);
+  }
+}
+
 function defaultIntercept() {
   return true;
 }
 
 let isUpdatePropagating = false;
-const updateQueue: { node: SignalNode<any, any>; message: any }[] = [];
+const updateQueue: SignalNode[] = [];
 
 let nextIdNum = 0;
 const emptyArray = Object.freeze([]) as [];
@@ -131,145 +112,47 @@ const emptySourceLinks = Object.freeze(Object.create(null)) as Record<
   SignalLink
 >;
 
-export class SignalNode<TMessage = unknown, TMeta = unknown> {
+export class SignalNode<TMeta = unknown> {
   readonly id = `s${nextIdNum++}`;
   readonly version = 0;
-  private weakSelf: WeakRef<this> = new WeakRef(this);
+  readonly weakRef: WeakRef<this> = new WeakRef(this);
+  readonly meta: TMeta;
   private sourceLinks: Record<string, SignalLink> = emptySourceLinks;
   private consumerLinks: SignalLink[] = emptyArray;
-  private subscriptions: SignalSubscription<TMessage>[] = emptyArray;
-  readonly meta: TMeta;
-  intercept: (this: this, message: TMessage) => boolean;
+  private subscriptionHead?: Subscription;
+  private intercept: (this: this) => boolean;
 
-  constructor(
-    meta: TMeta,
-    intercept?: (
-      this: SignalNode<TMessage, TMeta>,
-      message: TMessage
-    ) => boolean
-  ) {
+  constructor(meta: TMeta, intercept?: (this: SignalNode<TMeta>) => boolean) {
     this.meta = meta;
     this.intercept = intercept ?? defaultIntercept;
   }
 
-  initAsSource() {
-    if (this.consumerLinks === emptyArray) {
-      this.consumerLinks = [];
+  private safeIntercept() {
+    try {
+      return this.intercept();
+    } catch (err) {
+      // TODO: dev mode log
     }
-  }
-  initAsConsumer() {
-    if (this.sourceLinks === emptySourceLinks) {
-      this.sourceLinks = Object.create(null);
-    }
+    return false;
   }
 
-  recordSource(source: SignalNode<any, TMessage>, isDynamic = true) {
-    const sourceId = source.id;
-    const sourceLinks = this.sourceLinks;
-    const existingLink = sourceLinks[sourceId];
-
-    if (existingLink) {
-      existingLink.consumerVersion = this.version;
-      return;
-    }
-
-    const sourceConsumers = source.consumerLinks;
-
-    const link: SignalLink = {
-      isDynamic,
-      consumer: this.weakSelf,
-      consumerId: this.id,
-      consumerVersion: this.version,
-      source: source.weakSelf,
-      sourceConsumerSlot: sourceConsumers.length,
-      sourceId,
-    };
-
-    sourceConsumers.push(link);
-    sourceLinks[sourceId] = link;
-  }
-
-  subscribe(handler: (message: TMessage) => void): Disposer {
-    const subscription: SignalSubscription<TMessage> = { handler };
-
-    if (this.subscriptions === emptyArray) {
-      this.subscriptions = [subscription];
-    } else {
-      this.subscriptions.push(subscription);
-    }
-
-    return () => {
-      subscription.handler = undefined;
-      scheduledSubscriptionTrims.add(this.weakSelf);
-      scheduleTrimSubscriptions();
-    };
-  }
-
-  getSources(): SignalNode<unknown>[] {
-    const sources: SignalNode<unknown>[] = [];
-
-    const { sourceLinks } = this;
-
-    for (const link of Object.values(sourceLinks)) {
-      if (!link.isDynamic || link.consumerVersion === this.version) {
-        const source = link.source.deref();
-        if (source) {
-          sources.push(source);
-        }
+  private notifySubscribers() {
+    let next = this.subscriptionHead;
+    while (next) {
+      try {
+        next.handler();
+      } catch (err) {
+        // TODO: dev mode log
       }
+      next = next.next;
     }
-
-    return sources;
   }
 
-  getConsumers(): SignalNode<unknown>[] {
-    const consumers: SignalNode<unknown>[] = [];
-
-    const { consumerLinks } = this;
-
-    for (const link of consumerLinks) {
-      const consumer = link.consumer.deref();
-      if (consumer && link.consumerVersion === consumer.version) {
-        consumers.push(consumer);
-      }
-    }
-
-    return consumers;
-  }
-
-  trim(maxAge = 0): void {
-    if (maxAge < 0) {
-      throw new Error('Max age must be greater or equal to 0');
-    }
-
-    trimNodeLinks(this as any, maxAge);
-  }
-
-  update(message: TMessage) {
-    if (isUpdatePropagating) {
-      updateQueue.push({ node: this, message });
-      return;
-    }
-
-    const rootShouldUpdate = this.intercept(message);
-
-    if (!rootShouldUpdate) {
-      return;
-    }
-
-    isUpdatePropagating = true;
-
-    scheduledLinkTrims.add(this.weakSelf);
-
-    (this as any).version++;
-
-    const rootSubs = this.subscriptions;
-    for (const { handler } of rootSubs) {
-      handler?.(message);
-    }
-
+  private propagateUpdate() {
     const consumers = this.consumerLinks;
     if (consumers.length) {
+      scheduledLinkTrims.add(this.weakRef);
+
       const notified = new Set<string>();
       notified.add(this.id);
 
@@ -285,16 +168,13 @@ export class SignalNode<TMessage = unknown, TMeta = unknown> {
           if (consumer) {
             if (!link.isDynamic || link.consumerVersion === consumer.version) {
               notified.add(link.consumerId);
-              const shouldUpdate = consumer.intercept(message);
+              const shouldUpdate = consumer.safeIntercept();
 
               if (shouldUpdate) {
                 (consumer as any).version++;
                 scheduledLinkTrims.add(link.consumer);
 
-                const consumerSubs = consumer.subscriptions;
-                for (const { handler } of consumerSubs) {
-                  handler?.(message);
-                }
+                consumer.notifySubscribers();
 
                 const consumerConsumers = consumer.consumerLinks;
                 if (consumerConsumers.length) {
@@ -321,14 +201,184 @@ export class SignalNode<TMessage = unknown, TMeta = unknown> {
         }
       }
 
-      scheduleTrimLinks();
+      return true;
+    }
+
+    return false;
+  }
+
+  initAsSource() {
+    if (this.consumerLinks === emptyArray) {
+      this.consumerLinks = [];
+    }
+  }
+  initAsConsumer() {
+    if (this.sourceLinks === emptySourceLinks) {
+      this.sourceLinks = Object.create(null);
+    }
+  }
+
+  recordSource(source: SignalNode<any>, isDynamic = true) {
+    const sourceId = source.id;
+    const sourceLinks = this.sourceLinks;
+    const existingLink = sourceLinks[sourceId];
+
+    if (existingLink) {
+      existingLink.consumerVersion = this.version;
+      return;
+    }
+
+    const sourceConsumers = source.consumerLinks;
+
+    const link: SignalLink = {
+      isDynamic,
+      consumer: this.weakRef,
+      consumerId: this.id,
+      consumerVersion: this.version,
+      source: source.weakRef,
+      sourceConsumerSlot: sourceConsumers.length,
+      sourceId,
+    };
+
+    sourceConsumers.push(link);
+    sourceLinks[sourceId] = link;
+  }
+
+  subscribe(handler: () => void): Disposer {
+    const subHead = this.subscriptionHead;
+    let sub: Subscription | undefined = {
+      prev: undefined,
+      handler,
+      next: subHead,
+    };
+    if (subHead) {
+      subHead.prev = sub;
+    }
+    this.subscriptionHead = sub;
+
+    return () => {
+      if (sub) {
+        if (sub.prev) {
+          sub.prev = sub.next;
+        } else {
+          this.subscriptionHead = sub.next;
+        }
+        sub = undefined;
+      }
+    };
+  }
+
+  getSources(): SignalNode<unknown>[] {
+    const sources: SignalNode<unknown>[] = [];
+
+    const { sourceLinks } = this;
+
+    for (const link of Object.values(sourceLinks)) {
+      if (!link.isDynamic || link.consumerVersion === this.version) {
+        const source = link.source.deref();
+        if (source) {
+          sources.push(source);
+        }
+      }
+    }
+
+    return sources;
+  }
+
+  getSourceCount(): number {
+    let sourcesCount = 0;
+
+    const { sourceLinks } = this;
+
+    for (const link of Object.values(sourceLinks)) {
+      if (!link.isDynamic || link.consumerVersion === this.version) {
+        const source = link.source.deref();
+        if (source) {
+          sourcesCount++;
+        }
+      }
+    }
+
+    return sourcesCount;
+  }
+
+  getConsumers(): SignalNode<unknown>[] {
+    const consumers: SignalNode<unknown>[] = [];
+
+    const { consumerLinks } = this;
+
+    for (const link of consumerLinks) {
+      const consumer = link.consumer.deref();
+      if (consumer && link.consumerVersion === consumer.version) {
+        consumers.push(consumer);
+      }
+    }
+
+    return consumers;
+  }
+
+  getConsumerCount(): number {
+    let consumerCount = 0;
+
+    const { consumerLinks } = this;
+
+    for (const link of consumerLinks) {
+      const consumer = link.consumer.deref();
+      if (consumer && link.consumerVersion === consumer.version) {
+        consumerCount++;
+      }
+    }
+
+    return consumerCount;
+  }
+
+  getSubscriptionCount(): number {
+    let subscriptionCount = 0;
+    let next = this.subscriptionHead;
+    while (next) {
+      subscriptionCount++;
+      next = next.next;
+    }
+    return subscriptionCount;
+  }
+
+  trim(maxAge = 0): void {
+    if (maxAge < 0) {
+      throw new Error('Max age must be greater or equal to 0');
+    }
+
+    trimNodeLinks(this as any, maxAge);
+  }
+
+  update() {
+    if (isUpdatePropagating) {
+      updateQueue.push(this as SignalNode);
+      return;
+    }
+
+    const rootShouldUpdate = this.safeIntercept();
+
+    if (!rootShouldUpdate) {
+      return;
+    }
+
+    isUpdatePropagating = true;
+
+    let node: SignalNode | undefined = this;
+    let shouldScheduleTrim = false;
+
+    while (node) {
+      (node as any).version++;
+      node.notifySubscribers();
+      shouldScheduleTrim = node.propagateUpdate();
+
+      node = updateQueue.pop();
     }
 
     isUpdatePropagating = false;
 
-    while (updateQueue.length) {
-      const { node, message } = updateQueue.pop()!;
-      node.update(message);
+    if (shouldScheduleTrim) {
+      scheduleTrimLinks();
     }
   }
 }

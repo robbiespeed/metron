@@ -1,11 +1,11 @@
 import { expect } from 'chai';
 import { compute } from './compute.js';
-import { emitterKey, untracked } from './particle.js';
-import { Emitter } from './emitter.js';
+import { signalKey, untracked } from './particle.js';
 import { garbageCollect } from 'metron-test-utils';
 import { emptyCacheToken } from './cache.js';
 import { createAtom } from './atom.js';
 import { promiseMicroTask } from './schedulers.js';
+import { SignalNode } from './signal-node.js';
 
 describe('core: Compute', () => {
   it('should create', () => {
@@ -18,17 +18,22 @@ describe('core: Compute', () => {
     expect(computed.cachedValue).to.equal(1);
   });
   it('should compute with connected sensor', async () => {
-    const { emitter, update } = Emitter.withUpdater<void>();
+    const signalNode = new SignalNode<void>(undefined);
+    signalNode.initAsSource();
+
+    const particle = {
+      [signalKey]: signalNode,
+    };
     let count = 0;
     const computed = compute(({ connect }) => {
-      connect(emitter);
+      connect(particle);
       count++;
       return count;
     });
     expect(computed.cachedValue).to.equal(emptyCacheToken);
     expect(untracked(computed)).to.equal(1);
     expect(computed.cachedValue).to.equal(1);
-    update();
+    signalNode.update();
     expect(untracked(computed)).to.equal(2);
     expect(count).to.equal(2);
   });
@@ -43,7 +48,7 @@ describe('core: Compute', () => {
       return a + b;
     });
     let emitCount = 0;
-    computed[emitterKey].subscribe(() => emitCount++);
+    computed[signalKey].subscribe(() => emitCount++);
     expect(emitCount).to.equal(0);
     expect(computeCount).to.equal(0);
     expect(computed.cachedValue).to.equal(emptyCacheToken);
@@ -71,7 +76,7 @@ describe('core: Compute', () => {
       return a + b;
     });
     let immediateEmitCountX = 0;
-    computedX[emitterKey].subscribe(() => immediateEmitCountX++);
+    computedX[signalKey].subscribe(() => immediateEmitCountX++);
     let computeCountY = 0;
     const computedY = compute(({ read }) => {
       const x = read(computedX);
@@ -79,7 +84,7 @@ describe('core: Compute', () => {
       return x * 2;
     });
     let immediateEmitCountY = 0;
-    computedY[emitterKey].subscribe(() => immediateEmitCountY++);
+    computedY[signalKey].subscribe(() => immediateEmitCountY++);
     expect(computeCountX).to.equal(0);
     expect(computeCountY).to.equal(0);
     expect(computedX.cachedValue).to.equal(emptyCacheToken);
@@ -108,12 +113,11 @@ describe('core: Compute', () => {
     expect(immediateEmitCountY).to.equal(2);
   });
   function createWeakComputed() {
-    const { emitter, update } = Emitter.withUpdater<void>();
+    const signalNode = new SignalNode<void>(undefined);
+    signalNode.initAsSource();
 
     const mockParticle = {
-      update,
-      emitter,
-      [emitterKey]: emitter,
+      [signalKey]: signalNode,
     };
     let computeCount = 0;
     const computed = compute(({ connect }) => {
@@ -125,7 +129,7 @@ describe('core: Compute', () => {
     return [
       mockParticle,
       new WeakRef(computed),
-      new WeakRef(computed[emitterKey]),
+      new WeakRef(computed[signalKey]),
     ] as const;
   }
   it('should cleanup sensor when garbage collected', async function () {

@@ -1,21 +1,19 @@
-import { Emitter } from './emitter.js';
-import { emitterKey, type Atom, toValueKey } from './particle.js';
+import { signalKey, type Atom, toValueKey } from './particle.js';
+import { SignalNode } from './signal-node.js';
 
 export interface Selector<T> {
-  (match: T): Atom<boolean, boolean>;
-  <U>(match: T, deriver: (isSelected: boolean) => U): Atom<U, boolean>;
+  (match: T): Atom<boolean>;
+  <U>(match: T, deriver: (isSelected: boolean) => U): Atom<U>;
 }
 
 export function createSelector<T>(
   initial: T
 ): [Selector<T>, (value: T) => void] {
-  const weakEmitters = new Map<T, WeakRef<Emitter<boolean>>>();
-  const senders = new Map<T, (isSelected: boolean) => void>();
+  const weakEmitters = new Map<T, WeakRef<SignalNode>>();
 
   let storedValue = initial;
 
   const finalizationRegistry = new FinalizationRegistry((value: T) => {
-    senders.delete(value);
     weakEmitters.delete(value);
   });
 
@@ -25,23 +23,22 @@ export function createSelector<T>(
     }
     const oldValue = storedValue;
     storedValue = value;
-    senders.get(oldValue)?.(false);
-    senders.get(storedValue)?.(true);
+    weakEmitters.get(oldValue)?.deref()?.update();
+    weakEmitters.get(storedValue)?.deref()?.update();
   }
 
   function selector<U>(
     match: T,
     deriver?: (isSelected: boolean) => U
-  ): Atom<unknown, boolean> {
+  ): Atom<unknown> {
     let matchEmitter = weakEmitters.get(match)?.deref();
 
     if (matchEmitter === undefined) {
-      const { emitter: freshMatchEmitter, update: matchSend } =
-        Emitter.withUpdater<boolean>();
-      matchEmitter = freshMatchEmitter;
+      const signalNode = new SignalNode(undefined) as SignalNode;
+      signalNode.initAsSource();
+      matchEmitter = signalNode;
 
-      senders.set(match, matchSend);
-      weakEmitters.set(match, new WeakRef(matchEmitter));
+      weakEmitters.set(match, signalNode.weakRef);
 
       finalizationRegistry.register(matchEmitter, match);
     }
@@ -51,13 +48,13 @@ export function createSelector<T>(
           [toValueKey]() {
             return deriver(storedValue === match);
           },
-          [emitterKey]: matchEmitter,
+          [signalKey]: matchEmitter,
         }
       : {
           [toValueKey]() {
             return storedValue === match;
           },
-          [emitterKey]: matchEmitter,
+          [signalKey]: matchEmitter,
         };
   }
 

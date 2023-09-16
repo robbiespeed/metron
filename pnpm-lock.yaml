@@ -1,5 +1,9 @@
 lockfileVersion: '6.0'
 
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
 importers:
 
   .:
@@ -37,6 +41,12 @@ importers:
       typescript:
         specifier: ^5.1.3
         version: 5.1.3
+
+  examples/bench:
+    dependencies:
+      metron-core:
+        specifier: workspace:*
+        version: link:../../packages/core
 
   examples/web-todo:
     dependencies:

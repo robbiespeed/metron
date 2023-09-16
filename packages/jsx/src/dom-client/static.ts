@@ -19,9 +19,6 @@ export function renderStatic(intrinsic: JSXNode): Element {
       keySpecifier = 'attr';
     }
     switch (keySpecifier) {
-      case 'prop':
-        (element as any)[keyName] = value;
-        break;
       case 'attr':
         if (value === true) {
           element.toggleAttribute(keyName, true);

@@ -1,5 +1,5 @@
-import { Emitter } from './emitter.js';
-import { emitterKey, toValueKey, type Atom } from './particle.js';
+import { signalKey, toValueKey, type Atom } from './particle.js';
+import { SignalNode } from './signal-node.js';
 
 export interface AtomSetter<T> {
   (value: T): T;
@@ -7,65 +7,59 @@ export interface AtomSetter<T> {
 
 export type { Atom };
 
-export function createAtom<T>(
-  value: T
-): [atom: Atom<T>, setAtom: AtomSetter<T>] {
-  const { emitter, update } = Emitter.withUpdater<void>();
+class Signal<T> implements Atom<T> {
+  private node = new SignalNode(this);
+  readonly [signalKey] = this.node as SignalNode;
+  private store: T;
+  private constructor(init: T) {
+    this.node.initAsSource();
+    this.store = init;
+  }
+  [toValueKey]() {
+    return this.store;
+  }
+  static create<T>(init: T): [Atom<T>, (value: T) => T] {
+    const atom = new Signal(init);
 
-  let storedValue = value;
+    return [
+      atom,
+      (value: T) => {
+        if (atom.store === value) {
+          return value;
+        }
+        atom.store = value;
+        atom.node.update();
 
-  const atom: Atom<T> = {
-    [toValueKey]() {
-      return storedValue;
-    },
-    [emitterKey]: emitter,
-  };
-
-  return [
-    atom,
-    (value: T) => {
-      if (value === storedValue) {
         return value;
-      }
+      },
+    ];
+  }
+  static createWithMutator<T>(
+    init: T
+  ): [Atom<T>, (mutate: (oldValue: T) => T) => T] {
+    const atom = new Signal(init);
 
-      storedValue = value;
-      update();
+    return [
+      atom,
+      (mutate: (oldValue: T) => T) => {
+        const storeValue = atom.store;
+        const value = mutate(storeValue);
+        if (storeValue === value) {
+          return value;
+        }
+        atom.store = value;
+        atom.node.update();
 
-      return value;
-    },
-  ];
+        return value;
+      },
+    ];
+  }
 }
+
+export const createAtom = Signal.create;
 
 export interface AtomMutator<T> {
   (mutate: (oldValue: T) => T): T;
 }
 
-export function createMutatorAtom<T>(
-  value: T
-): [atom: Atom<T>, mutateAtom: AtomMutator<T>] {
-  const { emitter, update } = Emitter.withUpdater<void>();
-
-  let storedValue = value;
-
-  const atom: Atom<T> = {
-    [toValueKey]() {
-      return storedValue;
-    },
-    [emitterKey]: emitter,
-  };
-
-  return [
-    atom,
-    (mutate: (oldValue: T) => T) => {
-      const value = mutate(storedValue);
-      if (value === storedValue) {
-        return value;
-      }
-
-      storedValue = value;
-      update();
-
-      return value;
-    },
-  ];
-}
+export const createMutatorAtom = Signal.createWithMutator;

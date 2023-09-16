@@ -1,10 +1,11 @@
-import type { Emitter } from 'metron-core/emitter.js';
 import {
-  emitterKey,
+  signalKey,
   isAtom,
   toValueKey,
   untracked,
   type Atom,
+  runAndSubscribe,
+  subscribe,
 } from 'metron-core/particle.js';
 import {
   isJSXNode,
@@ -22,7 +23,6 @@ import {
   EVENT_DATA_KEY_PREFIX,
   type DelegatedEventParams,
 } from './events.js';
-import { renderSubscribe, runAndRenderSubscribe } from './shared.js';
 
 interface InitDescriptor<TProps extends JSXProps = Record<string, unknown>> {
   props?: { key: string; initKey: keyof TProps }[];
@@ -49,18 +49,15 @@ const fakeToValue = () => {
   throw new Error('Slot cannot be cast to value');
 };
 
-const fakeEmitter: Emitter<any> = (() => {
-  throw new Error('Slot cannot emit');
-}) as any;
-(fakeEmitter as any)[emitterKey] = fakeEmitter;
-
 const noOpTrap = () => false;
 const empty = Object.create(null);
 const propProxy: PropAccessor<any> = new Proxy(empty, {
   get(_, key: string) {
     return {
       [toValueKey]: fakeToValue,
-      [emitterKey]: fakeEmitter,
+      get [signalKey]() {
+        throw new Error('Slot cannot emit');
+      },
       [slotBrandKey]: true,
       key,
     };
@@ -322,7 +319,7 @@ function initElement(
         }
 
         addDisposer(
-          renderSubscribe(initValue, () => {
+          subscribe(initValue, () => {
             const value = untracked(initValue);
             switch (typeof value) {
               case 'boolean':
@@ -382,7 +379,7 @@ function initElement(
 
       if (isAtom(initValue)) {
         addDisposer(
-          runAndRenderSubscribe(initValue, () => {
+          runAndSubscribe(initValue, () => {
             // Expect the user knows what they are doing
             (element as any)[key] = untracked(initValue);
           })
@@ -443,7 +440,7 @@ function initSlottedChild(
         placeHolder.replaceWith(...newNodes);
       } else if (isAtom(initValue)) {
         context.addDisposer(
-          runAndRenderSubscribe(initValue, () => {
+          runAndSubscribe(initValue, () => {
             const value = untracked(initValue);
             if (value === undefined) {
               placeHolder!.data = '';

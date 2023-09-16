@@ -1,16 +1,15 @@
-import type { Disposer, EmitHandler, Emitter } from './emitter.js';
 import { scheduleMicroTask } from './schedulers.js';
+import type { SignalNode, Disposer } from './signal-node.js';
 
-export const emitterKey = Symbol('MetronEmitter');
+export const signalKey = Symbol('MetronSignal');
 
-export interface Particle<TEmitData = unknown> {
-  readonly [emitterKey]: Emitter<TEmitData>;
+export interface Particle {
+  readonly [signalKey]: SignalNode;
 }
 
 export const toValueKey = Symbol('MetronToValue');
 
-export interface Atom<TValue = unknown, TEmitData = void>
-  extends Particle<TEmitData> {
+export interface Atom<TValue = unknown> extends Particle {
   [toValueKey](): TValue;
 }
 
@@ -21,23 +20,23 @@ export type ExtractAtomArrayValues<T extends readonly MaybeAtomParticle[]> = [
   }
 ];
 
-export type ExtractParticleEmit<T> = T extends Particle<infer U>
-  ? U
-  : undefined;
-export type ExtractParticleArrayEmits<T extends readonly Particle[]> = [
-  ...{
-    [K in keyof T]: ExtractParticleEmit<T[K]>;
-  }
-];
+// export type ExtractParticleEmit<T> = T extends Particle<infer U>
+//   ? U
+//   : undefined;
+// export type ExtractParticleArrayEmits<T extends readonly Particle[]> = [
+//   ...{
+//     [K in keyof T]: ExtractParticleEmit<T[K]>;
+//   }
+// ];
 
-export interface MaybeAtomParticle extends Particle<any> {
+export interface MaybeAtomParticle extends Particle {
   [toValueKey]?: () => unknown;
 }
 
 type Primitive = symbol | string | number | bigint | boolean | undefined | null;
 
 interface AntiParticle {
-  [emitterKey]?: never;
+  [signalKey]?: never;
   [toValueKey]?: never;
 }
 
@@ -46,39 +45,36 @@ export type NonParticle = AntiParticle | (AntiParticle & Primitive);
 export type ParticleOrNonParticle = MaybeAtomParticle | NonParticle;
 
 export function isParticle(value: unknown): value is Particle {
-  return (value as any)?.[emitterKey] !== undefined;
+  return (value as any)?.[signalKey] !== undefined;
 }
 
 export function isAtom(value: unknown): value is Atom {
   return (value as any)?.[toValueKey] !== undefined;
 }
 
-export function untracked<T>(atom: Atom<T, any>): T {
+export function untracked<T>(atom: Atom<T>): T {
   return atom[toValueKey]();
 }
 
-export function subscribe<TEmit>(
-  particle: Particle<TEmit>,
-  handler: EmitHandler<TEmit>
-): Disposer {
-  return particle[emitterKey].subscribe(handler);
+export function subscribe(particle: Particle, handler: () => void): Disposer {
+  return particle[signalKey].subscribe(handler);
 }
 
-export function runAndSubscribe<TEmit>(
-  particle: Particle<TEmit>,
-  handler: EmitHandler<TEmit | void>
+export function runAndSubscribe(
+  particle: Particle,
+  handler: () => void
 ): Disposer {
   handler();
-  return particle[emitterKey].subscribe(handler);
+  return particle[signalKey].subscribe(handler);
 }
 
-export function microtaskSubscribe<TEmit>(
-  particle: Particle<TEmit>,
-  handler: EmitHandler<void>
+export function microtaskSubscribe(
+  particle: Particle,
+  handler: () => void
 ): Disposer {
   let isScheduled = false;
   let isActive = true;
-  const disposer = particle[emitterKey].subscribe(() => {
+  const disposer = particle[signalKey].subscribe(() => {
     if (isScheduled) {
       return;
     }
@@ -97,14 +93,14 @@ export function microtaskSubscribe<TEmit>(
   };
 }
 
-export function runAndMicrotaskSubscribe<TEmit>(
-  particle: Particle<TEmit>,
-  handler: EmitHandler<void>
+export function runAndMicrotaskSubscribe(
+  particle: Particle,
+  handler: () => void
 ): Disposer {
   handler();
   let isScheduled = false;
   let isActive = true;
-  const disposer = particle[emitterKey].subscribe(() => {
+  const disposer = particle[signalKey].subscribe(() => {
     if (isScheduled) {
       return;
     }

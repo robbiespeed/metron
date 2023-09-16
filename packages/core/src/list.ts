@@ -1,49 +1,65 @@
-import { emptyCacheToken, type EmptyCacheToken } from './cache.js';
-import { cleanupRegistry } from './cleanup-registry.js';
+// import { emptyCacheToken, type EmptyCacheToken } from './cache.js';
+// import { cleanupRegistry } from './cleanup-registry.js';
 import {
   COLLECTION_EMIT_TYPE_CLEAR,
-  collectionKeyToValueKey,
   type AtomCollection,
   type AtomCollectionEmitMap,
-  type RawAtomCollection,
+  type AtomCollectionUntrackedReader,
   COLLECTION_EMIT_TYPE_KEY_WRITE,
   COLLECTION_EMIT_TYPE_KEY_ADD,
   COLLECTION_EMIT_TYPE_KEY_DELETE,
   COLLECTION_EMIT_TYPE_KEY_SWAP,
-} from './collection.js';
-import { Emitter } from './emitter.js';
-import { emitterKey, toValueKey, type Atom } from './particle.js';
+  CollectionSizeAtom,
+  type AtomCollectionEmitClear,
+  type AtomCollectionEmitKeyAdd,
+  type AtomCollectionEmitKeyDelete,
+  type AtomCollectionEmitKeyWrite,
+  type AtomCollectionEmitKeySwap,
+} from './collections/shared.js';
+import {
+  Emitter,
+  type EmitMessage,
+  type SubscriptionHandler,
+} from './emitter.js';
+import { signalKey, toValueKey, type Atom } from './particle.js';
+import { SignalNode, type Disposer } from './signal-node.js';
 
 export const LIST_EMIT_TYPE_APPEND = 'ListAppend';
 export const LIST_EMIT_TYPE_REVERSE = 'ListReverse';
 export const LIST_EMIT_TYPE_SPLICE = 'ListSplice';
 export const LIST_EMIT_TYPE_SORT = 'ListSort';
 
-export interface AtomListEmitAppend {
-  readonly type: typeof LIST_EMIT_TYPE_APPEND;
-  readonly size: number;
-  readonly oldSize: number;
-}
+export type AtomListEmitAppend = EmitMessage<
+  typeof LIST_EMIT_TYPE_APPEND,
+  {
+    readonly size: number;
+    readonly oldSize: number;
+  }
+>;
 
-export interface AtomListEmitReverse {
-  readonly type: typeof LIST_EMIT_TYPE_REVERSE;
-  readonly size: number;
-}
+export type AtomListEmitReverse = EmitMessage<
+  typeof LIST_EMIT_TYPE_REVERSE,
+  number
+>;
 
-export interface AtomListEmitSplice {
-  readonly type: typeof LIST_EMIT_TYPE_SPLICE;
-  readonly start: number;
-  readonly deleteCount: number;
-  readonly addCount: number;
-  readonly size: number;
-  readonly oldSize: number;
-}
+export type AtomListEmitSplice = EmitMessage<
+  typeof LIST_EMIT_TYPE_SPLICE,
+  {
+    readonly start: number;
+    readonly deleteCount: number;
+    readonly addCount: number;
+    readonly size: number;
+    readonly oldSize: number;
+  }
+>;
 
-export interface AtomListEmitSort {
-  readonly type: typeof LIST_EMIT_TYPE_SORT;
-  readonly sortMap: number[];
-  readonly size: number;
-}
+export type AtomListEmitSort = EmitMessage<
+  typeof LIST_EMIT_TYPE_SORT,
+  {
+    readonly sortMap: number[];
+    readonly size: number;
+  }
+>;
 
 export interface AtomListEmitMap extends AtomCollectionEmitMap<number> {
   append: AtomListEmitAppend;
@@ -61,13 +77,11 @@ export function isAtomList(value: unknown): value is AtomList<unknown> {
 }
 
 export interface AtomList<T>
-  extends AtomCollection<T, number, RawAtomList<T>, AtomListEmitMap> {
+  extends AtomCollection<T, number, RawAtomList<T>, AtomListEmit> {
   readonly [atomListBrandKey]: true;
   at(index: number): Atom<T | undefined>;
-  map<U>(
-    callback: (value: T) => U,
-    type?: 'immediate' | 'deferred' | 'forgetful'
-  ): AtomList<U>;
+  map<U>(mapper: (value: T) => U): AtomList<U>;
+  subscribe(handler: SubscriptionHandler<AtomListEmit>): Disposer;
   /* TODO: Implement these methods.
   sorted(): AtomList<T>;
   reversed(): AtomList<T>;
@@ -81,10 +95,17 @@ export interface AtomList<T>
   */
 }
 
-export interface RawAtomList<T> extends RawAtomCollection<T, number> {
+export interface RawAtomList<T>
+  extends AtomCollectionUntrackedReader<T, number> {
   at(index: number): T | undefined;
   toArray(): T[];
   toArraySlice(start?: number, end?: number): T[];
+  forEach(callback: (value: T, index: number) => void): void;
+  forEachInRange(
+    callback: (value: T, index: number) => void,
+    start: number,
+    end?: number
+  ): void;
   /* TODO: Implement these methods.
   valuesRange(start?: number, end?: number): IterableIterator<T>;
   valuesRangeReversed(start?: number, end?: number): IterableIterator<T>;
@@ -113,24 +134,41 @@ export interface AtomListWriter<T> {
   clear(): void;
 }
 
-const SET_INDEX_OUT_OF_BOUNDS_MESSAGE =
-  'Index out of bounds, must be an integer above 0 and below size';
+const INDEX_OUT_OF_BOUNDS_MESSAGE = 'Index out of bounds';
 
 export function createAtomList<T>(
   values?: T[]
 ): [list: AtomList<T>, listUpdater: AtomListWriter<T>] {
   const innerValues = values ? [...values] : [];
 
-  const { emitter: listEmitter, update: sendListEmit } =
-    Emitter.withUpdater<AtomListEmit>();
+  let signalNode: SignalNode | undefined;
+  function getSignalNode() {
+    if (signalNode === undefined) {
+      signalNode = new SignalNode(undefined) as SignalNode;
+      signalNode.initAsSource();
+    }
+    return signalNode;
+  }
+
+  function updateSignalNode() {
+    signalNode?.update();
+  }
+
+  const listEmitter = new Emitter<AtomListEmit>();
 
   const rawList = createRawAtomList(innerValues);
 
-  const list = createAtomListInternal(innerValues, rawList, listEmitter);
+  const list = createAtomListInternal(
+    innerValues,
+    rawList,
+    getSignalNode,
+    listEmitter
+  );
 
   const listWriter: AtomListWriter<T> = createAtomListWriterInternal(
     innerValues,
-    sendListEmit
+    updateSignalNode,
+    listEmitter
   );
 
   return [list, listWriter];
@@ -138,7 +176,8 @@ export function createAtomList<T>(
 
 function createAtomListWriterInternal<T>(
   innerValues: T[],
-  sendEmit: (message: AtomListEmit) => void
+  updateSignalNode: () => void,
+  listEmitter: Emitter<AtomListEmit>
 ): AtomListWriter<T> {
   return {
     set(index, value) {
@@ -147,55 +186,72 @@ function createAtomListWriterInternal<T>(
       normalizedIndex =
         normalizedIndex < 0 ? oldSize + normalizedIndex : normalizedIndex;
       if (normalizedIndex < 0 || normalizedIndex >= oldSize) {
-        throw new Error(SET_INDEX_OUT_OF_BOUNDS_MESSAGE);
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
       }
 
       if (value !== innerValues[index]) {
         innerValues[index] = value;
 
-        sendEmit({
+        updateSignalNode();
+        listEmitter.send({
           type: COLLECTION_EMIT_TYPE_KEY_WRITE,
-          key: index,
-          size: innerValues.length,
+          data: {
+            key: index,
+            size: innerValues.length,
+          },
         });
       }
       return value;
     },
     swap(indexA, indexB) {
       const oldSize = innerValues.length;
-      let normalizedIndexA = normalizeIndexStrict(indexA, oldSize);
-      let normalizedIndexB = normalizeIndexStrict(indexB, oldSize);
+      // let normalizedIndexA = normalizeIndexStrict(indexA, oldSize);
+      // let normalizedIndexB = normalizeIndexStrict(indexB, oldSize);
+      if (
+        indexA >> 0 !== indexA ||
+        indexA < 0 ||
+        indexA >= oldSize ||
+        indexB >> 0 !== indexB ||
+        indexB < 0 ||
+        indexB >= oldSize
+      ) {
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
+      }
 
-      if (normalizedIndexA === normalizedIndexB) {
+      if (indexA === indexB) {
         return;
       }
 
-      if (normalizedIndexA > normalizedIndexB) {
+      if (indexA > indexB) {
         // Normalize so that a < b
-        [normalizedIndexA, normalizedIndexB] = [
-          normalizedIndexB,
-          normalizedIndexA,
-        ];
+        return this.swap(indexB, indexA);
       }
 
-      const temp = innerValues[normalizedIndexA];
-      innerValues[normalizedIndexA] = innerValues[normalizedIndexB]!;
-      innerValues[normalizedIndexB] = temp!;
+      const temp = innerValues[indexA];
+      innerValues[indexA] = innerValues[indexB]!;
+      innerValues[indexB] = temp!;
 
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: COLLECTION_EMIT_TYPE_KEY_SWAP,
-        keySwap: [normalizedIndexA, normalizedIndexB],
-        size: innerValues.length,
+        data: {
+          keySwap: [indexA, indexB],
+          size: innerValues.length,
+        },
       });
     },
     push(value) {
       innerValues.push(value);
       const oldSize = innerValues.length - 1;
-      sendEmit({
+
+      updateSignalNode();
+      listEmitter.send({
         type: COLLECTION_EMIT_TYPE_KEY_ADD,
-        key: oldSize,
-        oldSize,
-        size: innerValues.length,
+        data: {
+          key: oldSize,
+          oldSize,
+          size: innerValues.length,
+        },
       });
     },
     append(values) {
@@ -212,10 +268,13 @@ function createAtomListWriterInternal<T>(
 
       const size = innerValues.length;
 
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: LIST_EMIT_TYPE_APPEND,
-        oldSize,
-        size,
+        data: {
+          oldSize,
+          size,
+        },
       });
     },
     insert(index, item) {
@@ -224,35 +283,46 @@ function createAtomListWriterInternal<T>(
         return this.push(item);
       }
 
+      if (index >> 0 !== index || index < 0 || index > oldSize) {
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
+      }
+
       innerValues.splice(index, 0, item);
 
       const newSize = innerValues.length;
 
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: COLLECTION_EMIT_TYPE_KEY_ADD,
-        key: index,
-        oldSize,
-        size: newSize,
+        data: {
+          key: index,
+          oldSize,
+          size: newSize,
+        },
       });
     },
     delete(index) {
       const oldSize = innerValues.length;
-      const normalizedIndex = normalizeIndex(index, oldSize);
-      if (normalizedIndex === undefined) {
-        return false;
+
+      if (index >> 0 !== index || index < 0 || index >= oldSize) {
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
       }
+
       if (index === oldSize - 1) {
         innerValues.pop()!;
       } else {
-        innerValues.splice(normalizedIndex, 1) as [T];
+        innerValues.splice(index, 1) as [T];
       }
       const size = innerValues.length;
 
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: COLLECTION_EMIT_TYPE_KEY_DELETE,
-        key: index,
-        oldSize,
-        size,
+        data: {
+          key: index,
+          oldSize,
+          size,
+        },
       });
 
       return true;
@@ -262,13 +332,16 @@ function createAtomListWriterInternal<T>(
       const deletedItems = innerValues.splice(start, deleteCount, ...values);
       const size = innerValues.length;
       const addCount = values.length;
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: LIST_EMIT_TYPE_SPLICE,
-        start: start,
-        deleteCount: deletedItems.length,
-        addCount,
-        oldSize,
-        size,
+        data: {
+          start,
+          deleteCount: deletedItems.length,
+          addCount,
+          oldSize,
+          size,
+        },
       });
       return deletedItems;
     },
@@ -280,12 +353,16 @@ function createAtomListWriterInternal<T>(
       }
 
       const deletedItem = innerValues.pop();
+      const size = innerValues.length;
 
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: COLLECTION_EMIT_TYPE_KEY_DELETE,
-        key: oldSize,
-        oldSize,
-        size: innerValues.length,
+        data: {
+          key: size,
+          oldSize,
+          size,
+        },
       });
 
       return deletedItem;
@@ -297,13 +374,16 @@ function createAtomListWriterInternal<T>(
       }
       const size = values.length;
       innerValues.splice(0, oldSize, ...values);
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: LIST_EMIT_TYPE_SPLICE,
-        start: 0,
-        deleteCount: oldSize,
-        addCount: size,
-        oldSize,
-        size,
+        data: {
+          start: 0,
+          deleteCount: oldSize,
+          addCount: size,
+          oldSize,
+          size,
+        },
       });
     },
     reverse() {
@@ -312,9 +392,10 @@ function createAtomListWriterInternal<T>(
         return;
       }
       innerValues.reverse();
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: LIST_EMIT_TYPE_REVERSE,
-        size,
+        data: size,
       });
     },
     sort(compare) {
@@ -323,30 +404,34 @@ function createAtomListWriterInternal<T>(
         return;
       }
 
-      const tmpSorted = innerValues
-        .map((value, index) => [value, index] as const)
-        .sort((a, b) => compare(a[0], b[0]));
+      const sortMap = [...innerValues.keys()].sort((a, b) =>
+        compare(innerValues[a]!, innerValues[b]!)
+      );
 
-      innerValues.length = 0;
-      const sortMap: number[] = [];
+      const midPoint = size >> 1;
 
       let isOrderUnchanged = true;
-      for (const [value, index] of tmpSorted) {
-        innerValues.push(value);
-        if (isOrderUnchanged && index !== sortMap.length) {
+      for (let i = 0; i < size; i++) {
+        const oldIndex = sortMap[i]!;
+        if (oldIndex !== i && oldIndex <= midPoint) {
           isOrderUnchanged = false;
+          const temp = innerValues[oldIndex]!;
+          innerValues[oldIndex] = innerValues[i]!;
+          innerValues[i] = temp;
         }
-        sortMap.push(index);
       }
 
       if (isOrderUnchanged) {
         return;
       }
 
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: LIST_EMIT_TYPE_SORT,
-        sortMap,
-        size,
+        data: {
+          sortMap,
+          size,
+        },
       });
     },
     clear() {
@@ -355,30 +440,50 @@ function createAtomListWriterInternal<T>(
         return;
       }
       innerValues.length = 0;
-      sendEmit({
+      updateSignalNode();
+      listEmitter.send({
         type: COLLECTION_EMIT_TYPE_CLEAR,
-        oldSize,
-        size: 0,
+        data: {
+          size: 0,
+          oldSize,
+        },
       });
     },
   };
 }
 
 function createRawAtomList<T>(innerValues: T[]): RawAtomList<T> {
-  function rawAt(index: number) {
-    const size = innerValues.length;
-    let normalizedIndex = Math.trunc(index);
-    normalizedIndex =
-      normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
-    return innerValues[index];
-  }
-
   return {
     get size() {
       return innerValues.length;
     },
-    at: rawAt,
-    [collectionKeyToValueKey]: rawAt,
+    at(index) {
+      return innerValues.at(index);
+    },
+    get(index) {
+      return innerValues[index];
+    },
+    forEach(callback) {
+      const size = innerValues.length;
+      for (let i = 0; i < size; i++) {
+        callback(innerValues[i]!, i);
+      }
+    },
+    forEachInRange(callback, start, end) {
+      const size = innerValues.length;
+      if (start >> 0 !== start || start < 0 || start >= size) {
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
+      }
+      if (end === undefined) {
+        end = size;
+      } else if (end > size) {
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
+      }
+
+      for (let i = start; i < end; i++) {
+        callback(innerValues[i]!, i);
+      }
+    },
     toArraySlice(start, end) {
       return innerValues.slice(start, end);
     },
@@ -401,239 +506,256 @@ function createRawAtomList<T>(innerValues: T[]): RawAtomList<T> {
 }
 
 function createAtomKeyGetter<T>(
-  listEmitter: Emitter<AtomListEmit>,
-  keyToValue: (key: number) => T | undefined
-): (key: number) => Atom<T | undefined> {
-  const weakAtoms: { [key: number]: WeakRef<Atom<T | undefined>> } = {};
-  const keyEmitSenders: { [key: number]: () => void } = {};
-  let weakAtomCount = 0;
+  listEmitter: Emitter<AtomListEmit>
+): (
+  key: number,
+  getValue: (key: number) => T | undefined
+) => Atom<T | undefined> {
+  const weakKeyNodes: { [key: number]: WeakRef<SignalNode> } = {};
+  let signalNodeCount = 0;
   let listEmitTerminator: undefined | (() => void);
 
   const finalizationRegistry = new FinalizationRegistry((index: number) => {
-    delete keyEmitSenders[index];
-    delete weakAtoms[index];
-    weakAtomCount--;
+    delete weakKeyNodes[index];
+    signalNodeCount--;
 
-    if (weakAtomCount < 1) {
+    if (signalNodeCount < 1) {
       listEmitTerminator?.();
       listEmitTerminator = undefined;
     }
   });
 
   function sendKeyEmit(key: number, size: number) {
-    keyEmitSenders[key]?.();
-    keyEmitSenders[key - size]?.();
+    weakKeyNodes[key]?.deref()?.update();
+    weakKeyNodes[key - size]?.deref()?.update();
   }
 
   function sendKeyEmitRange(start: number, end: number, size: number) {
     for (let i = start; i <= end; i++) {
-      keyEmitSenders[i]?.();
-      keyEmitSenders[i - size]?.();
+      weakKeyNodes[i]?.deref()?.update();
+      weakKeyNodes[i - size]?.deref()?.update();
     }
   }
 
   function sendEmitInBounds(size: number) {
-    for (const [key, keySend] of Object.entries(keyEmitSenders)) {
+    for (const [key, node] of Object.entries(weakKeyNodes)) {
       let index = Number(key);
       index = index >= 0 ? index : index + size;
       const isIndexInSizeBounds = index < size;
       if (isIndexInSizeBounds) {
-        keySend();
+        node?.deref()?.update();
       }
     }
   }
 
-  const emitHandler = (message: AtomListEmit) => {
-    switch (message.type) {
-      case COLLECTION_EMIT_TYPE_CLEAR: {
-        sendEmitInBounds(message.oldSize);
-        return;
+  function handleClear({ oldSize }: AtomCollectionEmitClear['data']) {
+    sendEmitInBounds(oldSize);
+  }
+
+  function handleKeyAdd({
+    key,
+    size,
+    oldSize,
+  }: AtomCollectionEmitKeyAdd<number>['data']) {
+    if (key === oldSize) {
+      sendKeyEmit(key, size);
+    } else {
+      sendKeyEmitRange(key, Math.max(size, oldSize), size);
+    }
+  }
+
+  function handleKeyDelete({
+    key,
+    size,
+    oldSize,
+  }: AtomCollectionEmitKeyDelete<number>['data']) {
+    if (key === oldSize - 1) {
+      sendKeyEmit(key, size);
+    } else {
+      sendKeyEmitRange(key, Math.max(size, oldSize), size);
+    }
+  }
+
+  function handleKeyWrite({
+    key,
+    size,
+  }: AtomCollectionEmitKeyWrite<number>['data']) {
+    sendKeyEmit(key, size);
+  }
+
+  function handleKeySwap({
+    keySwap,
+    size,
+  }: AtomCollectionEmitKeySwap<number>['data']) {
+    const [keyA, keyB] = keySwap;
+    sendKeyEmit(keyA, size);
+    sendKeyEmit(keyB, size);
+  }
+
+  function handleAppend({ oldSize, size }: AtomListEmitAppend['data']) {
+    sendKeyEmitRange(oldSize, size, size);
+  }
+
+  function handleReverse(size: AtomListEmitReverse['data']) {
+    sendEmitInBounds(size);
+  }
+
+  function handleSort({ size, sortMap }: AtomListEmitSort['data']) {
+    for (const [key, node] of Object.entries(weakKeyNodes)) {
+      let index = Number(key);
+      index = index >= 0 ? index : index + size;
+      if (index === sortMap[index]) {
+        continue;
       }
-      case COLLECTION_EMIT_TYPE_KEY_ADD: {
-        const { key, size, oldSize } = message;
-        if (key === oldSize) {
-          sendKeyEmit(key, size);
-        } else {
-          sendKeyEmitRange(key, Math.max(size, oldSize), size);
-        }
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_DELETE: {
-        const { key, size, oldSize } = message;
-        if (key === oldSize - 1) {
-          sendKeyEmit(key, size);
-        } else {
-          sendKeyEmitRange(key, Math.max(size, oldSize), size);
-        }
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_WRITE: {
-        sendKeyEmit(message.key, message.size);
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_SWAP: {
-        const { size } = message;
-        const [keyA, keyB] = message.keySwap;
-        sendKeyEmit(keyA, size);
-        sendKeyEmit(keyB, size);
-        return;
-      }
-      case LIST_EMIT_TYPE_APPEND: {
-        const { oldSize, size } = message;
-        sendKeyEmitRange(oldSize, size, size);
-        return;
-      }
-      case LIST_EMIT_TYPE_REVERSE: {
-        sendEmitInBounds(message.size);
-        return;
-      }
-      case LIST_EMIT_TYPE_SORT: {
-        const { size, sortMap } = message;
-        for (const [key, keySend] of Object.entries(keyEmitSenders)) {
-          let index = Number(key);
-          index = index >= 0 ? index : index + size;
-          if (index === sortMap[index]) {
-            continue;
-          }
-          const isIndexInSizeBounds = index < size;
-          if (isIndexInSizeBounds) {
-            keySend();
-          }
-        }
-        return;
-      }
-      case LIST_EMIT_TYPE_SPLICE: {
-        const { start, addCount, deleteCount, size, oldSize } = message;
-        const end =
-          addCount === deleteCount ? start + addCount : Math.max(size, oldSize);
-        sendKeyEmitRange(start, end, size);
-        return;
-      }
-      default: {
-        throw new Error('Unhandled emit', { cause: message });
+      const isIndexInSizeBounds = index < size;
+      if (isIndexInSizeBounds) {
+        node?.deref()?.update();
       }
     }
-  };
+  }
 
-  return function getKeyedParticle(key: number) {
-    const weakAtom = weakAtoms[key];
-    let atom: Atom<T | undefined> | undefined = weakAtom?.deref();
+  function handleSplice({
+    start,
+    deleteCount,
+    addCount,
+    size,
+    oldSize,
+  }: AtomListEmitSplice['data']) {
+    const end =
+      addCount === deleteCount ? start + addCount : Math.max(size, oldSize);
+    sendKeyEmitRange(start, end, size);
+  }
 
-    if (!atom) {
-      const { emitter: keyEmitter, update: sendForKey } = Emitter.withUpdater();
-      keyEmitSenders[key] = sendForKey;
-      atom = {
-        [toValueKey]() {
-          return keyToValue(key);
-        },
-        [emitterKey]: keyEmitter,
-      };
-      const freshWeakAtom = new WeakRef(atom);
+  return function getKeyedParticle(
+    key: number,
+    getValue: (key: number) => T | undefined
+  ): Atom<T | undefined> {
+    let keyNode: SignalNode | undefined = weakKeyNodes[key]?.deref();
 
-      finalizationRegistry.register(keyEmitter, key);
+    if (keyNode === undefined) {
+      keyNode = new SignalNode<unknown>(undefined);
+      keyNode.initAsSource();
+
+      finalizationRegistry.register(keyNode, key);
 
       if (listEmitTerminator === undefined) {
-        listEmitTerminator = listEmitter.subscribe(emitHandler);
+        listEmitTerminator = listEmitter.subscribe((message) => {
+          switch (message.type) {
+            case COLLECTION_EMIT_TYPE_CLEAR:
+              handleClear(message.data);
+              break;
+            case COLLECTION_EMIT_TYPE_KEY_ADD:
+              handleKeyAdd(message.data);
+              break;
+            case COLLECTION_EMIT_TYPE_KEY_DELETE:
+              handleKeyDelete(message.data);
+              break;
+            case COLLECTION_EMIT_TYPE_KEY_WRITE:
+              handleKeyWrite(message.data);
+              break;
+            case COLLECTION_EMIT_TYPE_KEY_SWAP:
+              handleKeySwap(message.data);
+              break;
+            case LIST_EMIT_TYPE_APPEND:
+              handleAppend(message.data);
+              break;
+            case LIST_EMIT_TYPE_REVERSE:
+              handleReverse(message.data);
+              break;
+            case LIST_EMIT_TYPE_SORT:
+              handleSort(message.data);
+              break;
+            case LIST_EMIT_TYPE_SPLICE:
+              handleSplice(message.data);
+              break;
+          }
+        });
       }
 
-      weakAtoms[key] = freshWeakAtom;
-      weakAtomCount++;
+      weakKeyNodes[key] = keyNode.weakRef;
+      signalNodeCount++;
     }
 
-    return atom;
+    return {
+      [toValueKey]() {
+        return getValue(key);
+      },
+      [signalKey]: keyNode,
+    };
   };
 }
 
-function normalizeIndexStrict(index: number, size: number): number {
-  let normalizedIndex = Math.trunc(index);
-  normalizedIndex =
-    normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
-  if (normalizedIndex < 0 || normalizedIndex >= size) {
-    throw new Error(SET_INDEX_OUT_OF_BOUNDS_MESSAGE);
-  }
-  return normalizedIndex;
-}
+// function normalizeIndexStrict(index: number, size: number): number {
+//   let normalizedIndex = Math.trunc(index);
+//   normalizedIndex =
+//     normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
+//   if (normalizedIndex < 0 || normalizedIndex >= size) {
+//     throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
+//   }
+//   return normalizedIndex;
+// }
 
-function normalizeIndex(index: number, size: number): number | undefined {
-  let normalizedIndex = Math.trunc(index);
-  normalizedIndex =
-    normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
-  if (normalizedIndex < 0 || normalizedIndex >= size) {
-    return undefined;
-  }
-  return normalizedIndex;
-}
+// function normalizeIndex(index: number, size: number): number | undefined {
+//   let normalizedIndex = Math.trunc(index);
+//   normalizedIndex =
+//     normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
+//   if (normalizedIndex < 0 || normalizedIndex >= size) {
+//     return undefined;
+//   }
+//   return normalizedIndex;
+// }
 
 function createAtomListInternal<T>(
   innerValues: T[],
   rawList: RawAtomList<T>,
+  getSignalNode: () => SignalNode,
   listEmitter: Emitter<AtomListEmit>
 ): AtomList<T> {
-  let sizeEmitter: Emitter<void> | undefined;
-  // const [sizeEmitter, sendSize] = createEmitter<AtomListEmit>();
+  let sizeAtom: CollectionSizeAtom | undefined;
 
-  // // No need to hold disposer since size atom has same lifetime as listEmitter
-  // listEmitter((message) => {
-  //   const { size, oldSize } = message as unknown as Record<string, unknown>;
-  //   const shouldSendSize = oldSize === undefined ? false : size !== oldSize;
-  //   if (shouldSendSize) {
-  //     sendSize(message);
-  //   }
-  // });
-
-  const sizeAtom: Atom<number> = {
-    [toValueKey]() {
-      return innerValues.length;
-    },
-    get [emitterKey]() {
-      if (sizeEmitter === undefined) {
-        const _ = Emitter.withUpdater<void>();
-        sizeEmitter = _.emitter;
-        const sendSize = _.update;
-
-        // No need to hold disposer since size atom has same lifetime as listEmitter
-        listEmitter.subscribe((message) => {
-          const { size, oldSize } = message as unknown as Record<
-            string,
-            unknown
-          >;
-          const shouldSendSize =
-            oldSize === undefined ? false : size !== oldSize;
-          if (shouldSendSize) {
-            sendSize();
-          }
-        });
-      }
-      return sizeEmitter;
-    },
-  };
-
-  const getKeyedParticle = createAtomKeyGetter(listEmitter, rawList.at);
-
-  function at(index: number) {
-    return getKeyedParticle(Math.trunc(index));
-  }
+  let getKeyedParticle:
+    | ((
+        key: number,
+        getValue: (key: number) => T | undefined
+      ) => Atom<T | undefined>)
+    | undefined;
 
   const list: AtomList<T> = {
     [atomListBrandKey]: true,
-    [collectionKeyToValueKey]: at,
-    at,
+    at(index) {
+      return (getKeyedParticle ??= createAtomKeyGetter(listEmitter))(
+        index,
+        rawList.at
+      );
+    },
+    get(index) {
+      return (getKeyedParticle ??= createAtomKeyGetter(listEmitter))(
+        index,
+        rawList.get
+      );
+    },
     get size() {
-      return sizeAtom;
+      return (sizeAtom ??= new CollectionSizeAtom(
+        innerValues,
+        getSignalNode()
+      ));
     },
     [toValueKey]() {
       return rawList;
     },
-    [emitterKey]: listEmitter,
-    map(mapper, type) {
-      switch (type) {
-        case 'deferred':
-          return createMappedAtomListDeferred(list, innerValues, mapper);
-        case 'forgetful':
-          return createMappedAtomListForgetful(list, innerValues, mapper);
-        default:
-          return createMappedAtomListImmediate(list, innerValues, mapper);
-      }
+    get [signalKey]() {
+      return getSignalNode();
+    },
+    map(mapper) {
+      return createMappedAtomListForgetful(
+        list,
+        listEmitter,
+        innerValues,
+        mapper
+      );
+    },
+    subscribe(subscriber) {
+      return listEmitter.subscribe(subscriber);
     },
   };
 
@@ -644,19 +766,6 @@ function createMappedRawAtomList<T, U>(
   innerValues: T[],
   mapper: (value: T, index: number) => U
 ): RawAtomList<U> {
-  function rawAt(index: number) {
-    const size = innerValues.length;
-    let normalizedIndex = Math.trunc(index);
-    normalizedIndex =
-      normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
-
-    if (normalizedIndex >= size) {
-      return;
-    }
-
-    return mapper(innerValues[index]!, normalizedIndex);
-  }
-
   function* values() {
     for (const [index, value] of innerValues.entries()) {
       yield mapper(value, index);
@@ -667,13 +776,67 @@ function createMappedRawAtomList<T, U>(
     get size() {
       return innerValues.length;
     },
-    at: rawAt,
-    [collectionKeyToValueKey]: rawAt,
+    at(index) {
+      const size = innerValues.length;
+      let normalizedIndex = Math.trunc(index);
+      normalizedIndex =
+        normalizedIndex < 0 ? size + normalizedIndex : normalizedIndex;
+
+      if (normalizedIndex >= size) {
+        return;
+      }
+
+      return mapper(innerValues[normalizedIndex]!, normalizedIndex);
+    },
+    get(index) {
+      if (index >> 0 !== index || index < 0 || index >= innerValues.length) {
+        return undefined;
+      }
+      return mapper(innerValues[index]!, index);
+    },
     toArray() {
       return innerValues.map(mapper);
     },
+    forEach(callback) {
+      const size = innerValues.length;
+      for (let i = 0; i < size; i++) {
+        callback(mapper(innerValues[i]!, i), i);
+      }
+    },
+    forEachInRange(callback, start, end) {
+      const size = innerValues.length;
+      if (start >> 0 !== start || start < 0 || start >= size) {
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
+      }
+      if (end === undefined) {
+        end = size;
+      } else if (end > size) {
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
+      }
+
+      for (let i = start; i < end; i++) {
+        callback(mapper(innerValues[i]!, i), i);
+      }
+    },
     toArraySlice(start, end) {
-      return innerValues.slice(start, end).map(mapper);
+      const size = innerValues.length;
+      if (start === undefined) {
+        start = 0;
+      } else if (start >> 0 !== start || start < 0 || start >= size) {
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
+      }
+      if (end === undefined) {
+        end = size;
+      } else if (end > size) {
+        throw new Error(INDEX_OUT_OF_BOUNDS_MESSAGE);
+      }
+      const sliced = new Array(end - start);
+
+      for (let i = start; i < end; i++) {
+        sliced[i] = mapper(innerValues[i]!, i);
+      }
+
+      return sliced;
     },
     [Symbol.iterator]: values,
     *entries() {
@@ -688,211 +851,213 @@ function createMappedRawAtomList<T, U>(
   };
 }
 
-function createMappedAtomListDeferred<T, U>(
-  originalList: AtomList<T>,
-  originalValues: T[],
-  mapper: (value: T) => U
-): AtomList<U> {
-  const cacheValues: (U | EmptyCacheToken)[] = [];
+// function createMappedAtomListDeferred<T, U>(
+//   originalList: AtomList<T>,
+//   originalValues: T[],
+//   mapper: (value: T) => U
+// ): AtomList<U> {
+//   const cacheValues: (U | EmptyCacheToken)[] = [];
 
-  function cacheMapper(value: U | EmptyCacheToken, index: number): U {
-    if (value !== emptyCacheToken) {
-      return value;
-    }
+//   function cacheMapper(value: U | EmptyCacheToken, index: number): U {
+//     if (value !== emptyCacheToken) {
+//       return value;
+//     }
 
-    const mappedValue = mapper(originalValues[index]!);
-    cacheValues[index] = mappedValue;
-    return mappedValue;
-  }
+//     const mappedValue = mapper(originalValues[index]!);
+//     cacheValues[index] = mappedValue;
+//     return mappedValue;
+//   }
 
-  function handleChange(message: AtomListEmit) {
-    switch (message.type) {
-      case COLLECTION_EMIT_TYPE_CLEAR: {
-        cacheValues.length = 0;
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_ADD: {
-        const { key, oldSize } = message;
+//   function handleChange(message: AtomListEmit) {
+//     switch (message.type) {
+//       case COLLECTION_EMIT_TYPE_CLEAR: {
+//         cacheValues.length = 0;
+//         return;
+//       }
+//       case COLLECTION_EMIT_TYPE_KEY_ADD: {
+//         const { key, oldSize } = message.data;
 
-        if (key === oldSize) {
-          cacheValues.push(emptyCacheToken);
-        } else {
-          cacheValues.splice(key, 0, emptyCacheToken);
-        }
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_DELETE: {
-        const { key, size } = message;
+//         if (key === oldSize) {
+//           cacheValues.push(emptyCacheToken);
+//         } else {
+//           cacheValues.splice(key, 0, emptyCacheToken);
+//         }
+//         return;
+//       }
+//       case COLLECTION_EMIT_TYPE_KEY_DELETE: {
+//         const { key, size } = message.data;
 
-        if (key === size) {
-          cacheValues.length = size;
-        } else {
-          cacheValues.splice(key, 1);
-        }
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_WRITE: {
-        cacheValues[message.key] = emptyCacheToken;
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_SWAP: {
-        const [keyA, keyB] = message.keySwap;
-        const tmp = cacheValues[keyA]!;
-        cacheValues[keyA] = cacheValues[keyB]!;
-        cacheValues[keyB] = tmp;
-        return;
-      }
-      case LIST_EMIT_TYPE_APPEND: {
-        cacheValues.length = message.size;
-        cacheValues.fill(emptyCacheToken, message.oldSize);
-        return;
-      }
-      case LIST_EMIT_TYPE_REVERSE: {
-        cacheValues.reverse();
-        return;
-      }
-      case LIST_EMIT_TYPE_SORT: {
-        const { sortMap } = message;
-        const tmpCacheValues = cacheValues.slice();
-        for (const [index, oldIndex] of sortMap.entries()) {
-          cacheValues[index] = tmpCacheValues[oldIndex]!;
-        }
-        return;
-      }
-      case LIST_EMIT_TYPE_SPLICE: {
-        const { start, deleteCount, addCount } = message;
-        if (addCount === 0) {
-          cacheValues.splice(start, deleteCount);
-        } else {
-          const adds: EmptyCacheToken[] = [];
-          adds.length = addCount;
-          adds.fill(emptyCacheToken);
-          cacheValues.splice(start, deleteCount, ...adds);
-        }
-        return;
-      }
-      default: {
-        throw new Error('Unhandled emit', { cause: message });
-      }
-    }
-  }
+//         if (key === size) {
+//           cacheValues.length = size;
+//         } else {
+//           cacheValues.splice(key, 1);
+//         }
+//         return;
+//       }
+//       case COLLECTION_EMIT_TYPE_KEY_WRITE: {
+//         cacheValues[message.data.key] = emptyCacheToken;
+//         return;
+//       }
+//       case COLLECTION_EMIT_TYPE_KEY_SWAP: {
+//         const [keyA, keyB] = message.data.keySwap;
+//         const tmp = cacheValues[keyA]!;
+//         cacheValues[keyA] = cacheValues[keyB]!;
+//         cacheValues[keyB] = tmp;
+//         return;
+//       }
+//       case LIST_EMIT_TYPE_APPEND: {
+//         const { size, oldSize } = message.data;
+//         cacheValues.length = size;
+//         cacheValues.fill(emptyCacheToken, oldSize);
+//         return;
+//       }
+//       case LIST_EMIT_TYPE_REVERSE: {
+//         cacheValues.reverse();
+//         return;
+//       }
+//       case LIST_EMIT_TYPE_SORT: {
+//         const { sortMap } = message.data;
+//         const tmpCacheValues = cacheValues.slice();
+//         for (const [index, oldIndex] of sortMap.entries()) {
+//           cacheValues[index] = tmpCacheValues[oldIndex]!;
+//         }
+//         return;
+//       }
+//       case LIST_EMIT_TYPE_SPLICE: {
+//         const { start, deleteCount, addCount } = message.data;
+//         if (addCount === 0) {
+//           cacheValues.splice(start, deleteCount);
+//         } else {
+//           const adds: EmptyCacheToken[] = [];
+//           adds.length = addCount;
+//           adds.fill(emptyCacheToken);
+//           cacheValues.splice(start, deleteCount, ...adds);
+//         }
+//         return;
+//       }
+//       default: {
+//         throw new Error('Unhandled emit', { cause: message });
+//       }
+//     }
+//   }
 
-  const rawList = createMappedRawAtomList(cacheValues, cacheMapper);
-  cleanupRegistry.register(
-    rawList,
-    originalList[emitterKey].subscribe(handleChange)
-  );
+//   const rawList = createMappedRawAtomList(cacheValues, cacheMapper);
+//   cleanupRegistry.register(
+//     rawList,
+//     originalList[signalKey].subscribe(handleChange)
+//   );
 
-  return createMappedAtomListInternal(
-    originalList,
-    originalValues,
-    rawList,
-    mapper
-  );
-}
+//   return createMappedAtomListInternal(
+//     originalList,
+//     originalValues,
+//     rawList,
+//     mapper
+//   );
+// }
 
-function createMappedAtomListImmediate<T, U>(
-  originalList: AtomList<T>,
-  originalValues: T[],
-  mapper: (value: T) => U
-): AtomList<U> {
-  const mappedValues: U[] = originalValues.map(mapper);
+// function createMappedAtomListImmediate<T, U>(
+//   originalList: AtomList<T>,
+//   originalValues: T[],
+//   mapper: (value: T) => U
+// ): AtomList<U> {
+//   const mappedValues: U[] = originalValues.map(mapper);
 
-  function handleChange(message: AtomListEmit) {
-    switch (message.type) {
-      case COLLECTION_EMIT_TYPE_CLEAR: {
-        mappedValues.length = 0;
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_ADD: {
-        const { key, oldSize } = message;
+//   function handleChange(message: AtomListEmit) {
+//     switch (message.type) {
+//       case COLLECTION_EMIT_TYPE_CLEAR: {
+//         mappedValues.length = 0;
+//         return;
+//       }
+//       case COLLECTION_EMIT_TYPE_KEY_ADD: {
+//         const { key, oldSize } = message.data;
 
-        if (key === oldSize) {
-          mappedValues.push(mapper(originalValues[key]!));
-        } else {
-          mappedValues.splice(key, 0, mapper(originalValues[key]!));
-        }
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_DELETE: {
-        const { key, size } = message;
+//         if (key === oldSize) {
+//           mappedValues.push(mapper(originalValues[key]!));
+//         } else {
+//           mappedValues.splice(key, 0, mapper(originalValues[key]!));
+//         }
+//         return;
+//       }
+//       case COLLECTION_EMIT_TYPE_KEY_DELETE: {
+//         const { key, size } = message.data;
 
-        if (key === size) {
-          mappedValues.length = size;
-        } else {
-          mappedValues.splice(key, 1);
-        }
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_SWAP: {
-        const [keyA, keyB] = message.keySwap;
-        const tmp = mappedValues[keyA]!;
-        mappedValues[keyA] = mappedValues[keyB]!;
-        mappedValues[keyB] = tmp;
-        return;
-      }
-      case COLLECTION_EMIT_TYPE_KEY_WRITE: {
-        const { key } = message;
-        mappedValues[key] = mapper(originalValues[key]!);
-        return;
-      }
-      case LIST_EMIT_TYPE_APPEND: {
-        const { size, oldSize } = message;
-        const newValues: U[] = [];
-        for (let i = oldSize; i < size; i++) {
-          newValues.push(mapper(originalValues[i]!));
-        }
-        mappedValues.push(...newValues);
-        return;
-      }
-      case LIST_EMIT_TYPE_REVERSE: {
-        mappedValues.reverse();
-        return;
-      }
-      case LIST_EMIT_TYPE_SORT: {
-        const { sortMap } = message;
-        const tmpCacheValues = mappedValues.slice();
-        for (const [index, oldIndex] of sortMap.entries()) {
-          mappedValues[index] = tmpCacheValues[oldIndex]!;
-        }
-        return;
-      }
-      case LIST_EMIT_TYPE_SPLICE: {
-        const { start, deleteCount, addCount } = message;
-        if (addCount === 0) {
-          mappedValues.splice(start, deleteCount);
-        } else {
-          const adds: U[] = [];
-          const addEnd = start + addCount;
-          for (let i = start; i < addEnd; i++) {
-            adds.push(mapper(originalValues[i]!));
-          }
-          mappedValues.splice(start, deleteCount, ...adds);
-        }
-        return;
-      }
-      default: {
-        throw new Error('Unhandled emit', { cause: message });
-      }
-    }
-  }
+//         if (key === size) {
+//           mappedValues.length = size;
+//         } else {
+//           mappedValues.splice(key, 1);
+//         }
+//         return;
+//       }
+//       case COLLECTION_EMIT_TYPE_KEY_SWAP: {
+//         const [keyA, keyB] = message.data.keySwap;
+//         const tmp = mappedValues[keyA]!;
+//         mappedValues[keyA] = mappedValues[keyB]!;
+//         mappedValues[keyB] = tmp;
+//         return;
+//       }
+//       case COLLECTION_EMIT_TYPE_KEY_WRITE: {
+//         const { key } = message.data;
+//         mappedValues[key] = mapper(originalValues[key]!);
+//         return;
+//       }
+//       case LIST_EMIT_TYPE_APPEND: {
+//         const { size, oldSize } = message.data;
+//         const newValues: U[] = [];
+//         for (let i = oldSize; i < size; i++) {
+//           newValues.push(mapper(originalValues[i]!));
+//         }
+//         mappedValues.push(...newValues);
+//         return;
+//       }
+//       case LIST_EMIT_TYPE_REVERSE: {
+//         mappedValues.reverse();
+//         return;
+//       }
+//       case LIST_EMIT_TYPE_SORT: {
+//         const { sortMap } = message.data;
+//         const tmpCacheValues = mappedValues.slice();
+//         for (const [index, oldIndex] of sortMap.entries()) {
+//           mappedValues[index] = tmpCacheValues[oldIndex]!;
+//         }
+//         return;
+//       }
+//       case LIST_EMIT_TYPE_SPLICE: {
+//         const { start, deleteCount, addCount } = message.data;
+//         if (addCount === 0) {
+//           mappedValues.splice(start, deleteCount);
+//         } else {
+//           const adds: U[] = [];
+//           const addEnd = start + addCount;
+//           for (let i = start; i < addEnd; i++) {
+//             adds.push(mapper(originalValues[i]!));
+//           }
+//           mappedValues.splice(start, deleteCount, ...adds);
+//         }
+//         return;
+//       }
+//       default: {
+//         throw new Error('Unhandled emit', { cause: message });
+//       }
+//     }
+//   }
 
-  const rawList = createRawAtomList(mappedValues);
-  cleanupRegistry.register(
-    rawList,
-    originalList[emitterKey].subscribe(handleChange)
-  );
+//   const rawList = createRawAtomList(mappedValues);
+//   cleanupRegistry.register(
+//     rawList,
+//     originalList[signalKey].subscribe(handleChange)
+//   );
 
-  return createMappedAtomListInternal(
-    originalList,
-    originalValues,
-    rawList,
-    mapper
-  );
-}
+//   return createMappedAtomListInternal(
+//     originalList,
+//     originalValues,
+//     rawList,
+//     mapper
+//   );
+// }
 
 function createMappedAtomListForgetful<T, U>(
   originalList: AtomList<T>,
+  emitter: Emitter<AtomListEmit>,
   originalValues: T[],
   mapper: (value: T) => U
 ): AtomList<U> {
@@ -900,6 +1065,7 @@ function createMappedAtomListForgetful<T, U>(
 
   return createMappedAtomListInternal(
     originalList,
+    emitter,
     originalValues,
     rawList,
     mapper
@@ -908,18 +1074,17 @@ function createMappedAtomListForgetful<T, U>(
 
 function createMappedAtomListInternal<T, U>(
   originalList: AtomList<T>,
+  listEmitter: Emitter<AtomListEmit>,
   originalValues: T[],
   rawList: RawAtomList<U>,
   originalMapper: (value: T) => U
 ): AtomList<U> {
-  const listEmitter = originalList[emitterKey];
-  const sizeAtom = originalList.size;
-
-  const getKeyedParticle = createAtomKeyGetter(listEmitter, rawList.at);
-
-  function at(index: number) {
-    return getKeyedParticle(Math.trunc(index));
-  }
+  let getKeyedParticle:
+    | ((
+        key: number,
+        getValue: (key: number) => U | undefined
+      ) => Atom<U | undefined>)
+    | undefined;
 
   function nestMapper<V>(nestedMapped: (value: U) => V): (value: T) => V {
     return (value) => nestedMapped(originalMapper(value));
@@ -927,36 +1092,37 @@ function createMappedAtomListInternal<T, U>(
 
   const list: AtomList<U> = {
     [atomListBrandKey]: true,
-    [collectionKeyToValueKey]: at,
-    at,
+    at(index: number) {
+      return (getKeyedParticle ??= createAtomKeyGetter<U>(listEmitter))(
+        Math.trunc(index),
+        rawList.at
+      );
+    },
+    get(index: number) {
+      return (getKeyedParticle ??= createAtomKeyGetter<U>(listEmitter))(
+        index,
+        rawList.get
+      );
+    },
     get size() {
-      return sizeAtom;
+      return originalList.size;
     },
     [toValueKey]() {
       return rawList;
     },
-    [emitterKey]: listEmitter,
-    map(mapper, type) {
-      switch (type) {
-        case 'deferred':
-          return createMappedAtomListDeferred(
-            originalList,
-            originalValues,
-            nestMapper(mapper)
-          );
-        case 'forgetful':
-          return createMappedAtomListForgetful(
-            originalList,
-            originalValues,
-            nestMapper(mapper)
-          );
-        default:
-          return createMappedAtomListImmediate(
-            originalList,
-            originalValues,
-            nestMapper(mapper)
-          );
-      }
+    get [signalKey]() {
+      return originalList[signalKey];
+    },
+    map(mapper) {
+      return createMappedAtomListForgetful(
+        originalList,
+        listEmitter,
+        originalValues,
+        nestMapper(mapper)
+      );
+    },
+    subscribe(subscriber) {
+      return listEmitter.subscribe(subscriber);
     },
   };
 

@@ -1,17 +1,17 @@
 import {
-  emitterKey,
+  signalKey,
   type Atom,
   type Particle,
   toValueKey,
   type ParticleOrNonParticle,
 } from './particle.js';
-import { Emitter } from './emitter.js';
+import type { SignalNode } from './signal-node.js';
 
 // TODO: derived has similar types, they could be shared
-type ValueFromParticles<T extends readonly Atom<any, any>[]> = {
+type ValueFromParticles<T extends readonly Atom<any>[]> = {
   [K in keyof T]: ReturnType<T[K][typeof toValueKey]>;
 };
-type ValueFromMaybeParticle<T> = T extends Atom<any, any>
+type ValueFromMaybeParticle<T> = T extends Atom<any>
   ? ReturnType<T[typeof toValueKey]>
   : T;
 type ValueFromMaybeParticles<T extends readonly ParticleOrNonParticle[]> = {
@@ -20,7 +20,7 @@ type ValueFromMaybeParticles<T extends readonly ParticleOrNonParticle[]> = {
 
 export interface ReactiveContext {
   readAll: {
-    <const T extends readonly Atom<any, any>[]>(
+    <const T extends readonly Atom<any>[]>(
       ...particles: T
     ): ValueFromParticles<T>;
     any<const T extends readonly ParticleOrNonParticle[]>(
@@ -38,7 +38,7 @@ export interface ReactiveContext {
    * particle changes
    */
   connect: {
-    (...particles: Particle<any>[]): void;
+    (...particles: Particle[]): void;
     any(...items: ParticleOrNonParticle[]): void;
   };
 }
@@ -47,34 +47,32 @@ export interface AsyncReactiveContext extends ReactiveContext {
   done(): void;
 }
 
-export function createReactiveContext(
-  connectEmitter: (emitter: Emitter<any>) => void
-): ReactiveContext {
+export function createReactiveContext(signalNode: SignalNode): ReactiveContext {
   function connect(...particles: Particle[]) {
     for (const p of particles) {
-      connectEmitter(p[emitterKey]);
+      signalNode.recordSource(p[signalKey]);
     }
   }
   function connectAny(...maybeParticles: ParticleOrNonParticle[]) {
     for (const p of maybeParticles) {
-      const emitter = p[emitterKey];
+      const emitter = p[signalKey];
       if (emitter) {
-        connectEmitter(emitter);
+        signalNode.recordSource(emitter);
       }
     }
   }
   connect.any = connectAny;
 
   function read<const T>(particle: Atom<T>): T {
-    connectEmitter(particle[emitterKey]);
+    signalNode.recordSource(particle[signalKey]);
     return particle[toValueKey]();
   }
   function readAny<const T extends ParticleOrNonParticle>(
     maybeParticle: T
   ): ValueFromMaybeParticle<T> {
-    const emitter = maybeParticle[emitterKey];
+    const emitter = maybeParticle[signalKey];
     if (emitter) {
-      connectEmitter(emitter);
+      signalNode.recordSource(emitter);
       const valueOf = maybeParticle[toValueKey];
       if (valueOf) {
         return valueOf() as any;
@@ -105,22 +103,22 @@ export function createReactiveContext(
 }
 
 export function createAsyncReactiveContext(
-  connectEmitter: (emitter: Emitter<any>) => void
+  signalNode: SignalNode<any>
 ): AsyncReactiveContext {
   let isActive = true;
   function connect(...particles: Particle[]) {
     if (isActive) {
       for (const p of particles) {
-        connectEmitter(p[emitterKey]);
+        signalNode.recordSource(p[signalKey]);
       }
     }
   }
   function connectAny(...maybeParticles: ParticleOrNonParticle[]) {
     if (isActive) {
       for (const p of maybeParticles) {
-        const emitter = p[emitterKey];
+        const emitter = p[signalKey];
         if (emitter) {
-          connectEmitter(emitter);
+          signalNode.recordSource(emitter);
         }
       }
     }
@@ -129,17 +127,17 @@ export function createAsyncReactiveContext(
 
   function read<const T>(particle: Atom<T>): T {
     if (isActive) {
-      connectEmitter(particle[emitterKey]);
+      signalNode.recordSource(particle[signalKey]);
     }
     return particle[toValueKey]();
   }
   function readAny<const T extends ParticleOrNonParticle>(
     maybeParticle: T
   ): ValueFromMaybeParticle<T> {
-    const emitter = maybeParticle[emitterKey];
+    const emitter = maybeParticle[signalKey];
     if (emitter) {
       if (isActive) {
-        connectEmitter(emitter);
+        signalNode.recordSource(emitter);
       }
       const valueOf = maybeParticle[toValueKey];
       if (valueOf) {
