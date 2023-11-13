@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {},
   "dependencies": {
-    "metron-core": "workspace:*"
+    "metron-core": "workspace:*",
+    "mitata": "^0.1.6"
   }
 }

@@ -32,6 +32,9 @@ const scheduledLinkTrims = new Set<WeakRef<SignalNode<any>>>();
 
 let canScheduleLinkTrim = true;
 
+// TODO: make recursive, only if we can avoid traveling down consumers that chose not to propagate an update
+// TODO: add maxConsumers: overrides maxAge and remove first stale links until count is less than maxConsumers
+// TODO: maybe move maxAge and maxConsumers onto node itself and allow option passed to customize (better yet a setTrimOptions method)
 function trimNodeLinks(node: InternalSignalNode, maxAge: number) {
   // In place filtering of consumer links
   const { consumerLinks, id } = node;
@@ -172,6 +175,7 @@ export class SignalNode<TMeta = unknown> {
 
               if (shouldUpdate) {
                 (consumer as any).version++;
+                // TODO: if link trim can be recursive then remove line
                 scheduledLinkTrims.add(link.consumer);
 
                 consumer.notifySubscribers();
@@ -351,14 +355,14 @@ export class SignalNode<TMeta = unknown> {
   }
 
   update() {
-    if (isUpdatePropagating) {
-      updateQueue.push(this as SignalNode);
-      return;
-    }
-
     const rootShouldUpdate = this.safeIntercept();
 
     if (!rootShouldUpdate) {
+      return;
+    }
+
+    if (isUpdatePropagating) {
+      updateQueue.push(this as SignalNode);
       return;
     }
 

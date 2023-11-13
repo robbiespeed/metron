@@ -271,6 +271,7 @@ export function renderInto(
         subscribe(value, () => {
           const newValue = untracked(value);
           // Data casts to string
+          // TODO: .nodeValue faster?
           text.data = newValue === undefined ? '' : (newValue as any);
         })
       );

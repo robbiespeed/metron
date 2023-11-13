@@ -18,7 +18,7 @@ function setup() {
   for (let i = 0; i < emitterCount; i++) {
     const e = new Emitter();
     for (let s = 0; s < subCount; s++) {
-      e.subscribe(() => {
+      e.subscribe(function subHandler() {
         runCounter.voidRuns++;
       });
     }

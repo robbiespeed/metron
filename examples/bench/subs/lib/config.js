@@ -9,11 +9,11 @@ export const assert = _assert;
 
 export const runCounter = { voidRuns: 0, oneTypeRuns: 0, manyTypeRuns: 0 };
 
-export const subCount = 10;
+export const subCount = 1;
 
-export const emitterCount = 1_000;
+export const emitterCount = 1;
 
-export const benchRunCount = 1_000;
+export const benchRunCount = 100_000;
 
 export function handleOneTypeMsgData(data) {
   assert(typeof data === 'object');

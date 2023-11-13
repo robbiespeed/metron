@@ -1,16 +1,18 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
+    "target": "ESNext",
+    // "useDefineForClassFields": true,
     "module": "NodeNext",
-    "lib": ["ES2020"],
+    "lib": ["ESNext"],
     "skipLibCheck": true,
+    "allowJs": true,
 
     "moduleResolution": "NodeNext",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
 
     /* Linting */

@@ -1,13 +1,13 @@
 import { untracked } from 'metron-core/particle.js';
 
-export const sourceListCount = 100;
+export const sourceListCount = 1;
 
 export const mapCount = 10;
 
 // min 11
 export const listItemCount = 12;
 
-export const runCount = 1000;
+export const runCount = 100_000;
 
 export const subCount = 10;
 
@@ -24,7 +24,33 @@ function assertEq(value, expected, message) {
 export function setup(listCreator) {
   const lists = new Array(sourceListCount);
 
-  const counter = { subHits: 0 };
+  const counter = { subHits: 0, collectionMsgHits: 0, listMsgHits: 0 };
+
+  function handleDataCollection(data) {
+    counter.collectionMsgHits++;
+    assertEq(typeof data, 'object');
+  }
+
+  function handleDataList(data) {
+    counter.listMsgHits++;
+    assertEq(typeof data, 'object');
+  }
+
+  function handleDataListReverse(data) {
+    counter.listMsgHits++;
+    assertEq(typeof data, 'number');
+  }
+
+  function subHandler(msg) {
+    counter.subHits++;
+    if (msg.type.startsWith('Collection')) {
+      handleDataCollection(msg.data);
+    } else if (msg.type.endsWith('Reverse')) {
+      handleDataListReverse(msg.data);
+    } else {
+      handleDataList(msg.data);
+    }
+  }
 
   for (let i = 0; i < sourceListCount; i++) {
     const data = new Array(listItemCount)
@@ -36,13 +62,13 @@ export function setup(listCreator) {
     const maps = new Array(mapCount);
 
     for (let m = 0; m < mapCount; m++) {
-      maps[m] = source.map((v) => `${m}:${v.i}:${v.j}`);
+      maps[m] = source.map(function mapper(v) {
+        return `${m}:${v.i}:${v.j}`;
+      });
     }
 
     for (let s = 0; s < subCount; s++) {
-      source.subscribe(() => {
-        counter.subHits++;
-      });
+      source.subscribe(subHandler);
     }
 
     lists[i] = { reader: untracked(source), writer, maps };

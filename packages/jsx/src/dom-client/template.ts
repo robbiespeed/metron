@@ -162,15 +162,22 @@ function renderTemplateNode(
             initKey: value.key,
           });
         } else {
-          (element as any)[keyName] = value;
+          throw new TypeError('Templates may only use slots to register props');
         }
         continue;
       case 'attr':
         if (isSlot(value)) {
-          (attributeDescriptors ??= []).push({
-            key: keyName,
-            initKey: value.key,
-          });
+          if (keyName === 'class') {
+            (propDescriptors ??= []).push({
+              key: 'className',
+              initKey: value.key,
+            });
+          } else {
+            (attributeDescriptors ??= []).push({
+              key: keyName,
+              initKey: value.key,
+            });
+          }
         } else if (value === true) {
           element.toggleAttribute(keyName, true);
         } else {

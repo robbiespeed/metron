@@ -60,3 +60,59 @@ export function createSelector<T>(
 
   return [selector as Selector<T>, set];
 }
+
+// class SelectorC <T> {
+//   #nodes = new Map<T, WeakRef<SignalNode>>();
+//   #storedValue: T;
+//   private constructor (initial: T) {
+//     this.#storedValue = initial;
+//   }
+
+//   #set(value: T) {
+//     const storedValue = this.#storedValue;
+//     if (storedValue === value) {
+//       return;
+//     }
+//     const oldValue = this.#storedValue;
+//     this.#storedValue = value;
+//     const nodes = this.#nodes;
+//     nodes.get(oldValue)?.deref()?.update();
+//     nodes.get(storedValue)?.deref()?.update();
+//   }
+
+//   selection(match: T) {
+//     const nodes = this.#nodes;
+//     let matchEmitter = nodes.get(match)?.deref();
+
+//   }
+
+//   mapSelection<U>(match: T, mapper: (isSelected: boolean) => U) {
+
+//   }
+
+//   static {
+//     class Selection implements Atom<boolean> {
+//       #node?: SignalNode;
+//       #match: unknown;
+//       #selector: SelectorC<unknown>;
+//       constructor (selector: SelectorC<unknown>, value: unknown) {
+//         this.#selector = selector;
+//         this.#match = value;
+//       }
+//       get [signalKey] () {
+//         let node = this.#node;
+//         if (node !== undefined) {
+//           return node;
+//         }
+
+//       }
+//       [toValueKey] (): boolean {
+//         return this.#match === this.#selector.#storedValue;
+//       }
+//     }
+//   }
+
+//   static create <T> () {
+
+//   }
+// }

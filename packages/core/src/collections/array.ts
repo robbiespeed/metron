@@ -86,10 +86,21 @@ export interface UntrackedAtomArray<T> {
   values(): IterableIterator<T>;
 }
 
+// interface FocusParams {
+//   transform: () => unknown;
+
+// }
+
 export interface AtomArray<T>
   extends AtomCollection<T, number, UntrackedAtomArray<T>, AtomArrayEmit> {
   at(offset: number): Atom<T | undefined>;
   map<U>(mapper: (value: T) => U): AtomArray<U>;
+  // slice
+  // Should focus be the basis for all operations including map, slice, and mapDerive (remove focusDerive)
+  // focus: like array.reduce but can short circuit and be used as the basis for all other operations (find, some, every, sort, filter, etc)
+  // focusDerive: like focus, but can read from other atoms and react to changes
+  // mapDerive: like map, but can read from other atoms and react to changes
+  // focus<U extends Atom<any>>(transformer: (source: this, innerValues: readonly T[]) => U): U;
 }
 
 const INDEX_OUT_OF_BOUNDS_MESSAGE = 'Index out of bounds';
@@ -832,7 +843,6 @@ class MappedAtomArray<T, U> implements AtomArray<U> {
     };
   }
   map<V>(mapper: (value: U) => V): MappedAtomArray<T, V> {
-    // TODO: maybe introduce a StackMappedAtomArray to avoid Maximum Call Stack Size Exceeded
     const thisMapper = this.mapper;
     return new MappedAtomArray(this.source, (v: T) => mapper(thisMapper(v)));
   }
