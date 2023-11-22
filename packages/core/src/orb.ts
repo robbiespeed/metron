@@ -1,3 +1,4 @@
+import { ORB } from './atom.js';
 import { scheduleCleanup } from './schedulers.js';
 
 interface OrbLink {
@@ -165,10 +166,17 @@ export class Orb<TData> {
     }
   }
 
+  // bench perf of making these consts outside of the class instead
+  static #canStartPropagation = true;
+  static #canRunTransmitQueue = true;
+  static #propagatedNodeIds = new Set<string>();
+  static #propagationLinkStack: LinkArray[] = [];
+
   static #propagate(consumers: LinkArray): void {
-    const propagatedNodeIds = new Set<string>();
+    Orb.#canStartPropagation = false;
+    const propagatedNodeIds = Orb.#propagatedNodeIds;
     let links = consumers;
-    const linkStack: LinkArray[] = [];
+    const linkStack: LinkArray[] = Orb.#propagationLinkStack;
     let i = links.length - 1;
     while (i >= 0) {
       const link = links[i]!;
@@ -214,31 +222,43 @@ export class Orb<TData> {
         }
       }
     }
+    Orb.#propagatedNodeIds = new Set<string>();
+    linkStack.length = 0;
+    Orb.#canStartPropagation = true;
+    Orb.#scheduleTrimLinks();
   }
 
+  // collection/shared.ts OrbKeyMap might require that transmit be refactored to share a global propagation state
+  // should bench this to make sure it's not a major pref regression for happy paths
+
+  // alternatively could revert back and make the transmit for OrbKeyMap be added to the afterTransmitQueue?
   static #transmit(this: Orb<any>) {
-    if (this.#safeIntercept()) {
-      if (++this.#version >= MAX_VERSION) {
-        this.#rollVersion();
-      }
-      const consumerLinks = this.#consumerLinks;
+    Orb.#propagatedNodeIds.add(this.#id);
+    if (++this.#version >= MAX_VERSION) {
+      this.#rollVersion();
+    }
 
-      if (consumerLinks.length) {
+    const consumerLinks = this.#consumerLinks;
+    if (consumerLinks.length) {
+      if (Orb.#canStartPropagation) {
         Orb.#propagate(consumerLinks);
-        Orb.#scheduleTrimLinks();
+      } else {
+        Orb.#propagationLinkStack.push(consumerLinks);
       }
     }
 
-    if (afterTransmitQueue.length) {
-      for (let i = 0; i < afterTransmitQueue.length; i++) {
-        try {
-          afterTransmitQueue[i]!();
-        } catch (err) {
-          // TODO: emit uncaught err to global
-        }
-      }
-      afterTransmitQueue.length = 0;
-    }
+    // if (afterTransmitQueue.length && Orb.#canRunTransmitQueue) {
+    //   Orb.#canRunTransmitQueue = false;
+    //   for (let i = 0; i < afterTransmitQueue.length; i++) {
+    //     try {
+    //       afterTransmitQueue[i]!();
+    //     } catch (err) {
+    //       // TODO: emit uncaught err to global
+    //     }
+    //   }
+    //   afterTransmitQueue.length = 0;
+    //   Orb.#canRunTransmitQueue = true;
+    // }
   }
 
   static #registerStaticSources(orb: Orb<any>, staticSources: Orb<any>[]) {
@@ -286,7 +306,7 @@ export class Orb<TData> {
 
     return {
       orb: orb as TransmitterOrb<TData>,
-      transmit: this.#transmit.bind(orb),
+      transmit: Orb.#transmit.bind(orb),
     };
   }
   static createRelay<TData>(
@@ -339,11 +359,8 @@ export class Orb<TData> {
 
     return {
       orb: orb as TransceiverOrb<TData>,
-      transmit: this.#transmit.bind(orb),
+      transmit: Orb.#transmit.bind(orb),
     };
-  }
-  static queueAfterTransmit(callback: () => void) {
-    afterTransmitQueue.push(callback);
   }
 }
 
@@ -362,6 +379,15 @@ export interface TransceiverOrb<TData = unknown> extends Orb<TData> {
 
 export interface RelayOrb<TData = unknown> extends TransceiverOrb<TData> {}
 
-export const ORB = Symbol('Orb');
-
 export const linkOrbs = Orb.link;
+
+export const createTransmitterOrb = Orb.createTransmitter;
+
+export const createReceiverOrb = Orb.createReceiver;
+
+export const createRelayOrb = Orb.createRelay;
+
+export const createTransceiverOrb = Orb.createTransceiver;
+
+// export const queueAfterOrbTransmit =
+//   afterTransmitQueue.push.bind(afterTransmitQueue);

@@ -1,19 +1,10 @@
-import { signalKey, type Atom, toValueKey } from '../particle.js';
-import type {
-  EmitMessage,
-  EmitMessageOption,
-  Emitter,
-  SubscriptionHandler,
-} from '../emitter.js';
-import { SignalNode, type Disposer } from '../signal-node.js';
-
-export const collectionKeyToValueKey = Symbol('MetronAtomCollectionKeyToValue');
+import type { Atom } from '../atom.js';
+import type { EmitMessage } from '../emitter.js';
 
 export const COLLECTION_EMIT_TYPE_KEY_WRITE = 'CollectionKeyWrite';
 export const COLLECTION_EMIT_TYPE_KEY_ADD = 'CollectionKeyAdd';
 export const COLLECTION_EMIT_TYPE_KEY_DELETE = 'CollectionKeyDelete';
 export const COLLECTION_EMIT_TYPE_KEY_SWAP = 'CollectionKeySwap';
-export const COLLECTION_EMIT_TYPE_KEY_BATCH = 'CollectionKeyBatch';
 export const COLLECTION_EMIT_TYPE_CLEAR = 'CollectionClear';
 
 export type AtomCollectionEmitKeyWrite<TKey = unknown> = EmitMessage<
@@ -67,118 +58,128 @@ export interface AtomCollectionEmitMap<TKey = unknown> {
   keyWrite: AtomCollectionEmitKeyWrite<TKey>;
   keyAdd: AtomCollectionEmitKeyAdd<TKey>;
   keyDelete: AtomCollectionEmitKeyDelete<TKey>;
-  keySwap: AtomCollectionEmitKeySwap<TKey>;
+  // keySwap: AtomCollectionEmitKeySwap<TKey>;
   clear: AtomCollectionEmitClear;
 }
 
 export type AtomCollectionEmit<TKey = unknown> =
   AtomCollectionEmitMap<TKey>[keyof AtomCollectionEmitMap];
 
-export interface AtomCollectionUntrackedReader<TValue, TKey = unknown> {
-  readonly size: number;
-  get(key: TKey): TValue | undefined;
-  [Symbol.iterator](): IterableIterator<TValue>;
+export interface UnwrappedAtomCollection<TKey, TValue> {
+  [Symbol.iterator](): IterableIterator<unknown>;
   entries(): IterableIterator<[TKey, TValue]>;
   keys(): IterableIterator<TKey>;
   values(): IterableIterator<TValue>;
 }
 
-export type GetRawAtomCollectionValue<TRaw> =
-  TRaw extends AtomCollectionUntrackedReader<infer TValue> ? TValue : never;
-
 export interface AtomCollection<
+  TKey,
   TValue,
-  TKey = unknown,
-  TRaw extends AtomCollectionUntrackedReader<
-    TValue,
-    TKey
-  > = AtomCollectionUntrackedReader<TValue, TKey>,
+  TUnwrapped extends UnwrappedAtomCollection<
+    TKey,
+    TValue
+  > = UnwrappedAtomCollection<TKey, TValue>,
   TEmit extends EmitMessage = AtomCollectionEmit
-  // TEmitMap extends AtomCollectionEmitMap<TKey> = AtomCollectionEmitMap<TKey>
-> extends Atom<TRaw> {
-  readonly size: Atom<number>;
-  get(key: TKey): Atom<TValue | undefined>;
-  subscribe(handler: SubscriptionHandler<TEmit>): Disposer;
+> extends Atom<TUnwrapped, TEmit> {
+  // readonly size: Atom<number>;
 }
 
-export function isAtomCollection(
-  value: unknown
-): value is AtomCollection<unknown> {
-  return (value as any)?.[collectionKeyToValueKey] !== undefined;
-}
+// export class CollectionSizeAtom implements Atom<number> {
+//   #innerValues: unknown[];
+//   #storedSize: number;
+//   #orb: TransceiverOrb<CollectionSizeAtom>;
+//   #emitter?: Emitter<void>;
+//   #emit = emptyFn;
+//   constructor(innerValues: unknown[], sourceOrb: TransmitterOrb) {
+//     this.#orb = createRelayOrb(this, CollectionSizeAtom.#intercept, [
+//       sourceOrb,
+//     ]);
+//     this.#innerValues = innerValues;
+//     this.#storedSize = innerValues.length;
+//   }
+//   get [EMITTER](): Emitter<void> {
+//     const existingEmitter = this.#emitter;
+//     if (existingEmitter !== undefined) {
+//       return existingEmitter;
+//     }
 
-function collectionSizeIntercept(this: SignalNode<CollectionSizeAtom>) {
-  const { meta } = this;
-  const currentSize = meta['innerValues'].length;
-  if (meta['storedSize'] !== currentSize) {
-    meta['storedSize'] = currentSize;
-    return true;
-  }
-  return false;
-}
+//     const { emitter, emit } = createEmitter();
 
-export class CollectionSizeAtom implements Atom<number> {
-  private innerValues: unknown[];
-  private storedSize: number;
-  private node = new SignalNode<CollectionSizeAtom>(
-    this,
-    collectionSizeIntercept
-  );
-  readonly [signalKey] = this.node as SignalNode;
-  constructor(innerValues: unknown[], sourceNode: SignalNode) {
-    const { node } = this;
-    node.initAsSource();
-    node.initAsConsumer();
-    node.recordSource(sourceNode, false);
-    this.innerValues = innerValues;
-    this.storedSize = innerValues.length;
-  }
-  [toValueKey]() {
-    return this.storedSize;
-  }
-}
+//     this.#emitter = emitter;
+//     this.#emit = emit;
 
-export class SignalNodeKeyMap<TKey, TEmit extends EmitMessageOption> {
-  private weakKeyNodes = new Map<TKey, WeakRef<SignalNode>>();
-  private emitDisposer: undefined | Disposer;
-  private finalizationRegistry = new FinalizationRegistry((key: TKey) => {
-    const { weakKeyNodes } = this;
-    weakKeyNodes.delete(key);
+//     return emitter;
+//   }
+//   get [ORB](): TransmitterOrb {
+//     return this.#orb;
+//   }
+//   unwrap(): number {
+//     return this.#storedSize;
+//   }
+//   static #intercept(this: Orb<CollectionSizeAtom>) {
+//     const atom = this.data;
+//     const currentSize = atom.#innerValues.length;
+//     if (atom.#storedSize !== currentSize) {
+//       atom.#storedSize = currentSize;
+//       atom.#emit();
+//       return true;
+//     }
+//     return false;
+//   }
+// }
 
-    if (weakKeyNodes.size === 0) {
-      const { emitDisposer } = this;
-      if (emitDisposer) {
-        emitDisposer();
-        this.emitDisposer = undefined;
-      }
-    }
-  });
-  private subHandler: SubscriptionHandler<TEmit>;
-  private emitter: Emitter<TEmit>;
-  getWeakNode: (key: TKey) => WeakRef<SignalNode> | undefined;
-  constructor(emitter: Emitter<TEmit>, subHandler: SubscriptionHandler<TEmit>) {
-    this.emitter = emitter;
-    this.subHandler = subHandler;
-    const weakKeyNodes = this.weakKeyNodes;
-    this.getWeakNode = weakKeyNodes.get.bind(weakKeyNodes);
-  }
-  get(key: TKey): SignalNode {
-    let keyNode: SignalNode | undefined = this.weakKeyNodes.get(key)?.deref();
+// function bindableWeakTransmit<TKey>(
+//   this: Map<TKey, WeakRef<() => void>>,
+//   key: TKey
+// ) {
+//   this.get(key)?.deref()?.();
+// }
 
-    if (keyNode === undefined) {
-      keyNode = new SignalNode<unknown>(undefined);
-      keyNode.initAsSource();
+// export class OrbKeyMap<TKey, TEmit extends EmitMessageOption> {
+//   #weakKeyOrbs = new Map<TKey, WeakRef<TransmitterOrb>>();
+//   #weakKeyTransmits = new Map<TKey, WeakRef<() => void>>();
+//   #emitDisposer: undefined | Disposer;
+//   #finalizationRegistry = new FinalizationRegistry((key: TKey) => {
+//     this.#weakKeyTransmits.delete(key);
+//     const orbs = this.#weakKeyOrbs;
+//     orbs.delete(key);
 
-      this.finalizationRegistry.register(keyNode, key);
+//     if (orbs.size === 0) {
+//       const emitDisposer = this.#emitDisposer;
+//       if (emitDisposer) {
+//         emitDisposer();
+//         this.#emitDisposer = undefined;
+//       }
+//     }
+//   });
+//   #subHandler: SubscriptionHandler<TEmit>;
+//   #emitter: Emitter<TEmit>;
+//   weakTransmit: (key: TKey) => void;
+//   constructor(emitter: Emitter<TEmit>, subHandler: SubscriptionHandler<TEmit>) {
+//     this.#emitter = emitter;
+//     this.#subHandler = subHandler;
+//     this.weakTransmit = bindableWeakTransmit.bind(this.#weakKeyTransmits);
+//   }
+//   get(key: TKey): TransmitterOrb {
+//     let keyOrb: TransmitterOrb | undefined = this.#weakKeyOrbs
+//       .get(key)
+//       ?.deref();
 
-      this.emitDisposer ??= this.emitter.subscribe(this.subHandler);
+//     if (keyOrb === undefined) {
+//       const { orb, transmit } = createTransmitterOrb();
+//       keyOrb = orb;
 
-      this.weakKeyNodes.set(key, keyNode.weakRef);
-    }
+//       this.#finalizationRegistry.register(keyOrb, key);
 
-    return keyNode;
-  }
-  weakNodeEntries(): IterableIterator<[TKey, WeakRef<SignalNode>]> {
-    return this.weakKeyNodes.entries();
-  }
-}
+//       this.#emitDisposer ??= this.#emitter.subscribe(this.#subHandler);
+
+//       this.#weakKeyOrbs.set(key, keyOrb.weakRef);
+//       this.#weakKeyTransmits.set(key, new WeakRef(transmit));
+//     }
+
+//     return keyOrb;
+//   }
+//   weakTransmitEntries(): IterableIterator<[TKey, WeakRef<() => void>]> {
+//     return this.#weakKeyTransmits.entries();
+//   }
+// }

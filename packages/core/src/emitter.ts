@@ -1,4 +1,4 @@
-import type { Disposer } from './signal-node.js';
+import { emptyFn, type Disposer } from './shared.js';
 
 export interface EmitMessage<TType extends string = string, TData = unknown> {
   readonly type: TType;
@@ -24,9 +24,9 @@ export interface Subscribable<TEmit extends EmitMessageOption> {
 export class Emitter<TEmit extends EmitMessageOption>
   implements Subscribable<TEmit>
 {
-  private subscriptionHead?: Subscription<TEmit>;
+  #subscriptionHead?: Subscription<TEmit>;
   subscribe(handler: SubscriptionHandler<TEmit>): Disposer {
-    const subHead = this.subscriptionHead;
+    const subHead = this.#subscriptionHead;
     let sub: Subscription<TEmit> | undefined = {
       prev: undefined,
       handler,
@@ -35,21 +35,21 @@ export class Emitter<TEmit extends EmitMessageOption>
     if (subHead) {
       subHead.prev = sub;
     }
-    this.subscriptionHead = sub;
+    this.#subscriptionHead = sub;
 
     return () => {
       if (sub !== undefined) {
         if (sub.prev) {
-          sub.prev = sub.next;
+          sub.prev.next = sub.next;
         } else {
-          this.subscriptionHead = sub.next;
+          this.#subscriptionHead = sub.next;
         }
         sub = undefined;
       }
     };
   }
-  send(message: TEmit): void {
-    let next = this.subscriptionHead;
+  static #emit(this: Emitter<any>, message: any): void {
+    let next = this.#subscriptionHead;
     while (next) {
       try {
         next.handler(message);
@@ -59,4 +59,13 @@ export class Emitter<TEmit extends EmitMessageOption>
       next = next.next;
     }
   }
+  static create<TEmit extends EmitMessageOption = void>(): {
+    emitter: Emitter<TEmit>;
+    emit(message: TEmit): void;
+  } {
+    const emitter = new Emitter<TEmit>();
+    return { emitter, emit: Emitter.#emit.bind(emitter) };
+  }
 }
+
+export const createEmitter = Emitter.create;

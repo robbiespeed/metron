@@ -1,102 +1,128 @@
-import { signalKey, type Particle } from './particle.js';
-import {
-  createReactiveContext,
-  type ReactiveContext,
-} from './reactive-context.js';
-import { scheduleMicroTask } from './schedulers.js';
-import { SignalNode } from './signal-node.js';
+import { ORB, type Atom, type AtomReader } from './atom.js';
+import { bindableRead } from './internal.js';
+import { Orb, createReceiverOrb, type ReceiverOrb } from './orb.js';
+import { emptyFn, type Disposer } from './shared.js';
 
-export interface EffectLike {
-  run(): void;
+const scheduled: Effect[] = [];
+
+const addScheduledEffect = scheduled.push.bind(scheduled);
+
+interface EffectRunner {
+  (
+    read: AtomReader,
+    registerCleanup: (cleanup: Disposer) => void
+  ): Promise<void> | void;
 }
 
-interface EffectInternal extends EffectLike {
-  canSchedule: boolean;
-  scheduler: (effect: EffectLike) => void;
-}
-
-function effectIntercept(this: SignalNode<EffectInternal>) {
-  const meta = this.meta as any;
-  if (meta.canSchedule) {
-    meta.canSchedule = false;
-    meta.scheduler(meta);
-  }
-  return false;
-}
-
-function defaultScheduler(effect: EffectLike): void {
-  scheduleMicroTask(() => effect.run());
-}
-
-interface EffectOptions {
-  scheduler?: (effect: EffectLike) => void;
-  disableAutoRun?: boolean;
+interface StaticEffectRunner {
+  (registerCleanup: (cleanup: Disposer) => void): Promise<void> | void;
 }
 
 export class Effect {
-  private node = new SignalNode<Effect>(this, effectIntercept as any);
-  private fn: (context: ReactiveContext) => void;
-  readonly canSchedule = false;
-  readonly scheduler: (effect: Effect) => void;
-  private context: ReactiveContext;
-  constructor(fn: (context: ReactiveContext) => void, options?: EffectOptions) {
-    const { node } = this;
-    node.initAsConsumer();
-    this.context = createReactiveContext(node as SignalNode);
-    this.fn = fn;
-    const scheduler = options?.scheduler ?? defaultScheduler;
-    this.scheduler = scheduler;
-    if (!options?.disableAutoRun) {
-      scheduler(this);
+  //@ts-expect-error #orb intentionally never gets accessed
+  // it's present so there is a hard ref to the orb during the life cycle of the effect
+  #orb?: ReceiverOrb<Effect>;
+  #run!: () => void;
+  #canSchedule = false;
+  #cleanup = emptyFn;
+  private constructor() {
+    scheduled.push(this);
+  }
+  static runScheduled() {
+    for (let index = 0; index < scheduled.length; index++) {
+      const effect = scheduled[index]!;
+      const run = effect.#run;
+      run();
+      effect.#canSchedule = run !== emptyFn;
+    }
+    scheduled.length = 0;
+  }
+  static #dispose(this: Effect) {
+    this.#canSchedule = false;
+    this.#run = emptyFn;
+    this.#cleanup();
+    this.#cleanup = emptyFn;
+  }
+  static #intercept(this: Orb<Effect>): boolean {
+    const effect = this.data;
+    if (effect.#canSchedule) {
+      effect.#canSchedule = false;
+      effect.#cleanup();
+      effect.#cleanup = emptyFn;
+      addScheduledEffect(effect);
+      return true;
+    }
+    return false;
+  }
+  static #disposableRun(this: Effect, read: AtomReader, run: EffectRunner) {
+    let isDisposed = false;
+    const disposableRead: AtomReader = (atom) => {
+      if (isDisposed) {
+        // TODO improve message
+        throw new Error();
+      }
+      return read(atom);
+    };
+
+    let innerCleanup = emptyFn;
+
+    this.#cleanup = () => {
+      isDisposed = true;
+      innerCleanup();
+    };
+
+    run(disposableRead, (cleanup) => {
+      if (innerCleanup === emptyFn) {
+        innerCleanup = cleanup;
+      } else {
+        throw new Error('Cleanup already registered');
+      }
+    });
+  }
+  static #registerCleanup(this: Effect, cleanup: Disposer) {
+    if (this.#cleanup === emptyFn) {
+      this.#cleanup = cleanup;
+    } else {
+      throw new Error('Cleanup already registered');
     }
   }
-  run() {
-    this.fn(this.context);
-    (this as any).canSchedule = true;
+  static create(run: EffectRunner): Disposer {
+    const effect = new Effect();
+    const orb = createReceiverOrb<Effect>(effect, Effect.#intercept);
+    const read = bindableRead.bind(orb) as AtomReader;
+    effect.#orb = orb;
+    effect.#run = Effect.#disposableRun.bind(effect, read, run);
+    return Effect.#dispose.bind(effect);
   }
-  stop() {
-    (this as any).canSchedule = false;
+  static createWithSources(sources: Atom<any>[], run: EffectRunner): Disposer {
+    const effect = new Effect();
+    const orb = createReceiverOrb<Effect>(
+      effect,
+      Effect.#intercept,
+      sources.map((atom) => atom[ORB])
+    );
+    const read = bindableRead.bind(orb) as AtomReader;
+    effect.#orb = orb;
+    effect.#run = Effect.#disposableRun.bind(effect, read, run);
+    return Effect.#dispose.bind(effect);
+  }
+  static createFromSources(
+    sources: Atom<any>[],
+    run: StaticEffectRunner
+  ): Disposer {
+    const effect = new Effect();
+    const orb = createReceiverOrb<Effect>(
+      effect,
+      Effect.#intercept,
+      sources.map((atom) => atom[ORB])
+    );
+    effect.#orb = orb;
+    const registerCleanup = Effect.#registerCleanup.bind(effect);
+    effect.#run = run.bind(undefined, registerCleanup);
+    return Effect.#dispose.bind(effect);
   }
 }
 
-export function effect(
-  fn: (context: ReactiveContext) => void,
-  options?: EffectOptions
-) {
-  return new Effect(fn, options);
-}
+export const effect = Effect.create;
 
-export class StaticEffect {
-  private node = new SignalNode<StaticEffect>(this, effectIntercept as any);
-  private fn: () => void;
-  readonly canSchedule = false;
-  readonly scheduler: (effect: Effect) => void;
-  constructor(sources: Particle[], fn: () => void, options?: EffectOptions) {
-    const { node } = this;
-    node.initAsConsumer();
-    for (const { [signalKey]: sourceNode } of sources) {
-      node.recordSource(sourceNode, false);
-    }
-    this.fn = fn;
-    const scheduler = options?.scheduler ?? defaultScheduler;
-    this.scheduler = scheduler;
-    if (!options?.disableAutoRun) {
-      scheduler(this);
-    }
-  }
-  run() {
-    this.fn();
-    (this as any).canSchedule = true;
-  }
-  stop() {
-    (this as any).canSchedule = false;
-  }
-}
-
-export function staticEffect(
-  sources: Particle[],
-  fn: () => void,
-  options?: EffectOptions
-) {
-  return new StaticEffect(sources, fn, options);
-}
+export const runScheduledEffects = Effect.runScheduled;

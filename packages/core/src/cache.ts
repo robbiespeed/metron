@@ -1,2 +1,2 @@
+export const emptyCacheToken = Symbol('MetronEmptyCache');
 export type EmptyCacheToken = typeof emptyCacheToken;
-export const emptyCacheToken = Symbol('MetronInvalidCache');

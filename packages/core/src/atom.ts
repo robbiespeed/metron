@@ -1,65 +1,98 @@
-import { signalKey, toValueKey, type Atom } from './particle.js';
-import { SignalNode } from './signal-node.js';
+import type { EmitMessageOption, Emitter } from './emitter.js';
+import type { TransmitterOrb } from './orb.js';
+import { scheduleMicroTask } from './schedulers.js';
+import type { Disposer } from './shared.js';
 
-export interface AtomSetter<T> {
-  (value: T): T;
+export const EMITTER = Symbol('Emitter');
+export const ORB = Symbol('Orb');
+
+export interface Atom<TValue, TEmit extends EmitMessageOption = void> {
+  readonly [ORB]: TransmitterOrb<unknown>;
+  readonly [EMITTER]: Emitter<TEmit>;
+  unwrap(): TValue;
 }
 
-export type { Atom };
-
-class Signal<T> implements Atom<T> {
-  private node = new SignalNode(this);
-  readonly [signalKey] = this.node as SignalNode;
-  private store: T;
-  private constructor(init: T) {
-    this.node.initAsSource();
-    this.store = init;
-  }
-  [toValueKey]() {
-    return this.store;
-  }
-  static create<T>(init: T): [Atom<T>, (value: T) => T] {
-    const atom = new Signal(init);
-
-    return [
-      atom,
-      (value: T) => {
-        if (atom.store === value) {
-          return value;
-        }
-        atom.store = value;
-        atom.node.update();
-
-        return value;
-      },
-    ];
-  }
-  static createWithMutator<T>(
-    init: T
-  ): [Atom<T>, (mutate: (oldValue: T) => T) => T] {
-    const atom = new Signal(init);
-
-    return [
-      atom,
-      (mutate: (oldValue: T) => T) => {
-        const storeValue = atom.store;
-        const value = mutate(storeValue);
-        if (storeValue === value) {
-          return value;
-        }
-        atom.store = value;
-        atom.node.update();
-
-        return value;
-      },
-    ];
-  }
+export interface AtomReader {
+  <T>(atom: Atom<T>): T;
 }
 
-export const createAtom = Signal.create;
+export type ExtractAtomValue<T> = T extends Atom<infer U> ? U : undefined;
+export type ExtractAtomArrayValues<T extends readonly Atom<unknown>[]> = [
+  ...{
+    [K in keyof T]: ExtractAtomValue<T[K]>;
+  }
+];
 
-export interface AtomMutator<T> {
-  (mutate: (oldValue: T) => T): T;
+// TODO: unsure if necessary
+type Primitive = symbol | string | number | bigint | boolean | undefined | null;
+
+interface AntiAtom {
+  [ORB]?: never;
+  [EMITTER]?: never;
 }
 
-export const createMutatorAtom = Signal.createWithMutator;
+export type NonAtom = AntiAtom | Primitive;
+export type AtomOrNonAtom = Atom<unknown> | NonAtom;
+
+export function subscribe(atom: Atom<unknown>, handler: () => void): Disposer {
+  return atom[EMITTER].subscribe(handler);
+}
+
+export function runAndSubscribe(
+  atom: Atom<unknown>,
+  handler: () => void
+): Disposer {
+  handler();
+  return atom[EMITTER].subscribe(handler);
+}
+
+export function microtaskSubscribe(
+  atom: Atom<unknown>,
+  handler: () => void
+): Disposer {
+  let isScheduled = false;
+  let isActive = true;
+  const disposer = atom[EMITTER].subscribe(() => {
+    if (isScheduled) {
+      return;
+    }
+    isScheduled = true;
+    scheduleMicroTask(() => {
+      if (isActive) {
+        handler();
+        isScheduled = false;
+      }
+    });
+  });
+
+  return () => {
+    disposer();
+    isActive = false;
+  };
+}
+
+export function runAndMicrotaskSubscribe(
+  atom: Atom<unknown>,
+  handler: () => void
+): Disposer {
+  handler();
+  let isScheduled = false;
+  let isActive = true;
+  const disposer = atom[EMITTER].subscribe(() => {
+    if (isScheduled) {
+      return;
+    }
+    isScheduled = true;
+    scheduleMicroTask(() => {
+      if (isActive) {
+        handler();
+        isScheduled = false;
+      }
+    });
+  });
+
+  return () => {
+    disposer();
+    isActive = false;
+  };
+}

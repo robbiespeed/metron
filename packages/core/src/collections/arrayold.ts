@@ -7,7 +7,7 @@ import {
   COLLECTION_EMIT_TYPE_KEY_DELETE,
   type AtomCollection,
   CollectionSizeAtom,
-  SignalNodeKeyMap,
+  OrbKeyMap,
   type AtomCollectionEmitKeyAdd,
   type AtomCollectionEmitKeyDelete,
   type AtomCollectionEmitKeyWrite,
@@ -93,6 +93,7 @@ export interface UntrackedAtomArray<T> {
 
 export interface AtomArray<T>
   extends AtomCollection<T, number, UntrackedAtomArray<T>, AtomArrayEmit> {
+  get(index: number): Atom<T | undefined>;
   at(offset: number): Atom<T | undefined>;
   map<U>(mapper: (value: T) => U): AtomArray<U>;
   // slice
@@ -465,37 +466,35 @@ class UntrackedSourceAtomArray<T> implements UntrackedAtomArray<T> {
 }
 
 class KeyEmitHelper {
-  private getWeakNode: (key: number) => WeakRef<SignalNode> | undefined;
-  private nodeKeyMap: SignalNodeKeyMap<number, AtomArrayEmit>;
+  private getWeakTransmit: OrbKeyMap<number, AtomArrayEmit>['weakTransmit'];
+  private orbKeyMap: OrbKeyMap<number, AtomArrayEmit>;
 
-  constructor(nodeKeyMap: SignalNodeKeyMap<number, AtomArrayEmit>) {
-    this.getWeakNode = nodeKeyMap.getWeakNode;
-    this.nodeKeyMap = nodeKeyMap;
+  constructor(orbKeyMap: OrbKeyMap<number, AtomArrayEmit>) {
+    this.getWeakTransmit = orbKeyMap.weakTransmit;
+    this.orbKeyMap = orbKeyMap;
   }
 
   sendKeyEmit(index: number, size: number) {
-    const { getWeakNode } = this;
-    getWeakNode(index)?.deref()?.update();
-    getWeakNode(index - size)
-      ?.deref()
-      ?.update();
+    const { getWeakTransmit } = this;
+    getWeakTransmit(index)?.deref()?.();
+    getWeakTransmit(index - size)?.deref()?.();
   }
 
   sendEmitInRange(start: number, end: number, size: number) {
-    for (const [offset, node] of this.nodeKeyMap.weakNodeEntries()) {
+    for (const [offset, node] of this.orbKeyMap.weakTransmitEntries()) {
       let index = offset >= 0 ? offset : offset + size;
       const isIndexInRange = index >= start && index <= end;
       if (isIndexInRange) {
-        node?.deref()?.update();
+        node?.deref()?.();
       }
     }
   }
 
   sendEmitInBounds(size: number) {
-    for (const [offset, node] of this.nodeKeyMap.weakNodeEntries()) {
+    for (const [offset, node] of this.orbKeyMap.weakTransmitEntries()) {
       const isOffsetInSizeBounds = offset >= 0 ? offset < size : -offset < size;
       if (isOffsetInSizeBounds) {
-        node?.deref()?.update();
+        node?.deref()?.();
       }
     }
   }
@@ -543,14 +542,14 @@ class KeyEmitHelper {
   }
 
   handleSort({ size, sortMap }: AtomArrayEmitSort['data']) {
-    for (const [offset, node] of this.nodeKeyMap.weakNodeEntries()) {
+    for (const [offset, node] of this.orbKeyMap.weakTransmitEntries()) {
       const index = offset >= 0 ? offset : offset + size;
       if (index === sortMap[index]) {
         continue;
       }
       const isIndexInSizeBounds = index < size;
       if (isIndexInSizeBounds) {
-        node?.deref()?.update();
+        node?.deref()?.();
       }
     }
   }
@@ -569,7 +568,7 @@ class KeyEmitHelper {
 }
 
 function createNodeKeyMap(emitter: Emitter<AtomArrayEmit>) {
-  const nodeKeyMap = new SignalNodeKeyMap<number, AtomArrayEmit>(
+  const nodeKeyMap = new OrbKeyMap<number, AtomArrayEmit>(
     emitter,
     (message: AtomArrayEmit) => {
       switch (message.type) {
@@ -615,7 +614,7 @@ class SourceAtomArray<T> implements AtomArray<T> {
   private emitter: Emitter<AtomArrayEmit>;
   private untracked?: UntrackedSourceAtomArray<T>;
   private sizeAtom?: CollectionSizeAtom;
-  private nodeKeyMap?: SignalNodeKeyMap<number, AtomArrayEmit>;
+  private nodeKeyMap?: OrbKeyMap<number, AtomArrayEmit>;
   private constructor(
     innerValues: T[],
     getSignalNode: () => SignalNode,
@@ -802,7 +801,7 @@ class MappedAtomArray<T, U> implements AtomArray<U> {
   private source: SourceAtomArray<T>;
   private mapper: (value: T) => U;
   private untracked: UntrackedMappedAtomArray<T, U>;
-  private nodeKeyMap?: SignalNodeKeyMap<number, AtomArrayEmit>;
+  private nodeKeyMap?: OrbKeyMap<number, AtomArrayEmit>;
   constructor(source: SourceAtomArray<T>, mapper: (value: T) => U) {
     this.source = source;
     this.mapper = mapper;

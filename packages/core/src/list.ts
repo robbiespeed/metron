@@ -4,7 +4,7 @@ import {
   COLLECTION_EMIT_TYPE_CLEAR,
   type AtomCollection,
   type AtomCollectionEmitMap,
-  type AtomCollectionUntrackedReader,
+  type UnwrappedAtomCollection,
   COLLECTION_EMIT_TYPE_KEY_WRITE,
   COLLECTION_EMIT_TYPE_KEY_ADD,
   COLLECTION_EMIT_TYPE_KEY_DELETE,
@@ -95,8 +95,7 @@ export interface AtomList<T>
   */
 }
 
-export interface RawAtomList<T>
-  extends AtomCollectionUntrackedReader<T, number> {
+export interface RawAtomList<T> extends UnwrappedAtomCollection<T, number> {
   at(index: number): T | undefined;
   toArray(): T[];
   toArraySlice(start?: number, end?: number): T[];
