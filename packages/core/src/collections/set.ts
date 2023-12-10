@@ -241,21 +241,17 @@ export function createMappedSet<TInput, TOutput extends TInput>(
   }
 
   const stabilizer = new Stabilizer(() =>
-    inputQueue.pullFromFirst(
-      connectionHandler,
-      handleMessage,
-      (isSubscribed) => {
-        if (isSubscribed) {
-          return;
-        }
-        inputQueue.subscribe(connectionHandler);
-        for (const value of input.unwrap()) {
-          const mappedValue = mapper(value);
-          lookup.set(value, mappedValue);
-          inner.add(mappedValue);
-        }
+    inputQueue.pull(connectionHandler, handleMessage, (isSubscribed) => {
+      if (isSubscribed) {
+        return;
       }
-    )
+      inputQueue.subscribe(connectionHandler);
+      for (const value of input.unwrap()) {
+        const mappedValue = mapper(value);
+        lookup.set(value, mappedValue);
+        inner.add(mappedValue);
+      }
+    })
   );
   const orb = createRelayOrb(stabilizer, Stabilizer.intercept, [input[ORB]]);
 
@@ -324,21 +320,17 @@ export function createFilteredSet<TValue>(
   };
 
   const stabilizer = new Stabilizer(() =>
-    inputQueue.pullFromFirst(
-      connectionHandler,
-      messageHandler,
-      (isSubscribed) => {
-        if (isSubscribed) {
-          return;
-        }
-        inputQueue.subscribe(connectionHandler);
-        for (const value of input.unwrap()) {
-          if (predicate(value)) {
-            inner.add(value);
-          }
+    inputQueue.pull(connectionHandler, messageHandler, (isSubscribed) => {
+      if (isSubscribed) {
+        return;
+      }
+      inputQueue.subscribe(connectionHandler);
+      for (const value of input.unwrap()) {
+        if (predicate(value)) {
+          inner.add(value);
         }
       }
-    )
+    })
   );
   const orb = createRelayOrb(stabilizer, Stabilizer.intercept, [input[ORB]]);
 

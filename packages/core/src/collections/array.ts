@@ -810,11 +810,7 @@ export function derivedArray<TInput, TOutput extends TInput>(
   };
 
   const stabilizer = new Stabilizer(() => {
-    inputQueue.pullFromFirst(
-      connectionHandler,
-      messageHandler,
-      noMessageHandler
-    );
+    inputQueue.pull(connectionHandler, messageHandler, noMessageHandler);
 
     const unstableItemCount = unstableItems.length;
     if (unstableItemCount === 0) {

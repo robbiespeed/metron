@@ -55,32 +55,7 @@ class MessageQueue<TMessage extends Message> {
     this.#subscriptions.push(sub);
   }
 
-  pullAll(
-    connectionHandler: ConnectionHandler,
-    messageHandler: (messages: TMessage[]) => void,
-    noMessagesHandler: (isSubscribed: boolean) => void
-  ): void {
-    // TODO: shrink before pull, only messages that haven't been pulled by every subscriber can be part of shrink
-    const sub = this.#subscriptionLookup.get(connectionHandler);
-    if (sub === undefined) {
-      noMessagesHandler(false);
-      return;
-    }
-
-    const messages = this.#messages;
-    const totalMessages = messages.length;
-    const { index } = sub;
-    if (index === totalMessages) {
-      noMessagesHandler(true);
-      return;
-    }
-    const pulledMessages = messages.slice(index);
-    sub.index = totalMessages;
-
-    messageHandler(pulledMessages);
-  }
-
-  pullFromFirst(
+  pull(
     connectionHandler: ConnectionHandler,
     messageHandler: (message: TMessage, remaining: number) => boolean,
     noMessagesHandler: (isSubscribed: boolean) => void
@@ -99,45 +74,13 @@ class MessageQueue<TMessage extends Message> {
       noMessagesHandler(true);
       return;
     }
-    const lastIndex = end - 1;
-    let keepAlive = true;
-    let i = index;
-    while (keepAlive && i < end) {
-      const message = messages[i]!;
-      keepAlive = messageHandler(message, lastIndex - i);
-      i++;
-    }
-    sub.index = i;
-  }
 
-  pullFromLast(
-    connectionHandler: ConnectionHandler,
-    messageHandler: (message: TMessage, remaining: number) => boolean,
-    noMessagesHandler: (isSubscribed: boolean) => void
-  ): void {
-    // TODO: shrink before pull
-    const sub = this.#subscriptionLookup.get(connectionHandler);
-    if (sub === undefined) {
+    // Artificial limit to 1 message due to synchronization bug, act as if connection died
+    if (index !== end - 1) {
       noMessagesHandler(false);
       return;
     }
-
-    const messages = this.#messages;
-    const { index } = sub;
-    const end = messages.length;
-    if (index === end) {
-      noMessagesHandler(true);
-      return;
-    }
-    const lastIndex = end - 1;
-    let keepAlive = true;
-    let i = lastIndex;
-    while (keepAlive && i < end) {
-      const message = messages[i]!;
-      keepAlive = messageHandler(message, i - index);
-      i--;
-    }
-    sub.index = lastIndex;
+    messageHandler(messages[index]!, 0);
   }
 
   purge(connectionHandler: ConnectionHandler): void {
