@@ -1,6 +1,3 @@
-import { ORB } from './atom.js';
-import { scheduleCleanup } from './schedulers.js';
-
 interface OrbLink {
   consumer: WeakRef<Orb<any>>;
   consumerId: string;
@@ -12,12 +9,11 @@ interface OrbLink {
 interface LinkArray extends Array<OrbLink> {}
 interface LinkRecord extends Record<string, OrbLink> {}
 
-let canScheduleLinkTrim = true;
 let scheduledNodeSourceTrims = new Set<WeakRef<Orb<any>>>();
 
-const afterTransmitQueue: (() => void)[] = [];
+// const afterTransmitQueue: (() => void)[] = [];
 
-let nextIdNum = 0n;
+let idCounter = 0n;
 const emptyArray = Object.freeze([]) as [];
 const emptySourceLinks: LinkRecord = Object.freeze(Object.create(null));
 
@@ -46,7 +42,7 @@ function defaultIntercept() {
 }
 
 export class Orb<TData> {
-  #id = `s${nextIdNum++}`;
+  #id = `o:${idCounter++}`;
   #version = 0;
   #weakRef: WeakRef<this> = new WeakRef(this);
   #sourceLinks: LinkRecord = emptySourceLinks;
@@ -129,46 +125,32 @@ export class Orb<TData> {
       throw new Error('Either orb cannot receive, or source cannot transmit');
     }
   }
-
-  static #trimNodeSourceLinks(this: void, orb: Orb<any>): void {
-    const version = orb.#version;
-    const sourceLinks = orb.#sourceLinks;
-    for (const sourceId in sourceLinks) {
-      const link = sourceLinks[sourceId]!;
-      const source = link.source.deref();
-
-      if (source === undefined) {
-        delete sourceLinks[sourceId];
-      } else if (link.consumerVersion < version) {
-        delete sourceLinks[sourceId];
-        removeLinkFromConsumerLinks(link, source.#consumerLinks);
-      }
-    }
-  }
-
-  static #trimScheduledLinks(this: void): void {
-    const trimSourceLinks = Orb.#trimNodeSourceLinks;
+  // TODO bench scheduledNodeSourceTrims as an array + added orb.#canScheduleTrim
+  static runTrim = (): void => {
     for (const ref of scheduledNodeSourceTrims) {
       const orb = ref.deref();
       if (orb) {
-        trimSourceLinks(orb);
+        const version = orb.#version;
+        const sourceLinks = orb.#sourceLinks;
+        for (const sourceId in sourceLinks) {
+          const link = sourceLinks[sourceId]!;
+          const source = link.source.deref();
+
+          if (source === undefined) {
+            delete sourceLinks[sourceId];
+          } else if (link.consumerVersion < version) {
+            delete sourceLinks[sourceId];
+            removeLinkFromConsumerLinks(link, source.#consumerLinks);
+          }
+        }
       }
     }
     scheduledNodeSourceTrims = new Set();
+  };
 
-    canScheduleLinkTrim = true;
-  }
-
-  static #scheduleTrimLinks(): void {
-    if (canScheduleLinkTrim) {
-      canScheduleLinkTrim = false;
-      scheduleCleanup(this.#trimScheduledLinks);
-    }
-  }
-
-  // bench perf of making these consts outside of the class instead
+  // bench perf of making these constants outside of the class instead
   static #canStartPropagation = true;
-  static #canRunTransmitQueue = true;
+  // static #canRunTransmitQueue = true;
   static #propagatedNodeIds = new Set<string>();
   static #propagationLinkStack: LinkArray[] = [];
 
@@ -225,7 +207,6 @@ export class Orb<TData> {
     Orb.#propagatedNodeIds = new Set<string>();
     linkStack.length = 0;
     Orb.#canStartPropagation = true;
-    Orb.#scheduleTrimLinks();
   }
 
   // collection/shared.ts OrbKeyMap might require that transmit be refactored to share a global propagation state
@@ -388,6 +369,8 @@ export const createReceiverOrb = Orb.createReceiver;
 export const createRelayOrb = Orb.createRelay;
 
 export const createTransceiverOrb = Orb.createTransceiver;
+
+export const runOrbTrim = Orb.runTrim;
 
 // export const queueAfterOrbTransmit =
 //   afterTransmitQueue.push.bind(afterTransmitQueue);

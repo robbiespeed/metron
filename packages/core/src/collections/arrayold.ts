@@ -1,17 +1,17 @@
 import {
-  COLLECTION_EMIT_TYPE_KEY_WRITE,
-  type AtomCollectionEmitMap,
-  COLLECTION_EMIT_TYPE_KEY_SWAP,
-  COLLECTION_EMIT_TYPE_CLEAR,
-  COLLECTION_EMIT_TYPE_KEY_ADD,
-  COLLECTION_EMIT_TYPE_KEY_DELETE,
+  COLLECTION_MESSAGE_TYPE_KEY_WRITE,
+  type AtomCollectionMessageMap,
+  COLLECTION_MESSAGE_TYPE_KEY_SWAP,
+  COLLECTION_MESSAGE_TYPE_CLEAR,
+  COLLECTION_MESSAGE_TYPE_KEY_ADD,
+  COLLECTION_MESSAGE_TYPE_KEY_DELETE,
   type AtomCollection,
   CollectionSizeAtom,
   OrbKeyMap,
-  type AtomCollectionEmitKeyAdd,
-  type AtomCollectionEmitKeyDelete,
-  type AtomCollectionEmitKeyWrite,
-  type AtomCollectionEmitKeySwap,
+  type AtomCollectionMessageKeyAdd,
+  type AtomCollectionMessageKeyDelete,
+  type AtomCollectionMessageKeyWrite,
+  type AtomCollectionMessageKeySwap,
 } from './shared.js';
 import {
   Emitter,
@@ -21,13 +21,13 @@ import {
 import { signalKey, toValueKey, type Atom } from '../particle.js';
 import { SignalNode } from '../signal-node.js';
 
-export const ARRAY_EMIT_TYPE_APPEND = 'ArrayAppend';
-export const ARRAY_EMIT_TYPE_REVERSE = 'ArrayReverse';
-export const ARRAY_EMIT_TYPE_SPLICE = 'ArraySplice';
-export const ARRAY_EMIT_TYPE_SORT = 'ArraySort';
+export const ARRAY_MESSAGE_TYPE_APPEND = 'ArrayAppend';
+export const ARRAY_MESSAGE_TYPE_REVERSE = 'ArrayReverse';
+export const ARRAY_MESSAGE_TYPE_SPLICE = 'ArraySplice';
+export const ARRAY_MESSAGE_TYPE_SORT = 'ArraySort';
 
 export type AtomArrayEmitAppend = EmitMessage<
-  typeof ARRAY_EMIT_TYPE_APPEND,
+  typeof ARRAY_MESSAGE_TYPE_APPEND,
   {
     readonly size: number;
     readonly oldSize: number;
@@ -35,12 +35,12 @@ export type AtomArrayEmitAppend = EmitMessage<
 >;
 
 export type AtomArrayEmitReverse = EmitMessage<
-  typeof ARRAY_EMIT_TYPE_REVERSE,
+  typeof ARRAY_MESSAGE_TYPE_REVERSE,
   number
 >;
 
 export type AtomArrayEmitSplice = EmitMessage<
-  typeof ARRAY_EMIT_TYPE_SPLICE,
+  typeof ARRAY_MESSAGE_TYPE_SPLICE,
   {
     readonly start: number;
     readonly deleteCount: number;
@@ -51,14 +51,14 @@ export type AtomArrayEmitSplice = EmitMessage<
 >;
 
 export type AtomArrayEmitSort = EmitMessage<
-  typeof ARRAY_EMIT_TYPE_SORT,
+  typeof ARRAY_MESSAGE_TYPE_SORT,
   {
     readonly sortMap: number[];
     readonly size: number;
   }
 >;
 
-export interface AtomArrayEmitMap extends AtomCollectionEmitMap<number> {
+export interface AtomArrayEmitMap extends AtomCollectionMessageMap<number> {
   append: AtomArrayEmitAppend;
   reverse: AtomArrayEmitReverse;
   splice: AtomArrayEmitSplice;
@@ -135,7 +135,7 @@ class AtomArrayWriter<T> {
 
       this.updateSignalNode();
       this.emitter.send({
-        type: COLLECTION_EMIT_TYPE_KEY_WRITE,
+        type: COLLECTION_MESSAGE_TYPE_KEY_WRITE,
         data: {
           key: index,
           size: innerValues.length,
@@ -175,7 +175,7 @@ class AtomArrayWriter<T> {
 
     this.updateSignalNode();
     this.emitter.send({
-      type: COLLECTION_EMIT_TYPE_KEY_SWAP,
+      type: COLLECTION_MESSAGE_TYPE_KEY_SWAP,
       data: {
         keySwap: [indexA, indexB],
         size: innerValues.length,
@@ -189,7 +189,7 @@ class AtomArrayWriter<T> {
 
     this.updateSignalNode();
     this.emitter.send({
-      type: COLLECTION_EMIT_TYPE_KEY_ADD,
+      type: COLLECTION_MESSAGE_TYPE_KEY_ADD,
       data: {
         key: oldSize,
         oldSize,
@@ -214,7 +214,7 @@ class AtomArrayWriter<T> {
 
     this.updateSignalNode();
     this.emitter.send({
-      type: ARRAY_EMIT_TYPE_APPEND,
+      type: ARRAY_MESSAGE_TYPE_APPEND,
       data: {
         oldSize,
         size,
@@ -238,7 +238,7 @@ class AtomArrayWriter<T> {
 
     this.updateSignalNode();
     this.emitter.send({
-      type: COLLECTION_EMIT_TYPE_KEY_ADD,
+      type: COLLECTION_MESSAGE_TYPE_KEY_ADD,
       data: {
         key: index,
         oldSize,
@@ -263,7 +263,7 @@ class AtomArrayWriter<T> {
 
     this.updateSignalNode();
     this.emitter.send({
-      type: COLLECTION_EMIT_TYPE_KEY_DELETE,
+      type: COLLECTION_MESSAGE_TYPE_KEY_DELETE,
       data: {
         key: index,
         oldSize,
@@ -282,7 +282,7 @@ class AtomArrayWriter<T> {
     const addCount = values.length;
     this.updateSignalNode();
     this.emitter.send({
-      type: ARRAY_EMIT_TYPE_SPLICE,
+      type: ARRAY_MESSAGE_TYPE_SPLICE,
       data: {
         start,
         deleteCount: deletedItems.length,
@@ -306,7 +306,7 @@ class AtomArrayWriter<T> {
 
     this.updateSignalNode();
     this.emitter.send({
-      type: COLLECTION_EMIT_TYPE_KEY_DELETE,
+      type: COLLECTION_MESSAGE_TYPE_KEY_DELETE,
       data: {
         key: size,
         oldSize,
@@ -326,7 +326,7 @@ class AtomArrayWriter<T> {
     innerValues.splice(0, oldSize, ...values);
     this.updateSignalNode();
     this.emitter.send({
-      type: ARRAY_EMIT_TYPE_SPLICE,
+      type: ARRAY_MESSAGE_TYPE_SPLICE,
       data: {
         start: 0,
         deleteCount: oldSize,
@@ -345,7 +345,7 @@ class AtomArrayWriter<T> {
     innerValues.reverse();
     this.updateSignalNode();
     this.emitter.send({
-      type: ARRAY_EMIT_TYPE_REVERSE,
+      type: ARRAY_MESSAGE_TYPE_REVERSE,
       data: size,
     });
   }
@@ -379,7 +379,7 @@ class AtomArrayWriter<T> {
 
     this.updateSignalNode();
     this.emitter.send({
-      type: ARRAY_EMIT_TYPE_SORT,
+      type: ARRAY_MESSAGE_TYPE_SORT,
       data: {
         sortMap,
         size,
@@ -395,7 +395,7 @@ class AtomArrayWriter<T> {
     innerValues.length = 0;
     this.updateSignalNode();
     this.emitter.send({
-      type: COLLECTION_EMIT_TYPE_CLEAR,
+      type: COLLECTION_MESSAGE_TYPE_CLEAR,
       data: {
         size: 0,
         oldSize,
@@ -503,7 +503,7 @@ class KeyEmitHelper {
     key,
     size,
     oldSize,
-  }: AtomCollectionEmitKeyAdd<number>['data']) {
+  }: AtomCollectionMessageKeyAdd<number>['data']) {
     if (key === oldSize) {
       this.sendKeyEmit(key, size);
     } else {
@@ -515,7 +515,7 @@ class KeyEmitHelper {
     key,
     size,
     oldSize,
-  }: AtomCollectionEmitKeyDelete<number>['data']) {
+  }: AtomCollectionMessageKeyDelete<number>['data']) {
     if (key === oldSize - 1) {
       this.sendKeyEmit(key, size);
     } else {
@@ -523,11 +523,14 @@ class KeyEmitHelper {
     }
   }
 
-  handleKeyWrite({ key, size }: AtomCollectionEmitKeyWrite<number>['data']) {
+  handleKeyWrite({ key, size }: AtomCollectionMessageKeyWrite<number>['data']) {
     this.sendKeyEmit(key, size);
   }
 
-  handleKeySwap({ keySwap, size }: AtomCollectionEmitKeySwap<number>['data']) {
+  handleKeySwap({
+    keySwap,
+    size,
+  }: AtomCollectionMessageKeySwap<number>['data']) {
     const [keyA, keyB] = keySwap;
     this.sendKeyEmit(keyA, size);
     this.sendKeyEmit(keyB, size);
@@ -572,31 +575,31 @@ function createNodeKeyMap(emitter: Emitter<AtomArrayEmit>) {
     emitter,
     (message: AtomArrayEmit) => {
       switch (message.type) {
-        case COLLECTION_EMIT_TYPE_CLEAR:
+        case COLLECTION_MESSAGE_TYPE_CLEAR:
           helper.sendEmitInBounds(message.data.oldSize);
           break;
-        case COLLECTION_EMIT_TYPE_KEY_ADD:
+        case COLLECTION_MESSAGE_TYPE_KEY_ADD:
           helper.handleKeyAdd(message.data);
           break;
-        case COLLECTION_EMIT_TYPE_KEY_DELETE:
+        case COLLECTION_MESSAGE_TYPE_KEY_DELETE:
           helper.handleKeyDelete(message.data);
           break;
-        case COLLECTION_EMIT_TYPE_KEY_WRITE:
+        case COLLECTION_MESSAGE_TYPE_KEY_WRITE:
           helper.handleKeyWrite(message.data);
           break;
-        case COLLECTION_EMIT_TYPE_KEY_SWAP:
+        case COLLECTION_MESSAGE_TYPE_KEY_SWAP:
           helper.handleKeySwap(message.data);
           break;
-        case ARRAY_EMIT_TYPE_APPEND:
+        case ARRAY_MESSAGE_TYPE_APPEND:
           helper.handleAppend(message.data);
           break;
-        case ARRAY_EMIT_TYPE_REVERSE:
+        case ARRAY_MESSAGE_TYPE_REVERSE:
           helper.sendEmitInBounds(message.data);
           break;
-        case ARRAY_EMIT_TYPE_SORT:
+        case ARRAY_MESSAGE_TYPE_SORT:
           helper.handleSort(message.data);
           break;
-        case ARRAY_EMIT_TYPE_SPLICE:
+        case ARRAY_MESSAGE_TYPE_SPLICE:
           helper.handleSplice(message.data);
           break;
       }

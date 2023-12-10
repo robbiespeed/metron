@@ -1,31 +1,21 @@
 import type { Atom } from '../atom.js';
-import type { EmitMessage } from '../emitter.js';
+import type { Message, MessageQueue } from './message-queue.js';
 
-export const COLLECTION_EMIT_TYPE_KEY_WRITE = 'CollectionKeyWrite';
-export const COLLECTION_EMIT_TYPE_KEY_ADD = 'CollectionKeyAdd';
-export const COLLECTION_EMIT_TYPE_KEY_DELETE = 'CollectionKeyDelete';
-export const COLLECTION_EMIT_TYPE_KEY_SWAP = 'CollectionKeySwap';
-export const COLLECTION_EMIT_TYPE_CLEAR = 'CollectionClear';
+export const COLLECTION_MESSAGE_TYPE_KEY_WRITE = 'CollectionKeyWrite';
+export const COLLECTION_MESSAGE_TYPE_KEY_ADD = 'CollectionKeyAdd';
+export const COLLECTION_MESSAGE_TYPE_KEY_DELETE = 'CollectionKeyDelete';
+export const COLLECTION_MESSAGE_TYPE_CLEAR = 'CollectionClear';
 
-export type AtomCollectionEmitKeyWrite<TKey = unknown> = EmitMessage<
-  typeof COLLECTION_EMIT_TYPE_KEY_WRITE,
+export type AtomCollectionMessageKeyWrite<TKey = unknown> = Message<
+  typeof COLLECTION_MESSAGE_TYPE_KEY_WRITE,
   {
     readonly key: TKey;
     readonly size: number;
   }
 >;
 
-export type AtomCollectionEmitKeyAdd<TKey = unknown> = EmitMessage<
-  typeof COLLECTION_EMIT_TYPE_KEY_ADD,
-  {
-    readonly key: TKey;
-    readonly size: number;
-    readonly oldSize: number;
-  }
->;
-
-export type AtomCollectionEmitKeyDelete<TKey = unknown> = EmitMessage<
-  typeof COLLECTION_EMIT_TYPE_KEY_DELETE,
+export type AtomCollectionMessageKeyAdd<TKey = unknown> = Message<
+  typeof COLLECTION_MESSAGE_TYPE_KEY_ADD,
   {
     readonly key: TKey;
     readonly size: number;
@@ -33,37 +23,28 @@ export type AtomCollectionEmitKeyDelete<TKey = unknown> = EmitMessage<
   }
 >;
 
-export type AtomCollectionEmitKeySwap<TKey = unknown> = EmitMessage<
-  typeof COLLECTION_EMIT_TYPE_KEY_SWAP,
+export type AtomCollectionMessageKeyDelete<TKey = unknown> = Message<
+  typeof COLLECTION_MESSAGE_TYPE_KEY_DELETE,
   {
-    /**
-     * a < b
-     */
-    readonly keySwap: readonly [a: TKey, b: TKey];
+    readonly key: TKey;
     readonly size: number;
+    readonly oldSize: number;
   }
 >;
 
-export type AtomCollectionEmitClear = EmitMessage<
-  typeof COLLECTION_EMIT_TYPE_CLEAR,
+export type AtomCollectionMessageClear = Message<
+  typeof COLLECTION_MESSAGE_TYPE_CLEAR,
   {
     readonly size: number;
     readonly oldSize: number;
   }
 >;
 
-export type AtomEmitMapValues<TEmitMap extends {}> = TEmitMap[keyof TEmitMap];
-
-export interface AtomCollectionEmitMap<TKey = unknown> {
-  keyWrite: AtomCollectionEmitKeyWrite<TKey>;
-  keyAdd: AtomCollectionEmitKeyAdd<TKey>;
-  keyDelete: AtomCollectionEmitKeyDelete<TKey>;
-  // keySwap: AtomCollectionEmitKeySwap<TKey>;
-  clear: AtomCollectionEmitClear;
-}
-
-export type AtomCollectionEmit<TKey = unknown> =
-  AtomCollectionEmitMap<TKey>[keyof AtomCollectionEmitMap];
+export type AtomCollectionMessage<TKey = unknown> =
+  | AtomCollectionMessageKeyWrite<TKey>
+  | AtomCollectionMessageKeyAdd<TKey>
+  | AtomCollectionMessageKeyDelete<TKey>
+  | AtomCollectionMessageClear;
 
 export interface UnwrappedAtomCollection<TKey, TValue> {
   [Symbol.iterator](): IterableIterator<unknown>;
@@ -75,14 +56,14 @@ export interface UnwrappedAtomCollection<TKey, TValue> {
 export interface AtomCollection<
   TKey,
   TValue,
-  TUnwrapped extends UnwrappedAtomCollection<
-    TKey,
-    TValue
-  > = UnwrappedAtomCollection<TKey, TValue>,
-  TEmit extends EmitMessage = AtomCollectionEmit
-> extends Atom<TUnwrapped, TEmit> {
+  TUnwrapped extends UnwrappedAtomCollection<TKey, TValue>,
+  TMessage extends Message
+> extends Atom<TUnwrapped> {
+  [MESSAGE_QUEUE]: MessageQueue<TMessage>;
   // readonly size: Atom<number>;
 }
+
+export const MESSAGE_QUEUE = Symbol('TODO: NAME');
 
 // export class CollectionSizeAtom implements Atom<number> {
 //   #innerValues: unknown[];
@@ -135,7 +116,7 @@ export interface AtomCollection<
 //   this.get(key)?.deref()?.();
 // }
 
-// export class OrbKeyMap<TKey, TEmit extends EmitMessageOption> {
+// export class OrbKeyMap<TKey, TEmit extends MessageOption> {
 //   #weakKeyOrbs = new Map<TKey, WeakRef<TransmitterOrb>>();
 //   #weakKeyTransmits = new Map<TKey, WeakRef<() => void>>();
 //   #emitDisposer: undefined | Disposer;

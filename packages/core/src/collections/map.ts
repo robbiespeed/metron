@@ -3,15 +3,15 @@ import { createEmitter, type Emitter } from '../emitter.js';
 import { createTransmitterOrb, type TransmitterOrb } from '../orb.js';
 import { emptyFn } from '../shared.js';
 import {
-  COLLECTION_EMIT_TYPE_CLEAR,
-  COLLECTION_EMIT_TYPE_KEY_ADD,
-  COLLECTION_EMIT_TYPE_KEY_DELETE,
-  COLLECTION_EMIT_TYPE_KEY_WRITE,
+  COLLECTION_MESSAGE_TYPE_CLEAR,
+  COLLECTION_MESSAGE_TYPE_KEY_ADD,
+  COLLECTION_MESSAGE_TYPE_KEY_DELETE,
+  COLLECTION_MESSAGE_TYPE_KEY_WRITE,
   type AtomCollection,
-  type AtomCollectionEmit,
+  type AtomCollectionMessage,
 } from './shared.js';
 
-type AtomMapEmit<TKey = unknown> = AtomCollectionEmit<TKey>;
+type AtomMapEmit<TKey = unknown> = AtomCollectionMessage<TKey>;
 
 interface AtomMap<TKey, TValue>
   extends AtomCollection<
@@ -47,14 +47,14 @@ class AtomMapWriter<TKey, TValue> {
       }
       inner.set(key, value);
       this.#emit({
-        type: COLLECTION_EMIT_TYPE_KEY_WRITE,
+        type: COLLECTION_MESSAGE_TYPE_KEY_WRITE,
         data: { key, size: oldSize },
       });
     } else {
       inner.set(key, value);
       const size = inner.size;
       this.#emit({
-        type: COLLECTION_EMIT_TYPE_KEY_ADD,
+        type: COLLECTION_MESSAGE_TYPE_KEY_ADD,
         data: { key, oldSize, size },
       });
     }
@@ -70,7 +70,7 @@ class AtomMapWriter<TKey, TValue> {
     inner.delete(key);
     const size = inner.size;
     this.#emit({
-      type: COLLECTION_EMIT_TYPE_KEY_DELETE,
+      type: COLLECTION_MESSAGE_TYPE_KEY_DELETE,
       data: { key, oldSize, size },
     });
     this.#transmit();
@@ -84,7 +84,7 @@ class AtomMapWriter<TKey, TValue> {
     }
     inner.clear();
     this.#emit({
-      type: COLLECTION_EMIT_TYPE_CLEAR,
+      type: COLLECTION_MESSAGE_TYPE_CLEAR,
       data: { oldSize, size: 0 },
     });
     this.#transmit();

@@ -1,7 +1,7 @@
 import { EMITTER, type Atom, ORB, type AtomReader } from './atom.js';
 import { emptyCacheToken, type EmptyCacheToken } from './cache.js';
 import { createEmitter, type Emitter } from './emitter.js';
-import { bindableRead, unexpectedRead } from './internal.js';
+import { bindableRead, unexpectedRead } from './internal/read.js';
 import {
   createRelayOrb,
   Orb,
@@ -12,7 +12,7 @@ import { emptyFn } from './shared.js';
 
 export class DerivedAtom<TValue> implements Atom<TValue> {
   #orb!: RelayOrb<DerivedAtom<TValue>>;
-  #emitter?: Emitter<void>;
+  #emitter?: Emitter;
   #emit = emptyFn;
   #store: TValue | EmptyCacheToken = emptyCacheToken;
   #derive: (read: AtomReader) => TValue;
@@ -22,7 +22,7 @@ export class DerivedAtom<TValue> implements Atom<TValue> {
   ) {
     this.#derive = derive;
   }
-  get [EMITTER](): Emitter<void> {
+  get [EMITTER](): Emitter {
     const existingEmitter = this.#emitter;
     if (existingEmitter !== undefined) {
       return existingEmitter;

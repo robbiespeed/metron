@@ -1,5 +1,3 @@
-import { scheduleCleanup } from '../schedulers.js';
-
 export interface Message<TType extends string = string, TData = unknown> {
   readonly type: TType;
   readonly data: TData;
@@ -25,8 +23,9 @@ export interface ConnectionHandler {
   (didDisconnect: boolean): boolean;
 }
 
+export type { MessageQueue };
+
 const queuesToClean: MessageQueue<any>[] = [];
-let canScheduleCleanup = true;
 
 /**
  * A pull based message queue which holds messages for active subscriber to pull.
@@ -35,37 +34,15 @@ let canScheduleCleanup = true;
  * subscription which have greater than `maxSize` pending messages will be removed,
  * and in doing so allow messages to be removed from the queue.
  */
-export class MessageQueue<TMessage extends Message> {
+class MessageQueue<TMessage extends Message> {
   #messages: TMessage[] = [];
   #subscriptionLookup = new Map<ConnectionHandler, MessageSubscription>();
   #subscriptions: MessageSubscription[] = [];
   #isScheduledForClean = false;
-  #maxSize: number;
+  // TODO: remove message queue and replace with change set manager
+  #maxSize: number = 1;
 
-  /**
-   * @param maxSize Max number of pending messages for a subscription
-   */
-  constructor(maxSize: number) {
-    this.#maxSize = maxSize;
-  }
-
-  addMessage(message: TMessage): void {
-    if (this.#subscriptions.length === 0) {
-      return;
-    }
-    this.#messages.push(message);
-
-    // Schedule cleaning
-    if (this.#isScheduledForClean) {
-      return;
-    }
-    this.#isScheduledForClean = true;
-    queuesToClean.push(this);
-    if (canScheduleCleanup) {
-      canScheduleCleanup = false;
-      scheduleCleanup(MessageQueue.#cleanupScheduled);
-    }
-  }
+  private constructor() {}
 
   subscribe(connectionHandler: ConnectionHandler): void {
     const lookup = this.#subscriptionLookup;
@@ -83,6 +60,7 @@ export class MessageQueue<TMessage extends Message> {
     messageHandler: (messages: TMessage[]) => void,
     noMessagesHandler: (isSubscribed: boolean) => void
   ): void {
+    // TODO: shrink before pull, only messages that haven't been pulled by every subscriber can be part of shrink
     const sub = this.#subscriptionLookup.get(connectionHandler);
     if (sub === undefined) {
       noMessagesHandler(false);
@@ -107,6 +85,7 @@ export class MessageQueue<TMessage extends Message> {
     messageHandler: (message: TMessage, remaining: number) => boolean,
     noMessagesHandler: (isSubscribed: boolean) => void
   ): void {
+    // TODO: shrink before pull
     const sub = this.#subscriptionLookup.get(connectionHandler);
     if (sub === undefined) {
       noMessagesHandler(false);
@@ -135,7 +114,8 @@ export class MessageQueue<TMessage extends Message> {
     connectionHandler: ConnectionHandler,
     messageHandler: (message: TMessage, remaining: number) => boolean,
     noMessagesHandler: (isSubscribed: boolean) => void
-  ) {
+  ): void {
+    // TODO: shrink before pull
     const sub = this.#subscriptionLookup.get(connectionHandler);
     if (sub === undefined) {
       noMessagesHandler(false);
@@ -160,7 +140,14 @@ export class MessageQueue<TMessage extends Message> {
     sub.index = lastIndex;
   }
 
-  static #cleanupScheduled(): void {
+  purge(connectionHandler: ConnectionHandler): void {
+    const sub = this.#subscriptionLookup.get(connectionHandler);
+    if (sub !== undefined) {
+      sub.index = this.#messages.length;
+    }
+  }
+
+  static runCleanup = (): void => {
     for (let i = 0; i < queuesToClean.length; i++) {
       const queue = queuesToClean[i]!;
       let minIndex = Infinity;
@@ -207,8 +194,45 @@ export class MessageQueue<TMessage extends Message> {
           sub.index = sub.index - minIndex;
         }
       }
+      queue.#isScheduledForClean = false;
     }
     queuesToClean.length = 0;
-    canScheduleCleanup = true;
+  };
+
+  static #bindableAddMessage<TMessage extends Message>(
+    this: MessageQueue<TMessage>,
+    message: TMessage
+  ): void {
+    if (this.#subscriptions.length === 0) {
+      return;
+    }
+    this.#messages.push(message);
+
+    // Schedule cleaning
+    if (this.#isScheduledForClean) {
+      return;
+    }
+    this.#isScheduledForClean = true;
+    queuesToClean.push(this);
+  }
+
+  static create<TMessage extends Message>(): {
+    queue: MessageQueue<TMessage>;
+    addMessage: (message: TMessage) => void;
+  } {
+    const queue = new MessageQueue<TMessage>();
+    return {
+      queue,
+      addMessage: MessageQueue.#bindableAddMessage.bind(queue),
+    };
   }
 }
+
+/**
+ * Create a {@link MessageQueue} instance and associated addMessage function
+ *
+ * @param maxSize Max number of pending messages for a subscription
+ */
+export const createMessageQueue = MessageQueue.create;
+
+export const runMessageQueueCleanup = MessageQueue.runCleanup;

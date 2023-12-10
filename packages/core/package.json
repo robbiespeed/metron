@@ -25,14 +25,19 @@
   "exports": {
     ".": {
       "types": "./lib/mod.d.ts",
-      "import": "./lib/mod.js"
-    },
-    "./*": {
-      "import": "./lib/*"
+      "default": "./lib/mod.js"
     },
     "./*.js": {
       "types": "./lib/*.d.ts",
-      "import": "./lib/*.js"
+      "default": "./lib/*.js"
+    },
+    "./internal/*": null,
+    "./package.json": "./package.json"
+  },
+  "imports": {
+    "#internal/*.js": {
+      "types": "./lib/internal/*.d.ts",
+      "default": "./lib/internal/*.js"
     }
   }
 }

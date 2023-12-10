@@ -1,5 +1,5 @@
 import { ORB, type Atom, type AtomReader } from './atom.js';
-import { bindableRead } from './internal.js';
+import { bindableRead } from './internal/read.js';
 import { Orb, createReceiverOrb, type ReceiverOrb } from './orb.js';
 import { emptyFn, type Disposer } from './shared.js';
 
@@ -25,10 +25,7 @@ export class Effect {
   #run!: () => void;
   #canSchedule = false;
   #cleanup = emptyFn;
-  private constructor() {
-    scheduled.push(this);
-  }
-  static runScheduled() {
+  static run() {
     for (let index = 0; index < scheduled.length; index++) {
       const effect = scheduled[index]!;
       const run = effect.#run;
@@ -39,6 +36,7 @@ export class Effect {
   }
   static #dispose(this: Effect) {
     this.#canSchedule = false;
+    this.#orb = undefined;
     this.#run = emptyFn;
     this.#cleanup();
     this.#cleanup = emptyFn;
@@ -86,15 +84,24 @@ export class Effect {
       throw new Error('Cleanup already registered');
     }
   }
-  static create(run: EffectRunner): Disposer {
+  static create(run: EffectRunner, immediate = false): Disposer {
     const effect = new Effect();
     const orb = createReceiverOrb<Effect>(effect, Effect.#intercept);
     const read = bindableRead.bind(orb) as AtomReader;
     effect.#orb = orb;
     effect.#run = Effect.#disposableRun.bind(effect, read, run);
+    if (immediate) {
+      effect.#run();
+    } else {
+      addScheduledEffect(effect);
+    }
     return Effect.#dispose.bind(effect);
   }
-  static createWithSources(sources: Atom<any>[], run: EffectRunner): Disposer {
+  static createWithSources(
+    sources: Atom<any>[],
+    run: EffectRunner,
+    immediate = false
+  ): Disposer {
     const effect = new Effect();
     const orb = createReceiverOrb<Effect>(
       effect,
@@ -104,11 +111,17 @@ export class Effect {
     const read = bindableRead.bind(orb) as AtomReader;
     effect.#orb = orb;
     effect.#run = Effect.#disposableRun.bind(effect, read, run);
+    if (immediate) {
+      effect.#run();
+    } else {
+      addScheduledEffect(effect);
+    }
     return Effect.#dispose.bind(effect);
   }
   static createFromSources(
     sources: Atom<any>[],
-    run: StaticEffectRunner
+    run: StaticEffectRunner,
+    immediate = false
   ): Disposer {
     const effect = new Effect();
     const orb = createReceiverOrb<Effect>(
@@ -119,10 +132,15 @@ export class Effect {
     effect.#orb = orb;
     const registerCleanup = Effect.#registerCleanup.bind(effect);
     effect.#run = run.bind(undefined, registerCleanup);
+    if (immediate) {
+      effect.#run();
+    } else {
+      addScheduledEffect(effect);
+    }
     return Effect.#dispose.bind(effect);
   }
 }
 
 export const effect = Effect.create;
 
-export const runScheduledEffects = Effect.runScheduled;
+export const runEffects = Effect.run;

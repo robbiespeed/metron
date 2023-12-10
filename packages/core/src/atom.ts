@@ -1,14 +1,13 @@
-import type { EmitMessageOption, Emitter } from './emitter.js';
+import type { Emitter } from './emitter.js';
 import type { TransmitterOrb } from './orb.js';
-import { scheduleMicroTask } from './schedulers.js';
 import type { Disposer } from './shared.js';
 
 export const EMITTER = Symbol('Emitter');
 export const ORB = Symbol('Orb');
 
-export interface Atom<TValue, TEmit extends EmitMessageOption = void> {
+export interface Atom<TValue> {
   readonly [ORB]: TransmitterOrb<unknown>;
-  readonly [EMITTER]: Emitter<TEmit>;
+  readonly [EMITTER]: Emitter;
   unwrap(): TValue;
 }
 
@@ -44,55 +43,4 @@ export function runAndSubscribe(
 ): Disposer {
   handler();
   return atom[EMITTER].subscribe(handler);
-}
-
-export function microtaskSubscribe(
-  atom: Atom<unknown>,
-  handler: () => void
-): Disposer {
-  let isScheduled = false;
-  let isActive = true;
-  const disposer = atom[EMITTER].subscribe(() => {
-    if (isScheduled) {
-      return;
-    }
-    isScheduled = true;
-    scheduleMicroTask(() => {
-      if (isActive) {
-        handler();
-        isScheduled = false;
-      }
-    });
-  });
-
-  return () => {
-    disposer();
-    isActive = false;
-  };
-}
-
-export function runAndMicrotaskSubscribe(
-  atom: Atom<unknown>,
-  handler: () => void
-): Disposer {
-  handler();
-  let isScheduled = false;
-  let isActive = true;
-  const disposer = atom[EMITTER].subscribe(() => {
-    if (isScheduled) {
-      return;
-    }
-    isScheduled = true;
-    scheduleMicroTask(() => {
-      if (isActive) {
-        handler();
-        isScheduled = false;
-      }
-    });
-  });
-
-  return () => {
-    disposer();
-    isActive = false;
-  };
 }

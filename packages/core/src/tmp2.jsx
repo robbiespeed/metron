@@ -1,3 +1,63 @@
+// function For () {}
+
+let nextId = 0;
+
+function createTodo(initText, initIsDone) {
+  const [text, setText] = state(initText);
+  const [isDone, setIsDone] = state(initIsDone);
+
+  return [
+    { text, isDone, id: nextId++ },
+    { setText, setIsDone },
+  ];
+}
+
+const todoWriters = new WeakMap();
+const [todos, todosWriter] = createStoreList();
+
+function addTodo(evt) {
+  if (evt.key !== 'Enter') {
+    return;
+  }
+
+  const [todo, todoWriter] = createTodo();
+
+  todoWriters.set(todo, todoWriter);
+  todosWriter.push(todo);
+
+  evt.target.value = '';
+}
+
+<For
+  each={todos}
+  // asTemplate={TodoRow}
+  as={(todo) => (
+    <div>
+      <input
+        value={todo.text}
+        onChange={(e) => {
+          // const index = i.unwrap();
+          // todosWriter.set(index, { text: e.target.value, isDone: todos.unwrap()[index].isDone });
+          // setText(e.target.value);
+          // todosWriter.get(i).setText(e.target.value);
+          // todosWriter.get(i.unwrap()).setText(e.target.value);
+          todoWriters.get(todo).setText(e.target.value);
+          // todosWriter.update(i, (todo) => todo.text = e.target.value);
+          // todosWriter.get(i).update((todo) => todo.text = e.target.value);
+        }}
+      />
+      <input
+        type="checkbox"
+        checked={todo.isDone}
+        onChange={(e) => {
+          // todosWriter.get(i.unwrap()).setIsDone(e.target.value);
+          todoWriters.get(todo).setIsDone(e.target.value);
+        }}
+      />
+    </div>
+  )}
+/>;
+
 const UserSettings = () => {
   return (
     <User>

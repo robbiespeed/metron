@@ -1,13 +1,13 @@
 import {
-  COLLECTION_EMIT_TYPE_CLEAR,
-  type AtomCollectionEmitKeyAdd,
-  type AtomCollectionEmitKeyDelete,
-  type AtomCollectionEmitKeySwap,
-  type AtomCollectionEmitKeyWrite,
-  COLLECTION_EMIT_TYPE_KEY_ADD,
-  COLLECTION_EMIT_TYPE_KEY_DELETE,
-  COLLECTION_EMIT_TYPE_KEY_SWAP,
-  COLLECTION_EMIT_TYPE_KEY_WRITE,
+  COLLECTION_MESSAGE_TYPE_CLEAR,
+  type AtomCollectionMessageKeyAdd,
+  type AtomCollectionMessageKeyDelete,
+  type AtomCollectionMessageKeySwap,
+  type AtomCollectionMessageKeyWrite,
+  COLLECTION_MESSAGE_TYPE_KEY_ADD,
+  COLLECTION_MESSAGE_TYPE_KEY_DELETE,
+  COLLECTION_MESSAGE_TYPE_KEY_SWAP,
+  COLLECTION_MESSAGE_TYPE_KEY_WRITE,
 } from 'metron-core/collections/shared.js';
 import type { Disposer } from 'metron-core';
 import {
@@ -16,10 +16,10 @@ import {
   type AtomListEmitAppend,
   type AtomListEmitSplice,
   type AtomListEmitSort,
-  LIST_EMIT_TYPE_APPEND,
-  LIST_EMIT_TYPE_SPLICE,
-  LIST_EMIT_TYPE_REVERSE,
-  LIST_EMIT_TYPE_SORT,
+  LIST_MESSAGE_TYPE_APPEND,
+  LIST_MESSAGE_TYPE_SPLICE,
+  LIST_MESSAGE_TYPE_REVERSE,
+  LIST_MESSAGE_TYPE_SORT,
 } from 'metron-core/list.js';
 import {
   isAtom,
@@ -29,8 +29,8 @@ import {
 } from 'metron-core/particle.js';
 import {
   scheduleCleanup,
-  setCleanupScheduler,
-  setMicroTaskScheduler,
+  setRestScheduler,
+  setFlowScheduler,
 } from 'metron-core/schedulers.js';
 import {
   NODE_TYPE_COMPONENT,
@@ -50,8 +50,8 @@ import { EVENT_DATA_KEY_PREFIX, EVENT_KEY_PREFIX } from './events.js';
 import type { DelegatedEventTarget, DelegatedEventParams } from './events.js';
 
 // TODO move to an init function
-setCleanupScheduler(requestIdleCallback);
-setMicroTaskScheduler(queueMicrotask);
+setRestScheduler(requestIdleCallback);
+setFlowScheduler(queueMicrotask);
 
 interface DomRenderContextProps {
   readonly root: ParentNode;
@@ -195,7 +195,7 @@ export function renderIntrinsic(
           );
         } else if (value === true) {
           element.toggleAttribute(key, true);
-        } else if (value !== false) {
+        } else if (value !== false && value !== undefined) {
           element.setAttribute(key, value as string);
         }
         continue;
@@ -492,7 +492,7 @@ export function renderAtomListInto(
   function handleAdd({
     key,
     oldSize,
-  }: AtomCollectionEmitKeyAdd<number>['data']) {
+  }: AtomCollectionMessageKeyAdd<number>['data']) {
     const value = rawList.get(key);
 
     if (key === oldSize) {
@@ -554,7 +554,7 @@ export function renderAtomListInto(
   function handleDelete({
     key,
     size,
-  }: AtomCollectionEmitKeyDelete<number>['data']) {
+  }: AtomCollectionMessageKeyDelete<number>['data']) {
     const oldIndexedItem = indexedItems[key]!;
     const oldDisposers = oldIndexedItem.d;
     if (oldDisposers !== EMPTY_ARRAY) {
@@ -574,7 +574,7 @@ export function renderAtomListInto(
 
   function handleSwap({
     keySwap: [keyA, keyB],
-  }: AtomCollectionEmitKeySwap<number>['data']) {
+  }: AtomCollectionMessageKeySwap<number>['data']) {
     const aIndexedItem = indexedItems[keyA]!;
     const bIndexedItem = indexedItems[keyB]!;
 
@@ -608,7 +608,7 @@ export function renderAtomListInto(
     indexedItems[keyB] = aIndexedItem;
   }
 
-  function handleWrite({ key }: AtomCollectionEmitKeyWrite<number>['data']) {
+  function handleWrite({ key }: AtomCollectionMessageKeyWrite<number>['data']) {
     indexedItem = indexedItems[key]!;
     const oldStart = indexedItem.s;
     const oldEnd = indexedItem.e;
@@ -755,30 +755,30 @@ export function renderAtomListInto(
 
   const listEmitDisposer = list.subscribe((message) => {
     switch (message.type) {
-      case COLLECTION_EMIT_TYPE_CLEAR: {
+      case COLLECTION_MESSAGE_TYPE_CLEAR: {
         return handleClear();
       }
-      case COLLECTION_EMIT_TYPE_KEY_ADD: {
+      case COLLECTION_MESSAGE_TYPE_KEY_ADD: {
         return handleAdd(message.data);
       }
-      case COLLECTION_EMIT_TYPE_KEY_DELETE: {
+      case COLLECTION_MESSAGE_TYPE_KEY_DELETE: {
         return handleDelete(message.data);
       }
-      case COLLECTION_EMIT_TYPE_KEY_SWAP: {
+      case COLLECTION_MESSAGE_TYPE_KEY_SWAP: {
         return handleSwap(message.data);
       }
-      case COLLECTION_EMIT_TYPE_KEY_WRITE: {
+      case COLLECTION_MESSAGE_TYPE_KEY_WRITE: {
         return handleWrite(message.data);
       }
-      case LIST_EMIT_TYPE_APPEND: {
+      case LIST_MESSAGE_TYPE_APPEND: {
         return handleAppend(message.data);
       }
-      case LIST_EMIT_TYPE_SPLICE: {
+      case LIST_MESSAGE_TYPE_SPLICE: {
         return handleSplice(message.data);
       }
-      case LIST_EMIT_TYPE_REVERSE:
+      case LIST_MESSAGE_TYPE_REVERSE:
         return handleReverse();
-      case LIST_EMIT_TYPE_SORT:
+      case LIST_MESSAGE_TYPE_SORT:
         return handleSort(message.data);
       default: {
         throw new Error('Unhandled emit', { cause: message });

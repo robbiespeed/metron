@@ -6,7 +6,7 @@ import { emptyFn } from './shared.js';
 export class StateAtom<T> implements Atom<T> {
   #orb?: TransmitterOrb<void>;
   #transmit: () => void = emptyFn;
-  #emitter?: Emitter<void>;
+  #emitter?: Emitter;
   #emit = emptyFn;
   #store: T;
   private constructor(initialValue: T) {
@@ -20,7 +20,7 @@ export class StateAtom<T> implements Atom<T> {
     this.#emit();
     this.#transmit();
   }
-  get [EMITTER](): Emitter<void> {
+  get [EMITTER](): Emitter {
     const existingEmitter = this.#emitter;
     if (existingEmitter !== undefined) {
       return existingEmitter;
