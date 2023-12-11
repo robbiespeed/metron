@@ -355,6 +355,7 @@ function createDerivedItem<TIn, TOut>(
   inValue: TIn,
   index: number
 ): DerivedItem<TOut> {
+  // TODO: might be able to make this bindable using item.read === arguments.callee
   const readInit: AtomReader = (atom) => {
     if (item.read === readInit) {
       const orb = createRelayOrb(item, itemIntercept);

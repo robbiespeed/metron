@@ -81,6 +81,7 @@ class MessageQueue<TMessage extends Message> {
       return;
     }
     messageHandler(messages[index]!, 0);
+    sub.index = end;
   }
 
   purge(connectionHandler: ConnectionHandler): void {
