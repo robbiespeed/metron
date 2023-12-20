@@ -22,7 +22,6 @@ import {
   type AtomCollectionMessage,
 } from './shared.js';
 import { Stabilizer } from './stabilizer.js';
-import type { TODO } from 'metron-core/internal/types.js';
 import { bindableRead } from 'metron-core/internal/read.js';
 import { emptyCacheToken } from 'metron-core/cache.js';
 
