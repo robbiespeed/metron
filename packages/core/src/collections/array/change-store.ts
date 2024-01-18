@@ -1,16 +1,14 @@
-export const HINT_FRESH = 0;
-export const HINT_CLEAR = 1;
-export const HINT_UNKNOWN = 2;
-export const HINT_SET = 3;
-export const HINT_INSERT = 4;
-export const HINT_DELETE = 5;
-export const HINT_MOVE = 6;
-export const HINT_SPLICE = 7;
-export const HINT_SWAP = 8;
+const TYPE_FRESH = 0;
+const TYPE_CLEAR = 1;
+const TYPE_UNKNOWN = 2;
+const TYPE_SET = 3;
+const TYPE_INSERT = 4;
+const TYPE_DELETE = 5;
+const TYPE_MOVE = 6;
+const TYPE_SPLICE = 7;
+const TYPE_SWAP = 8;
 
-export const ARRAY_CHANGESET_CREATE_CONNECTOR = Symbol(
-  'Array Changeset Create Connector'
-);
+export const ARRAY_CHANGE_STORE = Symbol('Array Change Store');
 
 export interface SpacialChange {
   start: number;
@@ -18,16 +16,9 @@ export interface SpacialChange {
   deleteCount: number;
 }
 
-export interface ArrayChangesetConnector {
-  renewConnection(): void;
-  isConnected(): boolean;
-  getChanges(): ReadonlyChangeArray;
-  getHint(): number;
-}
-
 type ReadonlyChangeArray = readonly (number | Readonly<SpacialChange>)[];
 
-export class ArrayChangeset {
+export class ArrayChangeStore {
   #changes: (number | SpacialChange)[] = [];
   #hint = HINT_FRESH;
   #nextConnectionToken?: symbol;

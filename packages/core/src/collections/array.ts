@@ -1,4 +1,4 @@
-import { EMITTER, ORB, type AtomReader } from '../atom.js';
+import { EMITTER, ORB, type AtomReader, type Atom } from '../atom.js';
 import { createEmitter, type Emitter } from '../emitter.js';
 import {
   createRelayOrb,
@@ -7,84 +7,20 @@ import {
   type TransmitterOrb,
 } from '../orb.js';
 import { emptyFn } from '../shared.js';
-import {
-  createMessageQueue,
-  type Message,
-  type MessageQueue,
-} from './message-queue.js';
-import {
-  COLLECTION_MESSAGE_TYPE_CLEAR,
-  COLLECTION_MESSAGE_TYPE_KEY_ADD,
-  COLLECTION_MESSAGE_TYPE_KEY_DELETE,
-  COLLECTION_MESSAGE_TYPE_KEY_WRITE,
-  type AtomCollection,
-  MESSAGE_QUEUE,
-  type AtomCollectionMessage,
-} from './shared.js';
 import { Stabilizer } from './stabilizer.js';
 import { bindableRead } from 'metron-core/internal/read.js';
 import { emptyCacheToken } from 'metron-core/cache.js';
+import {
+  ARRAY_CHANGESET_CREATE_CONNECTOR,
+  ArrayChangeset,
+  bindableCreateArrayChangesetConnector,
+  bindableGetConnectedArrayChangeset,
+} from './array/changeset.js';
+import { ArrayChangesetConnector } from './array/changeset.js';
 
-export const ARRAY_MESSAGE_TYPE_APPEND = 'ArrayAppend';
-export const ARRAY_MESSAGE_TYPE_MOVE = 'ArrayMove';
-export const ARRAY_MESSAGE_TYPE_REPLACE = 'ArrayReplace';
-// export const ARRAY_MESSAGE_TYPE_REVERSE = 'ArrayReverse';
-// export const ARRAY_MESSAGE_TYPE_SORT = 'ArraySort';
-export const ARRAY_MESSAGE_TYPE_SPLICE = 'ArraySplice';
-// export const ARRAY_MESSAGE_TYPE_SWAP = 'ArraySwap';
+interface AtomArray<TValue> extends Atom<ReadonlyArray<TValue>> {
+  [ARRAY_CHANGESET_CREATE_CONNECTOR](): ArrayChangesetConnector;
 
-export type AtomArrayMessageAppend = Message<
-  typeof ARRAY_MESSAGE_TYPE_APPEND,
-  {
-    readonly size: number;
-    readonly oldSize: number;
-  }
->;
-
-export type AtomArrayMessageMove = Message<
-  typeof ARRAY_MESSAGE_TYPE_MOVE,
-  {
-    readonly from: number;
-    readonly to: number;
-    readonly count: number;
-    readonly size: number;
-  }
->;
-
-export type AtomArrayMessageSplice = Message<
-  typeof ARRAY_MESSAGE_TYPE_SPLICE,
-  {
-    readonly start: number;
-    readonly deleteCount: number;
-    readonly addCount: number;
-    readonly size: number;
-    readonly oldSize: number;
-  }
->;
-
-export type AtomArrayMessageReplace = Message<
-  typeof ARRAY_MESSAGE_TYPE_REPLACE,
-  {
-    readonly start: number;
-    readonly replaceMap: readonly (number | undefined)[];
-    readonly size: number;
-    readonly oldSize: number;
-  }
->;
-
-type AtomArrayMessage =
-  | AtomCollectionMessage<number>
-  | AtomArrayMessageAppend
-  | AtomArrayMessageMove
-  | AtomArrayMessageSplice;
-
-interface AtomArray<TValue>
-  extends AtomCollection<
-    number,
-    TValue,
-    ReadonlyArray<TValue>,
-    AtomArrayMessage
-  > {
   // has(value: TValue): Atom<boolean>;
 }
 
@@ -94,7 +30,7 @@ class AtomArrayWriter<TValue> {
   #inner: TValue[];
   #transmit = emptyFn;
   #emit = emptyFn;
-  #addMessage!: (message: AtomArrayMessage) => void;
+  #getChangeset: () => undefined | ArrayChangeset = emptyFn as () => undefined;
   constructor(inner: TValue[]) {
     this.#inner = inner;
   }
@@ -110,10 +46,7 @@ class AtomArrayWriter<TValue> {
     }
 
     inner[index] = value;
-    this.#addMessage({
-      type: COLLECTION_MESSAGE_TYPE_KEY_WRITE,
-      data: { key: index, size },
-    });
+    this.#getChangeset()?.set(index);
     this.#emit();
     this.#transmit();
     return this;
@@ -122,10 +55,7 @@ class AtomArrayWriter<TValue> {
     const inner = this.#inner;
     const oldSize = inner.length;
     inner.push(value);
-    this.#addMessage({
-      type: COLLECTION_MESSAGE_TYPE_KEY_ADD,
-      data: { key: oldSize, oldSize, size: inner.length },
-    });
+    this.#getChangeset()?.set(oldSize);
     this.#emit();
     this.#transmit();
   }
@@ -133,16 +63,11 @@ class AtomArrayWriter<TValue> {
     const appendCount = values.length;
     if (appendCount === 0) {
       return;
-    } else if (appendCount === 1) {
-      return this.push(values[0]!);
     }
     const inner = this.#inner;
     const oldSize = inner.length;
     inner.push(...values);
-    this.#addMessage({
-      type: ARRAY_MESSAGE_TYPE_APPEND,
-      data: { oldSize, size: inner.length },
-    });
+    this.#getChangeset()?.splice(oldSize, appendCount, 0);
     this.#emit();
     this.#transmit();
   }
@@ -163,10 +88,7 @@ class AtomArrayWriter<TValue> {
       inner.splice(index, 0, value);
     }
 
-    this.#addMessage({
-      type: COLLECTION_MESSAGE_TYPE_KEY_ADD,
-      data: { key: index, oldSize, size: inner.length },
-    });
+    this.#getChangeset()?.insert(index);
     this.#emit();
     this.#transmit();
   }
@@ -184,53 +106,42 @@ class AtomArrayWriter<TValue> {
       inner.splice(index, 1);
     }
 
-    const size = inner.length;
-    this.#addMessage({
-      type: COLLECTION_MESSAGE_TYPE_KEY_DELETE,
-      data: { key: index, oldSize, size },
-    });
+    this.#getChangeset()?.delete(index);
     this.#emit();
     this.#transmit();
     return true;
   }
   swap(indexA: number, indexB: number): void {
-    throw new Error('TODO');
-    // const inner = this.#inner;
-    // const oldSize = inner.length;
+    const inner = this.#inner;
+    const oldSize = inner.length;
 
-    // if (
-    //   indexA >> 0 !== indexA ||
-    //   indexA < 0 ||
-    //   indexA >= oldSize ||
-    //   indexB >> 0 !== indexB ||
-    //   indexB < 0 ||
-    //   indexB >= oldSize
-    // ) {
-    //   throw new RangeError(INDEX_OUT_OF_BOUNDS_MESSAGE);
-    // }
+    if (
+      indexA >> 0 !== indexA ||
+      indexA < 0 ||
+      indexA >= oldSize ||
+      indexB >> 0 !== indexB ||
+      indexB < 0 ||
+      indexB >= oldSize
+    ) {
+      throw new RangeError(INDEX_OUT_OF_BOUNDS_MESSAGE);
+    }
 
-    // if (indexA === indexB) {
-    //   return;
-    // }
+    if (indexA === indexB) {
+      return;
+    }
 
-    // if (indexA > indexB) {
-    //   // Normalize so that a < b
-    //   return this.swap(indexB, indexA);
-    // }
+    if (indexA > indexB) {
+      // Normalize so that a < b
+      return this.swap(indexB, indexA);
+    }
 
-    // const temp = inner[indexA];
-    // inner[indexA] = inner[indexB]!;
-    // inner[indexB] = temp!;
+    const temp = inner[indexA];
+    inner[indexA] = inner[indexB]!;
+    inner[indexB] = temp!;
 
-    // this.#addMessage({
-    //   type: COLLECTION_MESSAGE_TYPE_KEY_SWAP,
-    //   data: {
-    //     keySwap: [indexA, indexB],
-    //     size: oldSize,
-    //   },
-    // });
-    // this.#emit();
-    // this.#transmit();
+    this.#getChangeset()?.swap(indexA, indexB);
+    this.#emit();
+    this.#transmit();
   }
   clear(): void {
     const inner = this.#inner;
@@ -239,10 +150,7 @@ class AtomArrayWriter<TValue> {
       return;
     }
     inner.length = 0;
-    this.#addMessage({
-      type: COLLECTION_MESSAGE_TYPE_CLEAR,
-      data: { oldSize, size: 0 },
-    });
+    this.#getChangeset()?.clear();
     this.#emit();
     this.#transmit();
   }
@@ -252,7 +160,6 @@ class AtomArrayWriter<TValue> {
     #inner: TValue[];
     #writer: AtomArrayWriter<TValue>;
     #orb: TransmitterOrb<PrimaryAtomArray<TValue>>;
-    #messageQueue: MessageQueue<AtomArrayMessage>;
     #emitter?: Emitter;
     constructor(inner: TValue[], writer: AtomArrayWriter<TValue>) {
       this.#inner = inner;
@@ -260,9 +167,6 @@ class AtomArrayWriter<TValue> {
       const { orb, transmit } = createTransmitterOrb(this);
       this.#orb = orb;
       writer.#transmit = transmit;
-      const { queue, addMessage } = createMessageQueue<AtomArrayMessage>();
-      this.#messageQueue = queue;
-      writer.#addMessage = addMessage;
     }
     get [ORB](): TransmitterOrb {
       return this.#orb;
@@ -280,8 +184,15 @@ class AtomArrayWriter<TValue> {
 
       return emitter;
     }
-    get [MESSAGE_QUEUE](): MessageQueue<AtomArrayMessage> {
-      return this.#messageQueue;
+    static #initChangeSetAndCreateConnector(
+      this: PrimaryAtomArray<unknown>
+    ): ArrayChangesetConnector {
+      const changeSet = new ArrayChangeset(10);
+      this.#writer.#getChangeset =
+        bindableGetConnectedArrayChangeset.bind(changeSet);
+      const create = bindableCreateArrayChangesetConnector.bind(changeSet);
+      this[ARRAY_CHANGESET_CREATE_CONNECTOR] = create;
+      return new ArrayChangesetConnector(changeSet);
     }
     unwrap(): ReadonlyArray<TValue> {
       return this.#inner;
@@ -302,19 +213,19 @@ class StabilizedAtomArray<TValue> implements AtomArray<TValue> {
   #inner: TValue[];
   #stabilizer: Stabilizer;
   #orb: TransmitterOrb;
-  #messageQueue: MessageQueue<AtomArrayMessage>;
+  #arrayChangeSet: ArrayChangeset;
   #destabilize: () => void;
   constructor(
     inner: TValue[],
     stabilizer: Stabilizer,
     orb: TransmitterOrb,
-    messageQueue: MessageQueue<AtomArrayMessage>,
+    arrayChangeSet: ArrayChangeset,
     destabilize: () => void
   ) {
     this.#inner = inner;
     this.#stabilizer = stabilizer;
     this.#orb = orb;
-    this.#messageQueue = messageQueue;
+    this.#arrayChangeSet = arrayChangeSet;
     this.#destabilize = destabilize;
   }
   get [ORB](): TransmitterOrb {
@@ -323,8 +234,8 @@ class StabilizedAtomArray<TValue> implements AtomArray<TValue> {
   get [EMITTER](): Emitter {
     return this.#stabilizer.emitter;
   }
-  get [MESSAGE_QUEUE](): MessageQueue<AtomArrayMessage> {
-    return this.#messageQueue;
+  [ARRAY_CHANGESET_CREATE_CONNECTOR](): ArrayChangesetConnector {
+    return new ArrayChangesetConnector(this.#arrayChangeSet);
   }
   unwrap(): readonly TValue[] {
     this.#stabilizer.stabilize();
@@ -412,12 +323,11 @@ export function derivedArray<TInput, TOutput extends TInput>(
   derive: (value: TInput, read: AtomReader) => TOutput | SkipToken
 ) {
   // Initialize with current values
-  const inputQueue = input[MESSAGE_QUEUE];
+  const inputConnector = input[ARRAY_CHANGESET_CREATE_CONNECTOR]();
 
   const unstableItems: DerivedItem[] = [];
   const derivedItems: DerivedItem[] = [];
   const inner: TOutput[] = [];
-  const { queue, addMessage } = createMessageQueue<AtomArrayMessage>();
 
   // TODO: hold strong ref to this somewhere
   const clearAndDestabilize = () => {
@@ -810,7 +720,7 @@ export function derivedArray<TInput, TOutput extends TInput>(
   };
 
   const stabilizer = new Stabilizer(() => {
-    inputQueue.pull(connectionHandler, messageHandler, noMessageHandler);
+    // inputQueue.pull(connectionHandler, messageHandler, noMessageHandler);
 
     const unstableItemCount = unstableItems.length;
     if (unstableItemCount === 0) {
@@ -842,10 +752,10 @@ export function derivedArray<TInput, TOutput extends TInput>(
         inner.splice(outIndex, 1);
         item.outIndex = -1;
         adjustOutIndexesRightOf(derivedItems, inIndex, -1);
-        addMessage({
-          type: 'CollectionKeyDelete',
-          data: { key: outIndex, oldSize, size: inner.length },
-        });
+        // addMessage({
+        //   type: 'CollectionKeyDelete',
+        //   data: { key: outIndex, oldSize, size: inner.length },
+        // });
       } else if (outIndex === -1) {
         // insert into inner
         const nextOutIndex = findOutIndexLeftOf(derivedItems, inIndex);
@@ -853,17 +763,17 @@ export function derivedArray<TInput, TOutput extends TInput>(
         inner.splice(nextOutIndex, 0, outValue);
         item.outIndex = nextOutIndex;
         adjustOutIndexesRightOf(derivedItems, inIndex, 1);
-        addMessage({
-          type: 'CollectionKeyAdd',
-          data: { key: nextOutIndex, oldSize, size: inner.length },
-        });
+        // addMessage({
+        //   type: 'CollectionKeyAdd',
+        //   data: { key: nextOutIndex, oldSize, size: inner.length },
+        // });
       } else {
         // update inner
         inner[outIndex] = outValue;
-        addMessage({
-          type: 'CollectionKeyWrite',
-          data: { key: outIndex, size: inner.length },
-        });
+        // addMessage({
+        //   type: 'CollectionKeyWrite',
+        //   data: { key: outIndex, size: inner.length },
+        // });
       }
     }
 
