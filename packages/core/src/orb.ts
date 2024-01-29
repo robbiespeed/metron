@@ -1,15 +1,15 @@
 interface OrbLink {
-  consumer: WeakRef<Orb<any>>;
+  consumer: WeakRef<ReceiverOrb>;
   consumerId: string;
   consumerVersion: number;
-  source: WeakRef<Orb<any>>;
+  source: WeakRef<TransmitterOrb>;
   sourceConsumerSlot: number;
 }
 
 interface LinkArray extends Array<OrbLink> {}
 interface LinkRecord extends Record<string, OrbLink> {}
 
-let scheduledNodeSourceTrims = new Set<WeakRef<Orb<any>>>();
+let scheduledNodeSourceTrims = new Set<WeakRef<ReceiverOrb>>();
 
 // const afterTransmitQueue: (() => void)[] = [];
 
@@ -47,7 +47,12 @@ export class Orb<TData> {
   #weakRef: WeakRef<this> = new WeakRef(this);
   #sourceLinks: LinkRecord = emptySourceLinks;
   #consumerLinks: LinkArray = emptyArray;
-  #intercept: (this: Orb<any>) => boolean;
+  /**
+   * TTData generic needed to allow instance to be assignable to wider typed Orb
+   * @see https://github.com/microsoft/TypeScript/issues/57209
+   */
+  #intercept: <TTData extends TData>(this: Orb<TTData>) => boolean;
+  // #intercept: (this: Orb<unknown>) => boolean;
   #flags = 0b0;
   data: TData;
 
@@ -64,7 +69,7 @@ export class Orb<TData> {
     return !(this.#flags & ORB_FLAG_RECEIVE);
   }
 
-  private constructor(data?: any, intercept?: (this: Orb<any>) => boolean) {
+  private constructor(data: TData, intercept?: () => boolean) {
     this.data = data;
     this.#intercept = intercept ?? defaultIntercept;
   }
@@ -96,25 +101,28 @@ export class Orb<TData> {
     this.#sourceLinks = Object.create(null);
   }
 
-  static link(consumer: ReceiverOrb<any>, source: TransmitterOrb<any>): void {
-    const sourceLinks = (consumer as Orb<any>).#sourceLinks;
+  static link(
+    consumer: ReceiverOrb<unknown>,
+    source: TransmitterOrb<unknown>
+  ): void {
+    const sourceLinks = consumer.#sourceLinks;
 
-    const sourceId = (source as Orb<any>).#id;
+    const sourceId = source.#id;
 
     const existingLink = sourceLinks[sourceId];
 
     if (existingLink !== undefined) {
-      existingLink.consumerVersion = (consumer as Orb<any>).#version;
+      existingLink.consumerVersion = consumer.#version;
       return;
     }
 
-    const sourceConsumers = (source as Orb<any>).#consumerLinks;
+    const sourceConsumers = source.#consumerLinks;
 
     const link: OrbLink = {
-      consumer: (consumer as Orb<any>).#weakRef,
-      consumerId: (consumer as Orb<any>).#id,
-      consumerVersion: (consumer as Orb<any>).#version,
-      source: (source as Orb<any>).#weakRef,
+      consumer: consumer.#weakRef,
+      consumerId: consumer.#id,
+      consumerVersion: consumer.#version,
+      source: source.#weakRef,
       sourceConsumerSlot: sourceConsumers.length,
     };
 
@@ -213,7 +221,7 @@ export class Orb<TData> {
   // should bench this to make sure it's not a major pref regression for happy paths
 
   // alternatively could revert back and make the transmit for OrbKeyMap be added to the afterTransmitQueue?
-  static #transmit(this: Orb<any>) {
+  static #transmit(this: Orb<unknown>) {
     Orb.#propagatedNodeIds.add(this.#id);
     if (++this.#version >= MAX_VERSION) {
       this.#rollVersion();
@@ -242,7 +250,10 @@ export class Orb<TData> {
     // }
   }
 
-  static #registerStaticSources(orb: Orb<any>, staticSources: Orb<any>[]) {
+  static #registerStaticSources(
+    orb: ReceiverOrb,
+    staticSources: TransmitterOrb[]
+  ) {
     const consumer = orb.#weakRef;
     const consumerId = orb.#id;
     const consumerVersion = Infinity;
@@ -281,7 +292,7 @@ export class Orb<TData> {
     orb: TransmitterOrb<TData>;
     transmit: () => void;
   } {
-    const orb = new Orb<TData>(data, intercept);
+    const orb = new Orb(data as TData, intercept);
     orb.#consumerLinks = [];
     orb.#flags |= ORB_FLAG_TRANSMIT;
 
@@ -292,54 +303,54 @@ export class Orb<TData> {
   }
   static createRelay<TData>(
     data: TData,
-    intercept: (this: Orb<TData>) => boolean,
-    staticSources?: TransmitterOrb<any>[]
+    intercept: (this: RelayOrb<TData>) => boolean,
+    staticSources?: TransmitterOrb[]
   ): RelayOrb<TData> {
-    const orb = new Orb<TData>(data, intercept);
+    const orb = new Orb(data, intercept) as RelayOrb<TData>;
     orb.#consumerLinks = [];
     orb.#sourceLinks = Object.create(null);
     orb.#flags |= ORB_FLAG_TRANSMIT | ORB_FLAG_RECEIVE;
 
     if (staticSources !== undefined) {
-      Orb.#registerStaticSources(orb, staticSources as Orb<any>[]);
+      Orb.#registerStaticSources(orb, staticSources);
     }
 
-    return orb as RelayOrb<TData>;
+    return orb;
   }
   static createReceiver<TData>(
     data: TData,
-    intercept: (this: Orb<TData>) => boolean,
-    staticSources?: TransmitterOrb<any>[]
+    intercept: (this: ReceiverOrb<TData>) => boolean,
+    staticSources?: TransmitterOrb[]
   ): ReceiverOrb<TData> {
-    const orb = new Orb<TData>(data, intercept);
+    const orb = new Orb(data, intercept) as ReceiverOrb<TData>;
     orb.#sourceLinks = Object.create(null);
     orb.#flags |= ORB_FLAG_RECEIVE;
 
     if (staticSources !== undefined) {
-      Orb.#registerStaticSources(orb, staticSources as Orb<any>[]);
+      Orb.#registerStaticSources(orb, staticSources);
     }
 
-    return orb as ReceiverOrb<TData>;
+    return orb;
   }
   static createTransceiver<TData>(
     data: TData,
-    intercept: (this: Orb<TData>) => boolean,
-    staticSources?: TransmitterOrb<any>[]
+    intercept: (this: TransceiverOrb<TData>) => boolean,
+    staticSources?: TransmitterOrb[]
   ): {
     orb: TransceiverOrb<TData>;
     transmit: () => void;
   } {
-    const orb = new Orb<TData>(data, intercept);
+    const orb = new Orb(data, intercept) as TransceiverOrb<TData>;
     orb.#consumerLinks = [];
     orb.#sourceLinks = Object.create(null);
     orb.#flags |= ORB_FLAG_TRANSMIT | ORB_FLAG_RECEIVE;
 
     if (staticSources !== undefined) {
-      Orb.#registerStaticSources(orb, staticSources as Orb<any>[]);
+      Orb.#registerStaticSources(orb, staticSources);
     }
 
     return {
-      orb: orb as TransceiverOrb<TData>,
+      orb: orb,
       transmit: Orb.#transmit.bind(orb),
     };
   }
@@ -358,7 +369,7 @@ export interface TransceiverOrb<TData = unknown> extends Orb<TData> {
   readonly isReceiver: true;
 }
 
-export interface RelayOrb<TData = unknown> extends TransceiverOrb<TData> {}
+export type RelayOrb<TData = unknown> = TransceiverOrb<TData>;
 
 export const linkOrbs = Orb.link;
 

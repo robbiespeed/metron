@@ -45,7 +45,7 @@ export class DerivedAtom<TValue> implements Atom<TValue> {
     }
     return current;
   }
-  static #intercept(this: Orb<DerivedAtom<any>>) {
+  static #intercept(this: Orb<DerivedAtom<unknown>>) {
     const derived = this.data;
     if (derived.#store === emptyCacheToken) {
       return false;
@@ -64,7 +64,7 @@ export class DerivedAtom<TValue> implements Atom<TValue> {
     return derived;
   }
   static createWithSources<TValue>(
-    sources: Atom<any>[],
+    sources: Atom<unknown>[],
     derive: (this: DerivedAtom<TValue>, read: AtomReader) => TValue
   ): Atom<TValue> {
     const derived = new DerivedAtom(derive);
@@ -78,7 +78,7 @@ export class DerivedAtom<TValue> implements Atom<TValue> {
     return derived;
   }
   static createFromSources<TValue>(
-    sources: Atom<any>[],
+    sources: Atom<unknown>[],
     derive: (this: DerivedAtom<TValue>) => TValue
   ): Atom<TValue> {
     const derived = new DerivedAtom(derive);

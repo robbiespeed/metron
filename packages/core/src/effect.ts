@@ -98,7 +98,7 @@ export class Effect {
     return Effect.#dispose.bind(effect);
   }
   static createWithSources(
-    sources: Atom<any>[],
+    sources: Atom<unknown>[],
     run: EffectRunner,
     immediate = false
   ): Disposer {
@@ -119,7 +119,7 @@ export class Effect {
     return Effect.#dispose.bind(effect);
   }
   static createFromSources(
-    sources: Atom<any>[],
+    sources: Atom<unknown>[],
     run: StaticEffectRunner,
     immediate = false
   ): Disposer {

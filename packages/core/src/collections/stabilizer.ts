@@ -4,23 +4,23 @@ import { emptyFn } from 'metron-core/shared.js';
 
 export class Stabilizer {
   #isStable = false;
-  #hook: () => void;
+  #hook: () => undefined;
   #emitter?: Emitter;
   #emit = emptyFn;
-  constructor(hook: () => void) {
+  constructor(hook: () => undefined) {
     this.#hook = hook;
   }
   get isStable(): boolean {
     return this.#isStable;
   }
-  stabilize(): void {
+  stabilize(): undefined {
     if (this.#isStable) {
       return;
     }
     this.#hook();
     this.#isStable = true;
   }
-  destabilize(): void {
+  destabilize(): undefined {
     this.#isStable = false;
   }
   get emitter(): Emitter {

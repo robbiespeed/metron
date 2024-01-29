@@ -1,141 +1,151 @@
-const TYPE_FRESH = 0;
-const TYPE_CLEAR = 1;
-const TYPE_UNKNOWN = 2;
-const TYPE_SET = 3;
-const TYPE_INSERT = 4;
-const TYPE_DELETE = 5;
-const TYPE_MOVE = 6;
-const TYPE_SPLICE = 7;
-const TYPE_SWAP = 8;
+export const HINT_NONE = 0;
+export const HINT_SET = 1;
+export const HINT_INSERT = 2;
+export const HINT_DELETE = 3;
+export const HINT_PUSH = 4;
+export const HINT_SPLICE = 5;
+export const HINT_MOVE_RIGHT = 6;
+export const HINT_MOVE_LEFT = 7;
+export const HINT_SWAP = 8;
 
-export const ARRAY_CHANGE_STORE = Symbol('Array Change Store');
-
-export interface SpacialChange {
-  start: number;
-  addCount: number;
-  deleteCount: number;
+export interface ArrayChange {
+  readonly hint: number;
+  readonly start: number;
+  readonly data: unknown;
 }
-
-type ReadonlyChangeArray = readonly (number | Readonly<SpacialChange>)[];
-
-export class ArrayChangeStore {
-  #changes: (number | SpacialChange)[] = [];
-  #hint = HINT_FRESH;
-  #nextConnectionToken?: symbol;
-  #connectionToken?: symbol;
-  #maxComplexity: number;
-  constructor(maxComplexity: number) {
-    this.#maxComplexity = maxComplexity;
-  }
-  #clearState() {
-    this.#hint = HINT_FRESH;
-    this.#changes.length = 0;
-    this.#connectionToken = undefined;
-    this.#nextConnectionToken = undefined;
-  }
-  #setHint(hint: number): boolean {
-    if (this.#changes.length >= this.#maxComplexity) {
-      this.#clearState();
-      return false;
-    }
-    const prevHint = this.#hint;
-    if (prevHint === HINT_FRESH) {
-      this.#hint = hint;
-    } else if (prevHint === HINT_CLEAR) {
-      this.#clearState();
-      return false;
-    } else {
-      this.#hint = HINT_UNKNOWN;
-    }
-    return true;
-  }
-  set(index: number): void {
-    if (this.#setHint(HINT_SET)) {
-      this.#changes.push(index);
-    }
-  }
-  clear(): void {
-    this.#hint = HINT_CLEAR;
-    this.#changes.length = 0;
-  }
-  replace(): void {
-    this.#clearState();
-  }
-  insert(index: number): void {
-    if (this.#setHint(HINT_INSERT)) {
-      this.#changes.push({ start: index, addCount: 1, deleteCount: 0 });
-    }
-  }
-  delete(index: number): void {
-    if (this.#setHint(HINT_DELETE)) {
-      this.#changes.push({ start: index, addCount: 0, deleteCount: 1 });
-    }
-  }
-  move(from: number, to: number, count: number) {
-    if (this.#setHint(HINT_MOVE)) {
-      this.#changes.push(
-        { start: from, addCount: 0, deleteCount: count },
-        { start: to, addCount: count, deleteCount: 0 }
-      );
-    }
-  }
-  splice(start: number, addCount: number, deleteCount: number) {
-    if (this.#setHint(HINT_SPLICE)) {
-      this.#changes.push({ start, addCount, deleteCount });
-    }
-  }
-  swap(a: number, b: number) {
-    if (this.#setHint(HINT_SWAP)) {
-      this.#changes.push(a, b);
-    }
-  }
-  static bindableGetConnected(
-    this: ArrayChangeset
-  ): ArrayChangeset | undefined {
-    if (this.#nextConnectionToken !== undefined) {
-      this.#connectionToken = this.#nextConnectionToken;
-      this.#nextConnectionToken = undefined;
-    }
-    return this.#connectionToken !== undefined ? this : undefined;
-  }
-  static Connector = class ArrayChangesetConnector {
-    #source: ArrayChangeset;
-    #consumerToken: symbol;
-    constructor(source: ArrayChangeset) {
-      this.#source = source;
-      if (source.#nextConnectionToken === undefined) {
-        source.#nextConnectionToken = Symbol();
-      }
-      this.#consumerToken = source.#nextConnectionToken;
-    }
-    renewConnection(): void {
-      const source = this.#source;
-      if (source.#nextConnectionToken === undefined) {
-        source.#nextConnectionToken = Symbol();
-      }
-      this.#consumerToken = source.#nextConnectionToken;
-    }
-    isConnected(): boolean {
-      return this.#consumerToken === this.#source.#connectionToken;
-    }
-    getChanges(): ReadonlyChangeArray {
-      return this.#source.#changes;
-    }
-    getHint(): number {
-      return this.#source.#hint;
-    }
-    static bindableCreateConnector(
-      this: ArrayChangeset
-    ): ArrayChangesetConnector {
-      return new ArrayChangesetConnector(this);
-    }
+export interface ArrayChangeBasic extends ArrayChange {
+  readonly hint: typeof HINT_NONE;
+  readonly data: undefined;
+}
+export interface ArrayChangeIndex extends ArrayChange {
+  readonly hint: typeof HINT_SET | typeof HINT_INSERT | typeof HINT_DELETE;
+  readonly data: undefined;
+}
+export interface ArrayChangeMove extends ArrayChange {
+  readonly hint: typeof HINT_MOVE_RIGHT | typeof HINT_MOVE_LEFT;
+  readonly data: {
+    readonly count: number;
+    readonly from: number;
+    readonly to: number;
+  };
+}
+export interface ArrayChangePush extends ArrayChange {
+  readonly hint: typeof HINT_PUSH;
+  readonly data: number;
+}
+export interface ArrayChangeSwap extends ArrayChange {
+  readonly hint: typeof HINT_SWAP;
+  readonly data: number;
+}
+export interface ArrayChangeSplice extends ArrayChange {
+  readonly hint: typeof HINT_SPLICE;
+  readonly data: {
+    readonly addCount: number;
+    readonly deleteCount: number;
   };
 }
 
-export const ArrayChangesetConnector = ArrayChangeset.Connector;
+export type ArrayChangeUnion =
+  | ArrayChangeBasic
+  | ArrayChangeIndex
+  | ArrayChangeMove
+  | ArrayChangePush
+  | ArrayChangeSwap
+  | ArrayChangeSplice;
 
-export const bindableGetConnectedArrayChangeset =
-  ArrayChangeset.bindableGetConnected;
+type WritableArrayChange = {
+  -readonly [K in keyof ArrayChange]: ArrayChange[K];
+};
 
-export const bindableCreateArrayChangesetConnector =
-  ArrayChangeset.Connector.bindableCreateConnector;
+export const ARRAY_CHANGE_STORE = Symbol('Array Change Store');
+
+export type ReadonlyArrayChangeStore = Pick<
+  ArrayChangeStore,
+  'get' | 'nextConnectionToken'
+>;
+
+export class ArrayChangeStore {
+  #change: undefined | ArrayChangeUnion = undefined;
+  #nextConnectionToken?: symbol;
+  #connectionToken?: symbol;
+  #clearState() {
+    this.#change = undefined;
+    this.#connectionToken = undefined;
+    this.#nextConnectionToken = undefined;
+  }
+  #commit(changeStart: number): boolean {
+    const nextToken = this.#nextConnectionToken;
+    if (nextToken !== undefined) {
+      this.#change = undefined;
+      this.#connectionToken = nextToken;
+      this.#nextConnectionToken = undefined;
+    }
+    if (this.#connectionToken === undefined) {
+      return false;
+    }
+    const existingChange: WritableArrayChange | undefined = this.#change;
+    if (existingChange === undefined) {
+      return true;
+    }
+    existingChange.hint = HINT_NONE;
+    existingChange.data = undefined;
+    if (changeStart < existingChange.start) {
+      existingChange.start = changeStart;
+    }
+    return false;
+  }
+  index(
+    hint: typeof HINT_SET | typeof HINT_INSERT | typeof HINT_DELETE,
+    index: number
+  ): undefined {
+    if (this.#commit(index)) {
+      this.#change = { hint, start: index, data: undefined };
+    }
+  }
+  clear(): undefined {
+    this.#clearState();
+  }
+  moveRight(from: number, to: number, count: number): undefined {
+    if (this.#commit(from)) {
+      this.#change = {
+        hint: HINT_MOVE_RIGHT,
+        start: from,
+        data: { count, from, to },
+      };
+    }
+  }
+  moveLeft(from: number, to: number, count: number): undefined {
+    if (this.#commit(to)) {
+      this.#change = {
+        hint: HINT_MOVE_LEFT,
+        start: to,
+        data: { count, from, to },
+      };
+    }
+  }
+  push(start: number, count: number): undefined {
+    if (this.#commit(start)) {
+      this.#change = { hint: HINT_PUSH, start, data: count };
+    }
+  }
+  splice(start: number, addCount: number, deleteCount: number): undefined {
+    if (this.#commit(start)) {
+      this.#change = {
+        hint: HINT_SPLICE,
+        start,
+        data: { addCount, deleteCount },
+      };
+    }
+  }
+  swap(a: number, b: number): undefined {
+    if (this.#commit(a)) {
+      this.#change = { hint: HINT_SWAP, start: a, data: b };
+    }
+  }
+  get nextConnectionToken(): symbol {
+    return (this.#nextConnectionToken ??= Symbol());
+  }
+  get(token: symbol): undefined | ArrayChangeUnion {
+    return token === this.#connectionToken ? this.#change : undefined;
+  }
+}
