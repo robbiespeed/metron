@@ -1,24 +1,27 @@
-import { EMITTER, type Atom, ORB } from './atom.js';
+import { EMITTER, type Atom, ORB, IS_ATOM } from './atom.js';
 import { createEmitter, type Emitter } from './emitter.js';
 import { createTransmitterOrb, type TransmitterOrb } from './orb.js';
 import { emptyFn } from './shared.js';
 
 export class StateAtom<T> implements Atom<T> {
-  #orb?: TransmitterOrb<void>;
-  #transmit: () => void = emptyFn;
+  #orb?: TransmitterOrb<undefined>;
+  #transmit = emptyFn;
   #emitter?: Emitter;
   #emit = emptyFn;
   #store: T;
   private constructor(initialValue: T) {
     this.#store = initialValue;
   }
-  #set(value: T): void {
+  #set(value: T): undefined {
     if (value === this.#store) {
       return;
     }
     this.#store = value;
     this.#emit();
     this.#transmit();
+  }
+  get [IS_ATOM](): true {
+    return true;
   }
   get [EMITTER](): Emitter {
     const existingEmitter = this.#emitter;
@@ -48,7 +51,7 @@ export class StateAtom<T> implements Atom<T> {
   unwrap(): T {
     return this.#store;
   }
-  static create<T>(initialValue: T): [StateAtom<T>, (value: T) => void] {
+  static create<T>(initialValue: T): [StateAtom<T>, (value: T) => undefined] {
     const ref = new StateAtom(initialValue);
     // TODO: bench perf of set static vs instance
     return [ref, ref.#set.bind(ref)];

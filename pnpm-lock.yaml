@@ -11,6 +11,9 @@ importers:
       '@esbuild-kit/esm-loader':
         specifier: ^2.5.5
         version: 2.5.5
+      '@metron/test-utils':
+        specifier: workspace:*
+        version: link:packages/test-utils
       '@types/chai':
         specifier: ^4.3.4
         version: 4.3.4
@@ -26,9 +29,6 @@ importers:
       chai:
         specifier: ^4.3.7
         version: 4.3.7
-      metron-test-utils:
-        specifier: workspace:*
-        version: link:packages/test-utils
       mocha:
         specifier: ^10.2.0
         version: 10.2.0
@@ -44,21 +44,19 @@ importers:
 
   examples/bench:
     dependencies:
-      metron-core:
+      '@metron/core':
         specifier: workspace:*
         version: link:../../packages/core
       mitata:
         specifier: ^0.1.6
         version: 0.1.6
 
-  examples/mehh: {}
-
   examples/web-todo:
     dependencies:
-      metron-core:
+      '@metron/core':
         specifier: workspace:*
         version: link:../../packages/core
-      metron-jsx:
+      '@metron/jsx':
         specifier: workspace:*
         version: link:../../packages/jsx
     devDependencies:
@@ -70,11 +68,11 @@ importers:
 
   packages/jsx:
     dependencies:
-      metron-core:
+      '@metron/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      metron-jsx:
+      '@metron/jsx':
         specifier: workspace:*
         version: 'link:'
 

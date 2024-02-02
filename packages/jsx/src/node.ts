@@ -1,7 +1,17 @@
-import type { JSXContextStore, JSXContext } from './context.js';
+import type { Disposer } from '@metron/core/shared.js';
+import type { JSXContext, ContextProviderProps } from './context.js';
 
 export interface JSXBaseNode {
-  readonly [nodeBrandKey]: true;
+  readonly [IS_NODE]: true;
+  readonly nodeType: number;
+  readonly tag: unknown;
+  readonly props: JSXProps;
+}
+
+export interface JSXIntrinsicNode extends JSXBaseNode {
+  readonly nodeType: typeof NODE_TYPE_INTRINSIC;
+  readonly tag: string;
+  readonly props: JSXProps;
 }
 
 export interface JSXComponentNode extends JSXBaseNode {
@@ -10,22 +20,28 @@ export interface JSXComponentNode extends JSXBaseNode {
   readonly props: JSXProps;
 }
 
+// TODO: maybe if render logic is determined via context this could be converted to a advanced node
 export interface JSXContextProviderNode extends JSXBaseNode {
   readonly nodeType: typeof NODE_TYPE_CONTEXT_PROVIDER;
-  readonly assignments: Partial<JSXContextStore>;
-  readonly children: unknown;
+  readonly tag: undefined;
+  readonly props: ContextProviderProps;
 }
 
-export interface JSXIntrinsicNode extends JSXBaseNode {
-  readonly nodeType: typeof NODE_TYPE_INTRINSIC;
-  readonly props: JSXProps;
-  readonly tag: string;
+export interface JSXAdvancedNode<
+  TProps extends JSXProps = JSXProps,
+  TParent = any,
+  TChild = any
+> extends JSXBaseNode {
+  readonly nodeType: typeof NODE_TYPE_ADVANCED;
+  readonly tag: JSXRenderFn<TProps, TParent, TChild>;
+  readonly props: TProps;
 }
 
 export type JSXNode =
+  | JSXIntrinsicNode
   | JSXComponentNode
   | JSXContextProviderNode
-  | JSXIntrinsicNode;
+  | JSXAdvancedNode;
 
 export type JSXProps = {};
 
@@ -33,7 +49,11 @@ export interface Component<
   TProps extends JSXProps = JSXProps,
   TReturn = unknown
 > {
-  (props: TProps, context: JSXContext): TReturn;
+  (
+    props: TProps,
+    context: JSXContext
+    // register: (dispose: Disposer) => undefined
+  ): TReturn;
 }
 
 export interface StaticComponent<
@@ -41,22 +61,36 @@ export interface StaticComponent<
   TReturn = unknown
 > {
   (props: TProps): TReturn;
-  [staticComponentBrandKey]: true;
+  [IS_STATIC_COMPONENT]: true;
 }
 
-export const NODE_TYPE_COMPONENT = 'Component';
-export const NODE_TYPE_CONTEXT_PROVIDER = 'ContextProvider';
-export const NODE_TYPE_FRAGMENT = 'Fragment';
-export const NODE_TYPE_INTRINSIC = 'Intrinsic';
+export interface JSXRenderFn<
+  TValue = unknown,
+  TParent = unknown,
+  TChild = unknown
+> {
+  (
+    value: TValue,
+    context: JSXContext,
+    registerDispose: (dispose: Disposer) => void,
+    parent: TParent,
+    append: (el: TChild) => void
+  ): undefined;
+}
 
-export const nodeBrandKey = Symbol('MetronJSXNodeBrand');
+export const NODE_TYPE_INTRINSIC = 0;
+export const NODE_TYPE_COMPONENT = 1;
+export const NODE_TYPE_CONTEXT_PROVIDER = 2;
+export const NODE_TYPE_ADVANCED = 3;
 
-const staticComponentBrandKey = Symbol('MetronJSXStaticComponentBrand');
+export const IS_NODE = Symbol('MetronJSXNodeBrand');
+
+export const IS_STATIC_COMPONENT = Symbol('MetronJSXStaticComponentBrand');
 
 export function isStaticComponent(
   component: unknown
 ): component is StaticComponent {
-  return (component as any)?.[staticComponentBrandKey] === true;
+  return (component as any)[IS_STATIC_COMPONENT] === true;
 }
 
 export function createStaticComponent<
@@ -65,10 +99,10 @@ export function createStaticComponent<
 >(
   component: (props: TProps, context?: undefined) => TReturn
 ): StaticComponent<TProps, TReturn> {
-  (component as any)[staticComponentBrandKey] = true;
+  (component as any)[IS_STATIC_COMPONENT] = true;
   return component as any;
 }
 
-export function isJSXNode(maybeNode: unknown): maybeNode is JSXNode {
-  return (maybeNode as any)?.[nodeBrandKey] === true;
+export function isJSXNode(maybeNode: {}): maybeNode is JSXNode {
+  return (maybeNode as { [IS_NODE]?: unknown })?.[IS_NODE] === true;
 }

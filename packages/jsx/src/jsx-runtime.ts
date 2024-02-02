@@ -1,19 +1,19 @@
 import {
   NODE_TYPE_COMPONENT,
   NODE_TYPE_INTRINSIC,
-  nodeBrandKey,
+  IS_NODE,
   type Component,
   type JSXComponentNode,
   type JSXIntrinsicNode,
   createStaticComponent,
   type StaticComponent,
-  isStaticComponent,
   type JSXProps,
+  IS_STATIC_COMPONENT,
 } from './node.js';
 
 declare namespace JSX {
   interface IntrinsicElements {
-    [tagName: string]: JSXProps;
+    [tagName: string]: Record<string, unknown>;
   }
 
   interface IntrinsicAttributes {}
@@ -45,20 +45,20 @@ export type PropsFromTag<TTag extends JSX.ElementType> = TTag extends string
   ? TProps
   : never;
 
-export function jsx(tag: JSX.ElementType, props: JSXProps): unknown {
+function jsx(tag: JSX.ElementType, props: JSXProps): unknown {
   if (typeof tag === 'function') {
-    if (isStaticComponent(tag)) {
-      return tag(props);
+    if ((tag as any)[IS_STATIC_COMPONENT] === true) {
+      return (tag as StaticComponent)(props);
     }
     return {
-      [nodeBrandKey]: true,
+      [IS_NODE]: true,
       nodeType: NODE_TYPE_COMPONENT,
       props,
       tag,
     } satisfies JSXComponentNode;
   } else {
     return {
-      [nodeBrandKey]: true,
+      [IS_NODE]: true,
       nodeType: NODE_TYPE_INTRINSIC,
       props,
       tag,
@@ -66,4 +66,4 @@ export function jsx(tag: JSX.ElementType, props: JSXProps): unknown {
   }
 }
 
-export const jsxs = jsx;
+export { jsx, jsx as jsxs, jsx as jsxDEV, jsx as jsxsDEV };

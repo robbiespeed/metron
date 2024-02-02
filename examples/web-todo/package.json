@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "metron-core": "workspace:*",
-    "metron-jsx": "workspace:*"
+    "@metron/core": "workspace:*",
+    "@metron/jsx": "workspace:*"
   },
   "devDependencies": {
     "vite": "4.4.0-beta.3"

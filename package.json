@@ -22,7 +22,7 @@
   "type": "module",
   "devDependencies": {
     "@esbuild-kit/esm-loader": "^2.5.5",
-    "metron-test-utils": "workspace:*",
+    "@metron/test-utils": "workspace:*",
     "@types/chai": "^4.3.4",
     "@types/mocha": "^10.0.1",
     "@types/node": "^18.15.11",

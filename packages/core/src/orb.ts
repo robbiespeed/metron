@@ -11,7 +11,7 @@ interface LinkRecord extends Record<string, OrbLink> {}
 
 let scheduledNodeSourceTrims = new Set<WeakRef<ReceiverOrb>>();
 
-// const afterTransmitQueue: (() => void)[] = [];
+// const afterTransmitQueue: (() => undefined)[] = [];
 
 let idCounter = 0n;
 const emptyArray = Object.freeze([]) as [];
@@ -104,7 +104,7 @@ export class Orb<TData> {
   static link(
     consumer: ReceiverOrb<unknown>,
     source: TransmitterOrb<unknown>
-  ): void {
+  ): undefined {
     const sourceLinks = consumer.#sourceLinks;
 
     const sourceId = source.#id;
@@ -134,7 +134,7 @@ export class Orb<TData> {
     }
   }
   // TODO bench scheduledNodeSourceTrims as an array + added orb.#canScheduleTrim
-  static runTrim = (): void => {
+  static runTrim = (): undefined => {
     for (const ref of scheduledNodeSourceTrims) {
       const orb = ref.deref();
       if (orb) {
@@ -162,7 +162,7 @@ export class Orb<TData> {
   static #propagatedNodeIds = new Set<string>();
   static #propagationLinkStack: LinkArray[] = [];
 
-  static #propagate(consumers: LinkArray): void {
+  static #propagate(consumers: LinkArray): undefined {
     Orb.#canStartPropagation = false;
     const propagatedNodeIds = Orb.#propagatedNodeIds;
     let links = consumers;
@@ -221,7 +221,7 @@ export class Orb<TData> {
   // should bench this to make sure it's not a major pref regression for happy paths
 
   // alternatively could revert back and make the transmit for OrbKeyMap be added to the afterTransmitQueue?
-  static #transmit(this: Orb<unknown>) {
+  static #transmit(this: Orb<unknown>): undefined {
     Orb.#propagatedNodeIds.add(this.#id);
     if (++this.#version >= MAX_VERSION) {
       this.#rollVersion();
@@ -253,7 +253,7 @@ export class Orb<TData> {
   static #registerStaticSources(
     orb: ReceiverOrb,
     staticSources: TransmitterOrb[]
-  ) {
+  ): undefined {
     const consumer = orb.#weakRef;
     const consumerId = orb.#id;
     const consumerVersion = Infinity;
@@ -275,22 +275,22 @@ export class Orb<TData> {
   }
 
   static createTransmitter(): {
-    orb: TransmitterOrb<void>;
-    transmit: () => void;
+    orb: TransmitterOrb<undefined>;
+    transmit: () => undefined;
   };
   static createTransmitter<TData>(
     data: TData,
     intercept?: (this: Orb<TData>) => boolean
   ): {
     orb: TransmitterOrb<TData>;
-    transmit: () => void;
+    transmit: () => undefined;
   };
   static createTransmitter<TData>(
     data?: TData,
     intercept?: (this: Orb<TData>) => boolean
   ): {
     orb: TransmitterOrb<TData>;
-    transmit: () => void;
+    transmit: () => undefined;
   } {
     const orb = new Orb(data as TData, intercept);
     orb.#consumerLinks = [];
@@ -338,7 +338,7 @@ export class Orb<TData> {
     staticSources?: TransmitterOrb[]
   ): {
     orb: TransceiverOrb<TData>;
-    transmit: () => void;
+    transmit: () => undefined;
   } {
     const orb = new Orb(data, intercept) as TransceiverOrb<TData>;
     orb.#consumerLinks = [];

@@ -1,19 +1,14 @@
 import type { GlobalHTMLAttributes } from '../dom-types/global-attributes.js';
 import type { DelegatedEventParams, EventHandler } from './events.js';
-import type { Slot } from './template.js';
 
 type ScopedProps = {
   [key: `prop:${string}`]: unknown;
 };
 
-type SlotOrValue<T> = Slot<T> | T;
-
 interface EventHandlerProps<TEventTarget extends EventTarget> {
   [setup: `setup:${string}`]: (element: HTMLElement) => void;
-  [event: `on:${string}`]: SlotOrValue<EventHandler<TEventTarget>>;
-  [event: `delegate:${string}`]: SlotOrValue<
-    DelegatedEventParams<unknown, TEventTarget>
-  >;
+  [event: `on:${string}`]: EventHandler<TEventTarget>;
+  [event: `delegate:${string}`]: DelegatedEventParams<unknown, TEventTarget>;
 }
 
 type ScopedGlobalAttributes = {

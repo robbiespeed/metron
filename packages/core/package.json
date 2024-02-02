@@ -1,5 +1,5 @@
 {
-  "name": "metron-core",
+  "name": "@metron/core",
   "version": "0.0.2",
   "description": "Observable state management",
   "scripts": {

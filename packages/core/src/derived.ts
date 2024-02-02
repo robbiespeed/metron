@@ -1,4 +1,4 @@
-import { EMITTER, type Atom, ORB, type AtomReader } from './atom.js';
+import { EMITTER, type Atom, ORB, type AtomReader, IS_ATOM } from './atom.js';
 import { emptyCacheToken, type EmptyCacheToken } from './cache.js';
 import { createEmitter, type Emitter } from './emitter.js';
 import { bindableRead, unexpectedRead } from './internal/read.js';
@@ -21,6 +21,9 @@ export class DerivedAtom<TValue> implements Atom<TValue> {
     derive: (this: DerivedAtom<TValue>, read: AtomReader) => TValue
   ) {
     this.#derive = derive;
+  }
+  get [IS_ATOM](): true {
+    return true;
   }
   get [EMITTER](): Emitter {
     const existingEmitter = this.#emitter;

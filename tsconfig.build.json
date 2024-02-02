@@ -3,6 +3,6 @@
   "references": [
     { "path": "packages/core/tsconfig.build.json" },
     { "path": "packages/jsx/tsconfig.build.json" },
-    { "path": "packages/jsx/tsconfig.web.build.json" }
+    { "path": "packages/jsx/tsconfig.browser.build.json" }
   ]
 }

@@ -1,3 +1,3 @@
-export const cleanupRegistry = new FinalizationRegistry((cleanup: () => void) =>
-  cleanup()
+export const cleanupRegistry = new FinalizationRegistry(
+  (cleanup: () => undefined) => cleanup()
 );

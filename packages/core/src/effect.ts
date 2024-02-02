@@ -8,21 +8,22 @@ const scheduled: Effect[] = [];
 const addScheduledEffect = scheduled.push.bind(scheduled);
 
 interface EffectRunner {
-  (
-    read: AtomReader,
-    registerCleanup: (cleanup: Disposer) => void
-  ): Promise<void> | void;
+  (read: AtomReader, registerCleanup: (cleanup: Disposer) => undefined):
+    | Promise<undefined>
+    | undefined;
 }
 
 interface StaticEffectRunner {
-  (registerCleanup: (cleanup: Disposer) => void): Promise<void> | void;
+  (registerCleanup: (cleanup: Disposer) => undefined):
+    | Promise<undefined>
+    | undefined;
 }
 
 export class Effect {
   //@ts-expect-error #orb intentionally never gets accessed
   // it's present so there is a hard ref to the orb during the life cycle of the effect
   #orb?: ReceiverOrb<Effect>;
-  #run!: () => void;
+  #run!: () => Promise<undefined> | undefined;
   #canSchedule = false;
   #cleanup = emptyFn;
   static run() {
@@ -34,7 +35,7 @@ export class Effect {
     }
     scheduled.length = 0;
   }
-  static #dispose(this: Effect) {
+  static #dispose(this: Effect): undefined {
     this.#canSchedule = false;
     this.#orb = undefined;
     this.#run = emptyFn;
@@ -52,7 +53,11 @@ export class Effect {
     }
     return false;
   }
-  static #disposableRun(this: Effect, read: AtomReader, run: EffectRunner) {
+  static #disposableRun(
+    this: Effect,
+    read: AtomReader,
+    run: EffectRunner
+  ): undefined {
     let isDisposed = false;
     const disposableRead: AtomReader = (atom) => {
       if (isDisposed) {
@@ -77,7 +82,7 @@ export class Effect {
       }
     });
   }
-  static #registerCleanup(this: Effect, cleanup: Disposer) {
+  static #registerCleanup(this: Effect, cleanup: Disposer): undefined {
     if (this.#cleanup === emptyFn) {
       this.#cleanup = cleanup;
     } else {

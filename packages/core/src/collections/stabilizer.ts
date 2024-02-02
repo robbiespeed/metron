@@ -1,6 +1,6 @@
-import { createEmitter, type Emitter } from 'metron-core/emitter.js';
+import { createEmitter, type Emitter } from '@metron/core/emitter.js';
+import { emptyFn } from '@metron/core/shared.js';
 import type { Orb } from '../orb.js';
-import { emptyFn } from 'metron-core/shared.js';
 
 export class Stabilizer {
   #isStable = false;

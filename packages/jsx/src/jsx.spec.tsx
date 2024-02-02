@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import type { JsxIntrinsicNode } from './node.js';
+import type { JSXIntrinsicNode } from './node.js';
 
 describe('jsx', () => {
   it('should output a intrinsic jsx node', () => {
@@ -8,7 +8,7 @@ describe('jsx', () => {
     expect(node).to.deep.contain({
       tag: 'test',
       props: { foo: true, bar: 1 },
-    } satisfies Partial<JsxIntrinsicNode>);
+    } satisfies Partial<JSXIntrinsicNode>);
   });
   it('test', () => {
     function ListItem({ i }: { readonly i: number }) {

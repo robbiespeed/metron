@@ -1,7 +1,7 @@
-import { createRelayOrb, Orb, type TransmitterOrb } from 'metron-core/orb.js';
-import type { AtomArray } from '../array.js';
+import { createRelayOrb, Orb, type TransmitterOrb } from '@metron/core/orb.js';
+import { IS_ATOM_ARRAY, type AtomArray } from '../array.js';
 import { Stabilizer } from '../stabilizer.js';
-import { ORB, type AtomReader, EMITTER } from 'metron-core/atom.js';
+import { ORB, type AtomReader, EMITTER, IS_ATOM } from '@metron/core/atom.js';
 import {
   type ReadonlyArrayChangeStore,
   type ArrayChangeUnion,
@@ -12,14 +12,14 @@ import {
   HINT_SWAP,
   HINT_PUSH,
 } from './change-store.js';
-import type { Emitter } from 'metron-core/emitter.js';
-import { bindableRead } from '#internal/read.js';
-import { emptyCacheToken, type EmptyCacheToken } from 'metron-core/cache.js';
-import { moveLeft, moveRight } from '#internal/array.js';
+import type { Emitter } from '@metron/core/emitter.js';
+import { bindableRead } from '../../internal/read.js';
+import { emptyCacheToken, type EmptyCacheToken } from '@metron/core/cache.js';
+import { moveLeft, moveRight } from '../../internal/array.js';
 
-const skipToken = Symbol();
+export const skipToken = Symbol();
 
-type SkipToken = typeof skipToken;
+export type SkipToken = typeof skipToken;
 
 interface DerivedItem<TIn = unknown, TOut = unknown> {
   inIndex: number;
@@ -137,6 +137,12 @@ class DerivedAtomArray<TIn, TOut> implements AtomArray<TOut> {
     this.#stabilizer = stabilizer;
     this.#orb = createRelayOrb(stabilizer, Stabilizer.intercept, [input[ORB]]);
   }
+  get [IS_ATOM](): true {
+    return true;
+  }
+  get [IS_ATOM_ARRAY](): true {
+    return true;
+  }
   get [ORB](): TransmitterOrb {
     return this.#orb;
   }
@@ -228,7 +234,7 @@ class DerivedAtomArray<TIn, TOut> implements AtomArray<TOut> {
       item.isUnstable = false;
       if (item.outIndex !== -1) {
         adjustOutIndexes(derivedItems, index + 1, derivedItems.length, -1);
-        derived.#outValues.splice(index, 1);
+        derived.#outValues.splice(item.outIndex, 1);
         // TODO: set local change store
       }
       derivedItems.splice(index, 1);
@@ -321,10 +327,8 @@ class DerivedAtomArray<TIn, TOut> implements AtomArray<TOut> {
   ): undefined {
     const inputValues = this.#input.unwrap();
     const inputChangeStore = this.#input[ARRAY_CHANGE_STORE];
-    const currentToken = this.#inputChangeToken;
+    const change = inputChangeStore.get(this.#inputChangeToken);
     this.#inputChangeToken = inputChangeStore.nextConnectionToken;
-
-    const change = inputChangeStore.get(currentToken);
 
     let start: number;
     let end: number;
@@ -391,7 +395,7 @@ class DerivedAtomArray<TIn, TOut> implements AtomArray<TOut> {
 
     const prevEnd = derivedItems.length;
 
-    end = inputSize > prevEnd ? inputSize : prevEnd;
+    end = inputSize > prevEnd ? prevEnd : inputSize;
 
     // Skip unchanged front values
     for (
@@ -499,5 +503,12 @@ class DerivedAtomArray<TIn, TOut> implements AtomArray<TOut> {
       return true;
     }
   };
-  static create() {}
+  static create<TIn, TOut>(
+    input: AtomArray<TIn>,
+    fn: (value: TIn, read: AtomReader) => TOut | SkipToken
+  ) {
+    return new DerivedAtomArray(input, fn);
+  }
 }
+
+export const createDerivedArray = DerivedAtomArray.create;

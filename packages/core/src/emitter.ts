@@ -1,17 +1,20 @@
 import type { Disposer } from './shared.js';
 
 interface Subscription {
-  handler: () => void;
+  handler: () => undefined;
   next?: Subscription;
   prev?: Subscription;
 }
 
-const disposedHandler = () => {};
+const disposedHandler = (): undefined => {};
+
+// TODO: remove this!!!
+declare const console: any;
 
 class Emitter {
   #canSchedule = true;
   #subscriptionHead?: Subscription;
-  subscribe(handler: () => void): Disposer {
+  subscribe(handler: () => undefined): Disposer {
     const subHead = this.#subscriptionHead;
     const sub: Subscription = {
       handler,
@@ -25,7 +28,7 @@ class Emitter {
 
     return Emitter.#disposer.bind(this, sub);
   }
-  static #disposer(this: Emitter, sub: Subscription) {
+  static #disposer(this: Emitter, sub: Subscription): undefined {
     if (sub.handler === disposedHandler) {
       return;
     }
@@ -37,14 +40,14 @@ class Emitter {
       prev.next = sub.next;
     }
   }
-  static #emit(this: Emitter): void {
+  static #emit(this: Emitter): undefined {
     if (this.#canSchedule) {
       this.#canSchedule = false;
       Emitter.#scheduled.push(this);
     }
   }
   static #scheduled: Emitter[] = [];
-  static runEmits = (): void => {
+  static runEmits = (): undefined => {
     const scheduled = this.#scheduled;
     for (let i = 0; i < scheduled.length; i++) {
       const emitter = scheduled[i]!;
@@ -53,7 +56,8 @@ class Emitter {
         try {
           next.handler();
         } catch (err) {
-          // TODO report err
+          // TODO report uncaught async err through global event system
+          console.error(err);
         }
         next = next.next;
       }
@@ -63,7 +67,7 @@ class Emitter {
   };
   static create(): {
     emitter: Emitter;
-    emit: () => void;
+    emit: () => undefined;
   } {
     const emitter = new Emitter();
     return { emitter, emit: Emitter.#emit.bind(emitter) };

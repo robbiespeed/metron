@@ -1,4 +1,4 @@
-import { jsx, jsxs, Fragment, type JSX as BaseJSX } from '../jsx-runtime.js';
+import { jsx, Fragment, type JSX as BaseJSX } from '../jsx-runtime.js';
 import type { IntrinsicElements as BrowserIntrinsicElements } from './jsx.js';
 
 declare namespace JSX {
@@ -14,4 +14,4 @@ declare namespace JSX {
 }
 
 export type { JSX };
-export { jsx, jsxs, jsx as jsxDEV, jsxs as jsxsDEV, Fragment };
+export { jsx, jsx as jsxs, jsx as jsxDEV, jsx as jsxsDEV, Fragment };

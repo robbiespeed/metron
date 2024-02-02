@@ -1,5 +1,5 @@
 export interface Disposer {
-  (): void;
+  (): undefined;
 }
 
-export const emptyFn = () => {};
+export const emptyFn = (): undefined => {};

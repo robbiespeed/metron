@@ -1,4 +1,4 @@
-import { EMITTER, ORB, type Atom } from './atom.js';
+import { EMITTER, ORB, type Atom, IS_ATOM } from './atom.js';
 
 export class MappedAtom<T, U> implements Atom<U> {
   #input: Atom<T>;
@@ -6,6 +6,9 @@ export class MappedAtom<T, U> implements Atom<U> {
   private constructor(input: Atom<T>, mapper: (inputValue: T) => U) {
     this.#input = input;
     this.#mapper = mapper;
+  }
+  get [IS_ATOM](): true {
+    return true;
   }
   get [EMITTER]() {
     return this.#input[EMITTER];

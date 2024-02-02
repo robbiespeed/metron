@@ -4,8 +4,10 @@ import type { Disposer } from './shared.js';
 
 export const EMITTER = Symbol('Emitter');
 export const ORB = Symbol('Orb');
+export const IS_ATOM = Symbol('Atom');
 
 export interface Atom<TValue> {
+  readonly [IS_ATOM]: true;
   readonly [ORB]: TransmitterOrb<unknown>;
   readonly [EMITTER]: Emitter;
   unwrap(): TValue;
@@ -26,20 +28,26 @@ export type ExtractAtomArrayValues<T extends readonly Atom<unknown>[]> = [
 type Primitive = symbol | string | number | bigint | boolean | undefined | null;
 
 interface AntiAtom {
-  [ORB]?: never;
-  [EMITTER]?: never;
+  [IS_ATOM]?: never;
 }
 
 export type NonAtom = AntiAtom | Primitive;
 export type AtomOrNonAtom = Atom<unknown> | NonAtom;
 
-export function subscribe(atom: Atom<unknown>, handler: () => void): Disposer {
+export function isAtom(value: {}): value is Atom<unknown> {
+  return (value as { [IS_ATOM]?: unknown })[IS_ATOM] === true;
+}
+
+export function subscribe(
+  atom: Atom<unknown>,
+  handler: () => undefined
+): Disposer {
   return atom[EMITTER].subscribe(handler);
 }
 
 export function runAndSubscribe(
   atom: Atom<unknown>,
-  handler: () => void
+  handler: () => undefined
 ): Disposer {
   handler();
   return atom[EMITTER].subscribe(handler);

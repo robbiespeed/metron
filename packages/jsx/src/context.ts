@@ -1,7 +1,7 @@
-import type { Disposer } from 'metron-core';
 import {
   createStaticComponent,
-  nodeBrandKey,
+  IS_NODE,
+  NODE_TYPE_CONTEXT_PROVIDER,
   type JSXContextProviderNode,
 } from './node.js';
 
@@ -11,20 +11,17 @@ export interface JSXContextStore {
 
 export interface JSXContext {
   [contextInternalsKey]: Partial<JSXContextStore>;
-  addDisposer: (...disposers: Disposer[]) => void;
   use: <T extends symbol>(stateKey: T) => JSXContextStore[T] | undefined;
 }
 const contextInternalsKey = Symbol('MetronJSXContextInternals');
 
 export function createRootContext(
-  addDisposer: (...disposers: Disposer[]) => void,
   assignments?: Partial<JSXContextStore>
 ): JSXContext {
   const internalState: Partial<JSXContextStore> = { ...assignments };
 
   const context: JSXContext = {
     [contextInternalsKey]: internalState,
-    addDisposer,
     use: (stateKey) => internalState[stateKey],
   };
 
@@ -46,12 +43,11 @@ export function createChildContext(
 
   return {
     [contextInternalsKey]: internalState,
-    addDisposer: parentContext.addDisposer,
     use: (stateKey) => internalState[stateKey],
   };
 }
 
-interface ContextProviderProps {
+export interface ContextProviderProps {
   assignments: Partial<JSXContextStore>;
   children?: unknown;
 }
@@ -59,11 +55,11 @@ interface ContextProviderProps {
 export const ContextProvider = createStaticComponent<
   ContextProviderProps,
   JSXContextProviderNode
->(({ assignments, children }) => {
+>((props) => {
   return {
-    [nodeBrandKey]: true,
-    nodeType: 'ContextProvider',
-    assignments,
-    children,
+    [IS_NODE]: true,
+    nodeType: NODE_TYPE_CONTEXT_PROVIDER,
+    tag: undefined,
+    props,
   };
 });

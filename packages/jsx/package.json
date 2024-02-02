@@ -1,5 +1,5 @@
 {
-  "name": "metron-jsx",
+  "name": "@metron/jsx",
   "version": "0.0.2",
   "description": "Fine grained reactivity with jsx",
   "scripts": {
@@ -48,9 +48,9 @@
     }
   },
   "dependencies": {
-    "metron-core": "workspace:*"
+    "@metron/core": "workspace:*"
   },
   "devDependencies": {
-    "metron-jsx": "workspace:*"
+    "@metron/jsx": "workspace:*"
   }
 }
