@@ -4,10 +4,6 @@ import {
   type JSXProps,
   type Component,
   NODE_TYPE_INTRINSIC,
-  IS_STATIC_COMPONENT,
-  IS_NODE,
-  NODE_TYPE_ADVANCED,
-  type JSXRenderFn,
 } from '../node.js';
 import type { JSXContext } from '../context.js';
 import { jsxRender, renderInto } from './render.js';
@@ -90,67 +86,83 @@ interface DynamicTemplateCreator<TProps extends JSXProps> {
   (props: PropAccessor<TProps>): JSXNode;
 }
 
-export interface TemplateComponent<TProps extends JSXProps = JSXProps>
-  extends Component<TProps, Element> {
-  [TEMPLATE_RENDER]: JSXRenderFn<TProps, ParentNode | null, ChildNode>;
-}
+export type TemplateComponent<TProps extends JSXProps = JSXProps> = Component<
+  TProps,
+  Element
+>;
 
-export const TEMPLATE_RENDER = Symbol('MetronJSXTemplateRender');
-// const IS_SLOT = Symbol('MetronJSXTemplateSlotBrand');
-// const SLOT_KEY = Symbol('MetronJSXTemplateSlotKey');
+const cloneNode = Node.prototype.cloneNode;
+
+function bindableTemplateComponent<TProps extends JSXProps = JSXProps>(
+  this: IntrinsicInitDescriptor,
+  createElement: () => Element,
+  props: TProps,
+  context: JSXContext,
+  register: (dispose: Disposer) => void
+) {
+  const element = createElement();
+  initElement(element, props, context, register, this);
+  return element;
+}
 
 export function template<TProps extends JSXProps>(
-  templateCreator: DynamicTemplateCreator<TProps>
+  createTemplate: DynamicTemplateCreator<TProps>
 ): TemplateComponent<TProps> {
-  const templateNode = templateCreator(propProxy);
+  const templateNode = createTemplate(propProxy);
   const [templateElement, descriptor] = renderTemplateNode(templateNode);
+  const createElement = cloneNode.bind(templateElement, true) as () => Element;
 
-  const renderTemplate: JSXRenderFn<TProps, ParentNode | null, ChildNode> = (
-    props,
-    context,
-    registerDispose,
-    parent,
-    append
-  ) => {
-    const element = templateElement.cloneNode(true) as Element;
-    if (descriptor !== undefined) {
-      initElement(element, props, context, registerDispose, descriptor);
-    }
-    append(element);
-  };
-  const component = (props: TProps) => {
-    return {
-      [IS_NODE]: true,
-      nodeType: NODE_TYPE_ADVANCED,
-      props,
-      tag: renderTemplate,
-    };
-  };
-  (component as any)[IS_STATIC_COMPONENT] = true;
-  (component as any)[TEMPLATE_RENDER] = renderTemplate;
-
-  return component as any;
+  return descriptor === undefined
+    ? createElement
+    : bindableTemplateComponent.bind(descriptor, createElement);
 }
 
-// export function statefulTemplate<
-//   TProps extends JSXProps,
-//   TState extends JSXProps
-// >(
-//   createState: (props: TProps, context: JSXContext) => TState,
-//   templateCreator: DynamicTemplateCreator<TState>
-// ): Component<TProps, Element> {
-//   const templateNode = templateCreator(propProxy);
-//   const [templateElement, descriptor] = renderTemplateNode(templateNode);
-//   return (props, context) => {
-//     const state = createState(props, context);
-//     const element = templateElement.cloneNode(true) as Element;
-//     if (descriptor !== undefined) {
-//       initElement(element, state, context, descriptor);
-//     }
+function bindableStatefulTemplateComponent(
+  this: IntrinsicInitDescriptor,
+  createElement: () => Element,
+  createState: (
+    props: JSXProps,
+    context: JSXContext,
+    register: (dispose: Disposer) => void
+  ) => JSXProps,
+  props: JSXProps,
+  context: JSXContext,
+  register: (dispose: Disposer) => void
+) {
+  const element = createElement();
+  initElement(
+    element,
+    createState(props, context, register),
+    context,
+    register,
+    this
+  );
+  return element;
+}
 
-//     return element;
-//   };
-// }
+export function statefulTemplate<
+  TProps extends JSXProps,
+  TState extends JSXProps
+>(
+  createState: (
+    props: TProps,
+    context: JSXContext,
+    register: (dispose: Disposer) => undefined
+  ) => TState,
+  createTemplate: DynamicTemplateCreator<TState>
+): TemplateComponent<TProps> {
+  const templateNode = createTemplate(propProxy);
+  const [templateElement, descriptor] = renderTemplateNode(templateNode);
+  const createElement = cloneNode.bind(templateElement, true) as () => Element;
+
+  return descriptor === undefined
+    ? createElement
+    : bindableStatefulTemplateComponent.bind(
+        descriptor,
+        createElement,
+        createState as any
+      );
+}
 
 function renderTemplateNode(
   intrinsic: JSXNode
@@ -552,33 +564,15 @@ export function manualTemplate<TProps extends JSXProps>(
     element: Element,
     props: TProps,
     context: JSXContext,
-    registerDispose: (dispose: Disposer) => void
+    register: (dispose: Disposer) => void
   ) => void
-): Component<TProps, Element> {
+): TemplateComponent<TProps> {
   const templateElement = templateCreator();
+  const createElement = cloneNode.bind(templateElement, true) as () => Element;
 
-  const renderTemplate: JSXRenderFn<TProps, ParentNode | null, ChildNode> = (
-    props,
-    context,
-    registerDispose,
-    parent,
-    append
-  ) => {
-    const element = templateElement.cloneNode(true) as Element;
-    init(element, props, context, registerDispose);
-    append(element);
+  return (props, context, register) => {
+    const element = createElement();
+    init(element, props, context, register);
+    return element;
   };
-
-  const component = (props: TProps) => {
-    return {
-      [IS_NODE]: true,
-      nodeType: NODE_TYPE_ADVANCED,
-      props,
-      tag: renderTemplate,
-    };
-  };
-  (component as any)[IS_STATIC_COMPONENT] = true;
-  (component as any)[TEMPLATE_RENDER] = renderTemplate;
-
-  return component as any;
 }

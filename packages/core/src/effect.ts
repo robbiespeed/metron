@@ -97,6 +97,7 @@ export class Effect {
     effect.#run = Effect.#disposableRun.bind(effect, read, run);
     if (immediate) {
       effect.#run();
+      effect.#canSchedule = true;
     } else {
       addScheduledEffect(effect);
     }
@@ -118,6 +119,7 @@ export class Effect {
     effect.#run = Effect.#disposableRun.bind(effect, read, run);
     if (immediate) {
       effect.#run();
+      effect.#canSchedule = true;
     } else {
       addScheduledEffect(effect);
     }
@@ -139,6 +141,7 @@ export class Effect {
     effect.#run = run.bind(undefined, registerCleanup);
     if (immediate) {
       effect.#run();
+      effect.#canSchedule = true;
     } else {
       addScheduledEffect(effect);
     }

@@ -45,15 +45,13 @@ export type JSXNode =
 
 export type JSXProps = {};
 
+export type Register = (dispose: Disposer) => void;
+
 export interface Component<
   TProps extends JSXProps = JSXProps,
   TReturn = unknown
 > {
-  (
-    props: TProps,
-    context: JSXContext
-    // register: (dispose: Disposer) => undefined
-  ): TReturn;
+  (props: TProps, context: JSXContext, register: Register): TReturn;
 }
 
 export interface StaticComponent<

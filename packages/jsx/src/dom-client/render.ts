@@ -66,7 +66,7 @@ export const jsxRender: JSXRender = {
   [NODE_TYPE_COMPONENT](component, context, regDispose, parent, append) {
     const { tag, props } = component;
 
-    const children = tag(props, context);
+    const children = tag(props, context, regDispose);
 
     if (children != null) {
       renderInto(children, context, regDispose, parent, append);
