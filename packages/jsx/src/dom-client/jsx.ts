@@ -1,5 +1,5 @@
 import type { GlobalHTMLAttributes } from '../dom-types/global-attributes.js';
-import type { DelegatedEventParams, EventHandler } from './events.js';
+import type { EventHandler } from './events.js';
 
 type ScopedProps = {
   [key: `prop:${string}`]: unknown;
@@ -8,7 +8,6 @@ type ScopedProps = {
 interface EventHandlerProps<TEventTarget extends EventTarget> {
   [setup: `setup:${string}`]: (element: HTMLElement) => void;
   [event: `on:${string}`]: EventHandler<TEventTarget>;
-  [event: `delegate:${string}`]: DelegatedEventParams<unknown, TEventTarget>;
 }
 
 type ScopedGlobalAttributes = {

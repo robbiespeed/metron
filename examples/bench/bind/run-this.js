@@ -26,6 +26,32 @@ bench('baseline b', () => {
   }
 });
 
+bench('call a', () => {
+  class Foo {
+    constructor(a) {
+      this.a = a;
+    }
+    bar(b, c) {
+      return c % this.a === b;
+    }
+  }
+  const foo = new Foo(2);
+  const bar = Foo.prototype.bar;
+  let i = count;
+  while (i--) {
+    bar.call(foo, 0, i);
+  }
+});
+
+bench('call b', () => {
+  const foo = [];
+  const push = Array.prototype.push;
+  let i = count;
+  while (i--) {
+    push.call(foo, i);
+  }
+});
+
 bench('bind a', () => {
   class Foo {
     constructor(a) {

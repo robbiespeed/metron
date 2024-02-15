@@ -1,5 +1,3 @@
-import { run } from './runtime.js';
-
 export interface TargetedEvent<TEventTarget extends EventTarget> extends Event {
   currentTarget: TEventTarget;
 }
@@ -20,29 +18,62 @@ export interface DelegatedEventHandler<
   (this: void, data: TData, event: TargetedEvent<TEventTarget>): void;
 }
 
-export type DelegatedEventParams<TData, TEventTarget extends EventTarget> = {
+export type DataEvent<TData, TEventTarget extends EventTarget> = {
   data: TData;
   handler: DelegatedEventHandler<TData, TEventTarget>;
 };
 
-export const EVENT_DATA_KEY_PREFIX = '__METRON_EVENT_DATA';
 export const EVENT_KEY_PREFIX = '__METRON_EVENT';
 
+type EventKey = `${typeof EVENT_KEY_PREFIX}:${string}`;
+
 export interface DelegatedEventTarget extends EventTarget {
-  [eventData: `${typeof EVENT_DATA_KEY_PREFIX}:${string}`]: unknown;
-  [eventHandler: `${typeof EVENT_KEY_PREFIX}:${string}`]: DelegatedEventHandler<
-    unknown,
-    EventTarget
-  >;
+  [event: EventKey]:
+    | EventHandler<EventTarget>
+    | DataEvent<unknown, EventTarget>;
 }
 
 interface EventDelegationOptions {
   passive?: boolean;
 }
 
+function delegateListener(root: EventTarget, eventKey: EventKey, evt: Event) {
+  let node: EventTarget | null = evt.target;
+
+  Object.defineProperty(evt, 'currentTarget', {
+    configurable: true,
+    get() {
+      return node ?? root;
+    },
+  });
+
+  let isStopped = false;
+
+  (evt as DelegatedEvent<any>).stopDelegatedPropagation = () => {
+    isStopped = true;
+  };
+
+  do {
+    const delegated = (node as DelegatedEventTarget)[eventKey];
+    if (delegated !== undefined) {
+      if (typeof delegated === 'object') {
+        delegated.handler(delegated.data, evt as any);
+      } else {
+        delegated(evt as any);
+      }
+
+      if (isStopped) {
+        return;
+      }
+    }
+
+    node = (node as ChildNode).parentNode as EventTarget | null;
+  } while (node !== null && node !== root);
+}
+
 export function createEventDelegator(
   types: string[],
-  eventOptions: EventDelegationOptions | undefined = { passive: true }
+  eventOptions: EventDelegationOptions | undefined
 ): (delegationRoot: EventTarget) => void {
   return function init(root: EventTarget) {
     // TODO: Dev mode only
@@ -52,54 +83,16 @@ export function createEventDelegator(
       // TODO: Dev mode only
       // eventTypeDictionary[type] = true;
 
-      const eventKey = `${EVENT_KEY_PREFIX}:${type}` as const;
-      const eventDataKey = `${EVENT_DATA_KEY_PREFIX}:${type}` as const;
-
-      function rootListener(evt: Event) {
-        let node: EventTarget | null = evt.target;
-
-        Object.defineProperty(evt, 'currentTarget', {
-          configurable: true,
-          get() {
-            return node ?? root;
-          },
-        });
-
-        let isStopped = false;
-
-        (evt as DelegatedEvent<any>).stopDelegatedPropagation = () => {
-          isStopped = true;
-        };
-
-        do {
-          const eventHandler = (node as DelegatedEventTarget)[eventKey];
-          if (eventHandler !== undefined) {
-            eventHandler(
-              (node as DelegatedEventTarget)[eventDataKey],
-              evt as any
-            );
-            if (isStopped) {
-              return;
-            }
-          }
-
-          node = (node as ChildNode).parentNode as EventTarget | null;
-        } while (node !== null && node !== root);
-      }
-
-      root.addEventListener(
-        type,
-        runtimeEventListener.bind(rootListener),
-        eventOptions
+      const listener = delegateListener.bind(
+        undefined,
+        root,
+        `${EVENT_KEY_PREFIX}:${type}`
       );
+
+      root.addEventListener(type, listener, eventOptions);
     }
 
     // TODO: Dev mode only
     // root.__METRON_DEV_DELEGATED_TYPES = eventTypeDictionary;
   };
-}
-
-export function runtimeEventListener(this: EventListener, event: Event) {
-  this(event);
-  run();
 }

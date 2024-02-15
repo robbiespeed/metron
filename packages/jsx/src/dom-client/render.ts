@@ -15,14 +15,14 @@ import {
   createRootContext,
   createChildContext,
 } from '../context.js';
-import { isIterable, assertOverride, dispose } from '../utils.js';
+import { isIterable, dispose } from '../utils.js';
+import { isAtom, subscribe } from '@metron/core/atom.js';
 import {
-  EVENT_DATA_KEY_PREFIX,
-  EVENT_KEY_PREFIX,
-  runtimeEventListener,
-} from './events.js';
-import type { DelegatedEventTarget, DelegatedEventParams } from './events.js';
-import { isAtom, runAndSubscribe, subscribe } from '@metron/core/atom.js';
+  initAttributeFromState,
+  initEventFromState,
+  initPropFromState,
+  initSetupFromState,
+} from './element.js';
 
 interface DomRenderContextProps {
   readonly root: ParentNode;
@@ -110,93 +110,42 @@ export function renderIntrinsic(
 
   const element = document.createElement(intrinsic.tag);
 
-  for (const [fullKey, value] of Object.entries(props)) {
-    if (value == undefined) {
-      continue;
-    }
-    let [keySpecifier, key] = fullKey.split(':', 2) as [string, string];
-    if (keySpecifier === fullKey) {
-      key = keySpecifier;
+  for (const key of Object.keys(props)) {
+    let [keySpecifier, keyName] = key.split(':', 2) as [string, string];
+    if (keySpecifier === key) {
+      keyName = keySpecifier;
       keySpecifier = 'attr';
     }
+
     switch (keySpecifier) {
       case 'setup':
-        (value as Function)(element);
+        initSetupFromState(key, element, props, context, register);
         continue;
       case 'prop': {
-        if (isAtom(value)) {
-          register(
-            runAndSubscribe(value, () => {
-              // Expect the user knows what they are doing
-              (element as any)[key] = value.unwrap();
-            })
-          );
-        } else {
-          // Expect the user knows what they are doing
-          (element as any)[key] = value;
-        }
+        initPropFromState(keyName, key, element, props, context, register);
         continue;
       }
       case 'attr': {
-        if (isAtom(value)) {
-          const firstValue = value.unwrap();
-
-          if (firstValue === true) {
-            element.toggleAttribute(key, true);
-          } else if (firstValue !== undefined && firstValue !== false) {
-            // setAttribute casts to string
-            element.setAttribute(key, firstValue as any);
-          }
-
-          register(
-            subscribe(value, () => {
-              const innerValue = value.unwrap();
-              switch (typeof innerValue) {
-                case 'boolean':
-                  element.toggleAttribute(key, innerValue);
-                  break;
-                case 'undefined':
-                  element.removeAttribute(key);
-                  break;
-                default:
-                  // setAttribute casts to string
-                  element.setAttribute(key, innerValue as any);
-                  break;
-              }
-            })
+        if (key === 'class') {
+          initPropFromState(
+            'className',
+            key,
+            element,
+            props,
+            context,
+            register
           );
-        } else if (value === true) {
-          element.toggleAttribute(key, true);
-        } else if (value !== false && value !== undefined) {
-          element.setAttribute(key, value as string);
+          continue;
         }
+        initAttributeFromState(keyName, key, element, props, context, register);
+        continue;
+      }
+      case 'toggle': {
+        initAttributeFromState(keyName, key, element, props, context, register);
         continue;
       }
       case 'on': {
-        if (value === undefined) {
-          continue;
-        }
-
-        assertOverride<EventListener>(value);
-        element.addEventListener(key, runtimeEventListener.bind(value), {
-          passive: true,
-        });
-
-        continue;
-      }
-      case 'delegate': {
-        if (value === undefined) {
-          continue;
-        }
-
-        // TODO: Dev mode only, check if key is in delegatedEventTypes and warn if not
-
-        assertOverride<DelegatedEventParams<unknown, EventTarget>>(value);
-        assertOverride<DelegatedEventTarget>(element);
-
-        element[`${EVENT_KEY_PREFIX}:${key}`] = value.handler;
-        element[`${EVENT_DATA_KEY_PREFIX}:${key}`] = value.data;
-
+        initEventFromState(keyName, key, element, props);
         continue;
       }
       default:

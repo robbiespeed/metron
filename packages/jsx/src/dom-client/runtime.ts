@@ -15,4 +15,5 @@ export let run = () => {
   if (canScheduleOrbTrim) {
     requestIdleCallback(runScheduledOrbTrim);
   }
+  // requestAnimationFrame(run);
 };
