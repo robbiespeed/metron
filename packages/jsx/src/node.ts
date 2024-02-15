@@ -29,11 +29,11 @@ export interface JSXContextProviderNode extends JSXBaseNode {
 
 export interface JSXAdvancedNode<
   TProps extends JSXProps = JSXProps,
-  TParent = any,
-  TChild = any
+  TChild = any,
+  TParent = any
 > extends JSXBaseNode {
   readonly nodeType: typeof NODE_TYPE_ADVANCED;
-  readonly tag: JSXRenderFn<TProps, TParent, TChild>;
+  readonly tag: JSXRenderFn<TProps, TChild, TParent>;
   readonly props: TProps;
 }
 
@@ -64,15 +64,15 @@ export interface StaticComponent<
 
 export interface JSXRenderFn<
   TValue = unknown,
-  TParent = unknown,
-  TChild = unknown
+  TChild = unknown,
+  TParent = unknown
 > {
   (
     value: TValue,
     context: JSXContext,
-    registerDispose: (dispose: Disposer) => void,
-    parent: TParent,
-    append: (el: TChild) => void
+    register: Register,
+    append: (child: TChild) => void,
+    parent: TParent
   ): undefined;
 }
 

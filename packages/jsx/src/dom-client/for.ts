@@ -5,6 +5,7 @@ import {
   NODE_TYPE_ADVANCED,
   type JSXAdvancedNode,
   type JSXProps,
+  type Register,
 } from '../node.js';
 import type { JSXContext } from '../context.js';
 import type { Disposer } from '@metron/core/shared.js';
@@ -13,13 +14,10 @@ import { subscribe } from '@metron/core/atom.js';
 import {
   ARRAY_CHANGE_STORE,
   HINT_DELETE,
+  HINT_INSERT,
+  HINT_SET,
   HINT_SWAP,
 } from '@metron/core/collections/array/change-store.js';
-import {
-  eReplaceChildren,
-  nAppendChild,
-  nInsertBefore,
-} from './dom-methods.js';
 
 interface ForProps<TValue extends JSXProps> {
   each: AtomArray<TValue>;
@@ -38,96 +36,51 @@ export function For<TValue extends JSXProps>(
 }
 (For as any)[IS_STATIC_COMPONENT] = true;
 
-// function createListDomOperators(
-//   parent: ParentNode,
-//   append: (node: ChildNode) => void
-// ) {
-//   const clearNodes = parent.replaceChildren.bind(parent);
-//   const insertBefore = parent.insertBefore.bind(parent);
-//   const prepend = parent.prepend.bind(parent);
-//   const removeChild = parent.removeChild.bind(parent);
-
-//   const swapNodeRanges = (a: ChildNode, b: ChildNode) => {
-//     const afterB = b.nextSibling;
-//     insertBefore(b, a);
-//     insertBefore(a, afterB);
-//   };
-
-//   const appendRange = (s: ChildNode, e: ChildNode) => {
-//     let next: ChildNode | null = s;
-//     while (next !== null) {
-//       const node: ChildNode = next;
-//       append(node);
-//       next = node === e ? null : next.nextSibling;
-//     }
-//   };
-
-//   const insertRangeBeforeNode = (
-//     s: ChildNode,
-//     e: ChildNode,
-//     beforeRef: ChildNode | null
-//   ) => {
-//     let next: ChildNode | null = s;
-//     while (next !== null) {
-//       const node: ChildNode = next;
-//       insertBefore(node, beforeRef);
-//       next = node === e ? null : next.nextSibling;
-//     }
-//   };
-
-//   const removeUntil = (s: ChildNode, e?: ChildNode) => {
-//     let next: ChildNode | null = s;
-//     while (next !== null) {
-//       const node: ChildNode = next;
-//       removeChild(node);
-//       next = node === e ? null : next.nextSibling;
-//     }
-//   };
-
-//   return {
-//     clearNodes,
-//     prepend,
-//     swapNodeRanges,
-//     insertBefore,
-//     appendRange,
-//     insertRangeBeforeNode,
-//     removeChild,
-//     removeUntil,
-//   };
-// }
-
 const emptyArray = [] as [];
 
 function renderAtomArray<TValue extends {}>(
   props: ForProps<TValue>,
   context: JSXContext,
-  registerDispose: (dispose: Disposer) => void,
-  parent: ParentNode | null,
-  _append: (el: ChildNode) => void
+  register: Register,
+  append: (child: ChildNode) => void,
+  parent: ParentNode | undefined
 ): undefined {
-  if (parent === null) {
-    throw new Error('TODO');
-  }
-
-  const clearNodes = eReplaceChildren.bind(parent);
-  const insertBefore = nInsertBefore.bind(parent);
-  const appendChild = nAppendChild.bind(parent);
-
   const array = props.each;
   const createElement = props.as;
 
   let values = array.unwrap().slice();
   let size = values.length;
 
-  const indexedNodes: ChildNode[] = [];
-  // TODO: this could be removed if disposer was attached to element
-  let indexedDisposers: Disposer[][] = [];
+  const indexedNodes: ChildNode[] = new Array(size);
+  const indexedDisposers: Disposer[][] = new Array(size);
+
+  let tail: ChildNode | null;
+  let range: Range | undefined;
+  let clearNodes: () => undefined;
+
+  // TODO: not necessary if we make it loop through an remove
+  // Could be better to remove remaining unstable items after slow path?
+  if (parent === undefined) {
+    tail = document.createComment('');
+    append(tail);
+    parent = tail.parentNode!;
+
+    clearNodes = () => {
+      range ??= document.createRange();
+      range.setStartBefore(indexedNodes[0]!);
+      range.setEndBefore(tail!);
+      range.deleteContents();
+    };
+  } else {
+    tail = null;
+    clearNodes = () => {
+      parent!.textContent = '';
+    };
+  }
 
   let i = 0;
-  // let ii = 0;
 
   function appendElements() {
-    // ii = i;
     indexedNodes.length = size;
     indexedDisposers.length = size;
 
@@ -138,21 +91,14 @@ function renderAtomArray<TValue extends {}>(
         disposers.push(dispose);
       });
       indexedNodes[i] = element;
-      appendChild(element);
-      // append(element);
+      parent!.insertBefore(element, tail);
     }
-    // eAppend.apply(parent, indexedNodes.slice(ii));
-    // for (; ii < size; ii++) {
-    //   // nAppendChild.call(parent, indexedNodes[ii]!);
-    //   insertBefore(indexedNodes[ii]!, null);
-    // }
   }
   appendElements();
 
   const changeStore = array[ARRAY_CHANGE_STORE];
   let changeToken = changeStore.nextConnectionToken;
-
-  let range: Range | undefined;
+  let refreshToken = changeStore.refreshToken;
 
   const disposeSubscribe = subscribe(array, () => {
     const nextValues = array.unwrap();
@@ -165,18 +111,30 @@ function renderAtomArray<TValue extends {}>(
 
     // Clear fast path
     if (size === 0) {
+      if (prevSize === 0) {
+        return;
+      }
       disposeIndexed(indexedDisposers);
-      indexedDisposers.length = 0;
-      // const oldIndexedDisposers = indexedDisposers;
-      // requestIdleCallback(() => disposeIndexed(oldIndexedDisposers));
-      // indexedDisposers = [];
-      indexedNodes.length = 0;
       clearNodes();
+      indexedDisposers.length = 0;
+      indexedNodes.length = 0;
       values = emptyArray;
 
       return;
     } else {
       values = nextValues.slice();
+    }
+
+    if (refreshToken !== changeStore.refreshToken) {
+      refreshToken = changeStore.refreshToken;
+      if (prevSize > 0) {
+        disposeIndexed(indexedDisposers);
+        clearNodes();
+      }
+      i = 0;
+      appendElements();
+
+      return;
     }
 
     let start: number;
@@ -185,12 +143,38 @@ function renderAtomArray<TValue extends {}>(
       start = change.start;
       switch (change.hint) {
         case HINT_DELETE: {
-          parent.removeChild(indexedNodes[start]!);
+          parent!.removeChild(indexedNodes[start]!);
           for (const d of indexedDisposers[start]!) {
             d();
           }
           indexedNodes.splice(start, 1);
           indexedDisposers.splice(start, 1);
+          return;
+        }
+        case HINT_INSERT: {
+          const disposers: Disposer[] = [];
+          const element = createElement(values[start]!, context, (dispose) => {
+            disposers.push(dispose);
+          });
+          const next = indexedNodes[start]!;
+          indexedNodes.splice(start, 0, element);
+          indexedDisposers.splice(start, 0, disposers);
+
+          parent!.insertBefore(element, next);
+          return;
+        }
+        case HINT_SET: {
+          const disposers: Disposer[] = [];
+          const element = createElement(values[start]!, context, (dispose) => {
+            disposers.push(dispose);
+          });
+          parent!.replaceChild(element, indexedNodes[start]!);
+          for (const d of indexedDisposers[start]!) {
+            d();
+          }
+          indexedNodes[start] = element;
+          indexedDisposers[start] = disposers;
+
           return;
         }
         case HINT_SWAP: {
@@ -199,8 +183,8 @@ function renderAtomArray<TValue extends {}>(
           const aNode = indexedNodes[start]!;
           const bNode = indexedNodes[b]!;
           const afterB = bNode.nextSibling;
-          insertBefore(bNode, aNode);
-          insertBefore(aNode, afterB);
+          parent!.insertBefore(bNode, aNode);
+          parent!.insertBefore(aNode, afterB);
 
           const tmpN = indexedNodes[start]!;
           indexedNodes[start] = indexedNodes[b]!;
@@ -274,11 +258,11 @@ function renderAtomArray<TValue extends {}>(
       if (unstableIndex === undefined) {
         const disposers: Disposer[] = [];
         indexedDisposers[i] = disposers;
-        const element = createElement(values[i]!, context, (dispose) => {
+        const node = createElement(values[i]!, context, (dispose) => {
           disposers.push(dispose);
         });
-        indexedNodes[i] = element;
-        insertBefore(element, null);
+        indexedNodes[i] = node;
+        parent!.insertBefore(node, tail);
 
         continue;
       }
@@ -292,16 +276,15 @@ function renderAtomArray<TValue extends {}>(
 
       indexedDisposers[i] = disposers;
       indexedNodes[i] = node;
-      insertBefore(node, null);
+      parent!.insertBefore(node, tail);
     }
 
     if (unstableUnusedCount > 0) {
       disposeIndexed(unstableDisposers);
-      // requestIdleCallback(() => disposeIndexed(unstableDisposers));
     }
   });
 
-  registerDispose(() => {
+  register(() => {
     disposeSubscribe();
     disposeIndexed(indexedDisposers);
   });

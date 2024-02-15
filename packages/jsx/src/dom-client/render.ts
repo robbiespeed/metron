@@ -8,6 +8,7 @@ import {
   type JSXIntrinsicNode,
   NODE_TYPE_ADVANCED,
   type JSXRenderFn,
+  type Register,
 } from '../node.js';
 import {
   type JSXContext,
@@ -15,7 +16,11 @@ import {
   createChildContext,
 } from '../context.js';
 import { isIterable, assertOverride, dispose } from '../utils.js';
-import { EVENT_DATA_KEY_PREFIX, EVENT_KEY_PREFIX } from './events.js';
+import {
+  EVENT_DATA_KEY_PREFIX,
+  EVENT_KEY_PREFIX,
+  runtimeEventListener,
+} from './events.js';
 import type { DelegatedEventTarget, DelegatedEventParams } from './events.js';
 import { isAtom, runAndSubscribe, subscribe } from '@metron/core/atom.js';
 
@@ -24,13 +29,11 @@ interface DomRenderContextProps {
   readonly children: unknown;
 }
 
-type NodeAppend = (node: ChildNode) => void;
-
 type JSXRender = {
   [key in JSXNode['nodeType']]: JSXRenderFn<
     Extract<JSXNode, { nodeType: key }>,
-    ParentNode | null,
-    ChildNode
+    ChildNode,
+    ParentNode | undefined
   >;
 };
 
@@ -42,16 +45,23 @@ export function render(
   context = createRootContext()
 ): Disposer {
   if (children == null) {
-    root.replaceChildren();
+    root.textContent = '';
     return () => {};
   }
 
-  const append = root.appendChild.bind(root);
   const disposers: Disposer[] = [];
 
   const addDisposer = disposers.push.bind(disposers);
 
-  renderInto(children, context, addDisposer, root, append);
+  renderInto(
+    children,
+    context,
+    addDisposer,
+    (child) => {
+      root.appendChild(child);
+    },
+    root
+  );
 
   return () => {
     dispose(disposers);
@@ -63,39 +73,38 @@ export function render(
  * @private
  */
 export const jsxRender: JSXRender = {
-  [NODE_TYPE_COMPONENT](component, context, regDispose, parent, append) {
+  [NODE_TYPE_COMPONENT](component, context, register, append, parent) {
     const { tag, props } = component;
 
-    const children = tag(props, context, regDispose);
+    const children = tag(props, context, register);
 
     if (children != null) {
-      renderInto(children, context, regDispose, parent, append);
+      renderInto(children, context, register, append, parent);
     }
   },
   [NODE_TYPE_INTRINSIC]: renderIntrinsic,
   [NODE_TYPE_CONTEXT_PROVIDER](
     { props: { children, assignments } },
     context,
-    regDispose,
-    parent,
-    append
+    register,
+    append,
+    parent
   ) {
     if (children != null) {
       const childContext = createChildContext(context, assignments);
-      renderInto(children, childContext, regDispose, parent, append);
+      renderInto(children, childContext, register, append, parent);
     }
   },
-  [NODE_TYPE_ADVANCED](node, context, regDispose, parent, append) {
-    node.tag(node.props, context, regDispose, parent, append);
+  [NODE_TYPE_ADVANCED](node, context, register, append, parent) {
+    node.tag(node.props, context, register, append, parent);
   },
 };
 
 export function renderIntrinsic(
   intrinsic: JSXIntrinsicNode,
   context: JSXContext,
-  regDispose: (dispose: Disposer) => void,
-  parent: ParentNode | null,
-  append: NodeAppend
+  register: Register,
+  append: (child: ChildNode) => void
 ): undefined {
   const { children, ...props } = intrinsic.props as Record<string, unknown>;
 
@@ -116,7 +125,7 @@ export function renderIntrinsic(
         continue;
       case 'prop': {
         if (isAtom(value)) {
-          regDispose(
+          register(
             runAndSubscribe(value, () => {
               // Expect the user knows what they are doing
               (element as any)[key] = value.unwrap();
@@ -139,7 +148,7 @@ export function renderIntrinsic(
             element.setAttribute(key, firstValue as any);
           }
 
-          regDispose(
+          register(
             subscribe(value, () => {
               const innerValue = value.unwrap();
               switch (typeof innerValue) {
@@ -169,7 +178,9 @@ export function renderIntrinsic(
         }
 
         assertOverride<EventListener>(value);
-        element.addEventListener(key, value, { passive: true });
+        element.addEventListener(key, runtimeEventListener.bind(value), {
+          passive: true,
+        });
 
         continue;
       }
@@ -197,9 +208,11 @@ export function renderIntrinsic(
     renderInto(
       children,
       context,
-      regDispose,
-      element,
-      element.appendChild.bind(element)
+      register,
+      (child) => {
+        element.appendChild(child);
+      },
+      element
     );
   }
 
@@ -212,23 +225,23 @@ export function renderIntrinsic(
 export function renderInto(
   value: {},
   context: JSXContext,
-  regDispose: (dispose: Disposer) => void,
-  parent: ParentNode | null,
-  append: NodeAppend
+  register: (dispose: Disposer) => void,
+  append: (child: ChildNode) => void,
+  parent: ParentNode | undefined
 ): void {
   if (typeof value === 'object') {
     if (isJSXNode(value)) {
       return jsxRender[value.nodeType](
         value as any,
         context,
-        regDispose,
-        parent,
-        append
+        register,
+        append,
+        parent
       );
     } else if (isIterable(value)) {
       for (const child of value) {
         if (child != null) {
-          renderInto(child, context, regDispose, null, append);
+          renderInto(child, context, register, append, undefined);
         }
       }
       return;
@@ -241,7 +254,7 @@ export function renderInto(
       );
       append(text);
 
-      regDispose(
+      register(
         subscribe(value, () => {
           const newValue = value.unwrap();
           // Data casts to string

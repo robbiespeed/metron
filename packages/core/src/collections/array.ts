@@ -157,6 +157,18 @@ class AtomArrayWriter<TValue> {
     this.#emit();
     this.#transmit();
   }
+  replace(nextValues: TValue[]): undefined {
+    const inner = this.#inner;
+    const size = nextValues.length;
+    inner.length = size;
+    for (let i = 0; i < size; i++) {
+      inner[i] = nextValues[i]!;
+    }
+
+    this.#changeStore?.refresh();
+    this.#emit();
+    this.#transmit();
+  }
   static #AtomArray = class PrimaryAtomArray<TValue>
     implements AtomArray<TValue>
   {

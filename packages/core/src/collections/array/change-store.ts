@@ -61,10 +61,11 @@ export const ARRAY_CHANGE_STORE = Symbol('Array Change Store');
 
 export type ReadonlyArrayChangeStore = Pick<
   ArrayChangeStore,
-  'get' | 'nextConnectionToken'
+  'get' | 'nextConnectionToken' | 'refreshToken'
 >;
 
 export class ArrayChangeStore {
+  #refreshToken = Symbol();
   #change: undefined | ArrayChangeUnion = undefined;
   #nextConnectionToken?: symbol;
   #connectionToken?: symbol;
@@ -141,6 +142,13 @@ export class ArrayChangeStore {
     if (this.#commit(a)) {
       this.#change = { hint: HINT_SWAP, start: a, data: b };
     }
+  }
+  refresh(): undefined {
+    this.#clearState();
+    this.#refreshToken = Symbol();
+  }
+  get refreshToken(): symbol {
+    return this.#refreshToken;
   }
   get nextConnectionToken(): symbol {
     return (this.#nextConnectionToken ??= Symbol());

@@ -456,7 +456,7 @@ function initElement(
     const { lastIndex } = children;
 
     let node = element.firstChild;
-    const parent = element.lastChild === node ? element : null;
+    const parent = element.lastChild === node ? element : undefined;
     let i = 0;
     while (node !== null) {
       const childDescriptor = children[i];
@@ -488,7 +488,7 @@ function initElement(
 }
 
 function initSlottedChild(
-  parent: ParentNode | null,
+  parent: ParentNode | undefined,
   initValue: unknown,
   context: JSXContext,
   regDispose: (dispose: Disposer) => void,
@@ -528,8 +528,8 @@ function initSlottedChild(
           initValue as any,
           context,
           regDispose,
-          parent,
-          newNodes.push.bind(newNodes)
+          newNodes.push.bind(newNodes),
+          parent
         );
         placeHolder.replaceWith(...newNodes);
       } else if (isIterable(initValue) && typeof initValue === 'object') {
@@ -540,8 +540,8 @@ function initSlottedChild(
               child,
               context,
               regDispose,
-              null,
-              newNodes.push.bind(newNodes)
+              newNodes.push.bind(newNodes),
+              undefined
             );
           }
         }

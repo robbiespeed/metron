@@ -14,6 +14,7 @@ import {
   type DelegatedEventParams,
   type DelegatedEventTarget,
   EVENT_DATA_KEY_PREFIX,
+  runtimeEventListener,
 } from './events.js';
 import { nAppendChild, nCloneNode } from './dom-methods.js';
 
@@ -265,7 +266,7 @@ function buildTemplate(
 
   const { children, ...props } = vNode.props as Record<string, unknown>;
 
-  let propsInitCount = 0;
+  let elementInitCount = 0;
 
   for (const [key, value] of Object.entries(props)) {
     if (value == null) {
@@ -279,39 +280,25 @@ function buildTemplate(
     }
     switch (keySpecifier) {
       case 'setup':
-        throw new Error('TODO');
-      // if (isSlot(value)) {
-      // } else {
-      //   throw new TypeError(
-      //     'Templates may only use slots to register setup functions'
-      //   );
-      // }
-      // continue;
+        if (isSlot(value)) {
+          throw new Error('TODO');
+          // continue;
+        }
+        throw new TypeError(
+          'Templates may only use slots to register setup functions'
+        );
       case 'prop':
-        throw new Error('TODO');
-      // if (isSlot(value)) {
-      //   (propDescriptors ??= []).push({
-      //     key: keyName,
-      //     initKey: getSlotKey(value),
-      //   });
-      // } else {
-      //   throw new TypeError('Templates may only use slots to register props');
-      // }
-      // continue;
+        if (isSlot(value)) {
+          elementInitCount++;
+          nodeInitializers.push(
+            initPropFromState.bind(undefined, keyName, getSlotKey(value)) as any
+          );
+          continue;
+        }
+        throw new TypeError('Templates may only use slots to register props');
       case 'attr':
         if (isSlot(value)) {
-          // if (keyName === 'class') {
-          //   (propDescriptors ??= []).push({
-          //     key: 'className',
-          //     initKey: getSlotKey(value),
-          //   });
-          // } else {
-          //   (attributeDescriptors ??= []).push({
-          //     key: keyName,
-          //     initKey: getSlotKey(value),
-          //   });
-          // }
-          propsInitCount++;
+          elementInitCount++;
           nodeInitializers.push(
             initAttributeFromState.bind(
               undefined,
@@ -329,7 +316,7 @@ function buildTemplate(
       case 'on':
         // throw new Error('TODO');
         if (isSlot(value)) {
-          propsInitCount++;
+          elementInitCount++;
           nodeInitializers.push(
             initEventFromState.bind(
               undefined,
@@ -337,15 +324,14 @@ function buildTemplate(
               getSlotKey(value)
             ) as any
           );
-        } else {
-          throw new TypeError(
-            'Templates may only use slots to register event handlers'
-          );
+          continue;
         }
-        continue;
+        throw new TypeError(
+          'Templates may only use slots to register event handlers'
+        );
       case 'delegate':
         if (isSlot(value)) {
-          propsInitCount++;
+          elementInitCount++;
           nodeInitializers.push(
             initDelegatedEventFromState.bind(
               undefined,
@@ -353,27 +339,26 @@ function buildTemplate(
               getSlotKey(value)
             ) as any
           );
-        } else {
-          throw new TypeError(
-            'Templates may only use slots to register data event handlers'
-          );
+          continue;
         }
-        continue;
+        throw new TypeError(
+          'Templates may only use slots to register data event handlers'
+        );
       default:
         throw new TypeError(`Unsupported specifier "${keySpecifier}"`);
     }
   }
 
-  if (propsInitCount === 1) {
+  if (elementInitCount === 1) {
     initInstructions.push(INST_RUN);
-  } else if (propsInitCount > 0) {
+  } else if (elementInitCount > 0) {
     // N of 0 means run once, so normalize the n value to be 0 based
-    propsInitCount--;
-    while (propsInitCount > INST_MAX_N) {
+    elementInitCount--;
+    while (elementInitCount > INST_MAX_N) {
       initInstructions.push(INST_RUN_N, INST_MAX_N);
-      propsInitCount -= INST_MAX_N;
+      elementInitCount -= INST_MAX_N;
     }
-    initInstructions.push(INST_RUN_N, propsInitCount);
+    initInstructions.push(INST_RUN_N, elementInitCount);
   }
 
   const childCount = Array.isArray(children) ? children.length : 0;
@@ -389,26 +374,23 @@ function buildTemplate(
         continue;
       }
       if (isSlot(child)) {
-        throw new Error('TODO');
-        // nAppendChild.call(element, document.createTextNode(''));
-      } else if (isJSXNode(child)) {
-        const childElement = buildTemplate(
-          child,
-          namespace,
-          nodeInitializers,
-          initInstructions
+        initInstructions.push(INST_RUN);
+        nodeInitializers.push(
+          initPlaceholderFromState.bind(undefined, getSlotKey(child)) as any
         );
-
-        // const [childElement, childDescriptor] = renderTemplateNode(child);
-        // if (childDescriptor !== undefined) {
-        //   if (childDescriptors === undefined) {
-        //     childDescriptors = { lastIndex: i, [i]: childDescriptor };
-        //   } else {
-        //     childDescriptors.lastIndex = i;
-        //     childDescriptors[i] = childDescriptor;
-        //   }
-        // }
-        nAppendChild.call(element, childElement);
+        nAppendChild.call(element, document.createTextNode(''));
+      } else if (isJSXNode(child)) {
+        if (child.nodeType === NODE_TYPE_INTRINSIC) {
+          const childElement = buildTemplate(
+            child,
+            namespace,
+            nodeInitializers,
+            initInstructions
+          );
+          nAppendChild.call(element, childElement);
+        } else {
+          throw new Error('TODO');
+        }
       } else if (typeof child === 'string') {
         nAppendChild.call(element, document.createTextNode(child as string));
       } else {
@@ -436,18 +418,22 @@ function buildTemplate(
     } else if (isJSXNode(children)) {
       initInstructions.push(INST_DOWN);
       const start = initInstructions.length;
-      const childElement = buildTemplate(
-        children,
-        namespace,
-        nodeInitializers,
-        initInstructions
-      );
+      if (children.nodeType === NODE_TYPE_INTRINSIC) {
+        const childElement = buildTemplate(
+          children,
+          namespace,
+          nodeInitializers,
+          initInstructions
+        );
+        nAppendChild.call(element, childElement);
+      } else {
+        throw new Error('TODO');
+      }
       if (initInstructions.length === start) {
         initInstructions.length--;
       } else {
         initInstructions.push(INST_UP);
       }
-      nAppendChild.call(element, childElement);
     } else if (typeof children === 'string') {
       element.textContent = children;
     }
@@ -505,6 +491,33 @@ function initAttributeFromState(
   }
 }
 
+function initPropFromState(
+  name: string,
+  stateKey: string,
+  element: Element,
+  initState: Record<string, unknown>,
+  context: JSXContext,
+  register: Register
+): undefined {
+  const initValue = initState[stateKey];
+
+  if (initValue == null) {
+    return;
+  }
+
+  if (isAtom(initValue)) {
+    register(
+      runAndSubscribe(initValue, () => {
+        // Expect the user knows what they are doing
+        (element as any)[name] = initValue.unwrap();
+      })
+    );
+  } else {
+    // Expect the user knows what they are doing
+    (element as any)[name] = initValue;
+  }
+}
+
 function initDelegatedEventFromState(
   name: string,
   stateKey: string,
@@ -541,7 +554,9 @@ function initEventFromState(
   // TODO: Dev mode only, check if key is in delegatedEventTypes and warn if not
 
   assertOverride<EventListener>(value);
-  element.addEventListener(name, value, { passive: true });
+  element.addEventListener(name, runtimeEventListener.bind(value), {
+    passive: true,
+  });
 }
 
 function initPlaceholderFromState(
@@ -576,25 +591,6 @@ function initPlaceholderFromState(
 
   // Data casts to string
   placeHolder.data = initValue as string;
-}
-
-export function manualTemplate<TProps extends JSXProps>(
-  templateCreator: () => Element,
-  init: (
-    element: Element,
-    props: TProps,
-    context: JSXContext,
-    register: Register
-  ) => void
-): TemplateComponent<TProps> {
-  const templateElement = templateCreator();
-  const createElement = nCloneNode.bind(templateElement, true) as () => Element;
-
-  return (props, context, register) => {
-    const element = createElement();
-    init(element, props, context, register);
-    return element;
-  };
 }
 
 /*
