@@ -45,28 +45,31 @@ export function render(
   context = createRootContext()
 ): Disposer {
   if (children == null) {
-    root.textContent = '';
-    return () => {};
+    throw new TypeError('Expected children');
   }
 
-  const disposers: Disposer[] = [];
+  root.textContent = '';
 
-  const addDisposer = disposers.push.bind(disposers);
+  const disposers: Disposer[] = [];
 
   renderInto(
     children,
     context,
-    addDisposer,
+    (d) => disposers.push(d),
     (child) => {
       root.appendChild(child);
     },
     root
   );
 
-  return () => {
+  const disposeRoot: Disposer = () => {
     dispose(disposers);
     disposers.length = 0;
   };
+
+  (root as any)['__METRON_DISPOSE_ROOT'] = disposeRoot;
+
+  return disposeRoot;
 }
 
 /**
