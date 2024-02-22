@@ -1,13 +1,12 @@
 import { isAtom } from '@metron/core/atom.js';
-import type { JSXContext } from '../context.js';
+import type { Context } from '../context.js';
 import {
   NODE_TYPE_INTRINSIC,
   type JSXNode,
-  type Register,
   isJSXNode,
   type JSXProps,
-  type Component,
   type JSXIntrinsicNode,
+  type Component,
 } from '../node.js';
 import { assertOverride } from '../utils.js';
 import {
@@ -22,54 +21,55 @@ import {
   initSyncAttribute,
   initSetup,
   initEvent,
+  type NodeInitializer,
+  type NodeContextInitializer,
 } from './element.js';
 
-interface DynamicTemplateCreator<TProps extends JSXProps> {
-  (props: PropAccessor<TProps>): JSXNode;
+export const TEMPLATE_BLUEPRINTS = Symbol();
+
+export interface TemplateBlueprints {
+  element: Element;
+  initializers: (NodeInitializer | NodeContextInitializer)[];
+  instructions: number[];
 }
 
-export type TemplateComponent<TProps extends JSXProps = JSXProps> = Component<
-  TProps,
-  Element
->;
+export interface TemplateComponent<TProps extends JSXProps>
+  extends Component<TProps, Element> {
+  [TEMPLATE_BLUEPRINTS]: TemplateBlueprints;
+}
+
+export interface JSXTemplateConstructor<TProps extends JSXProps> {
+  (props: PropAccessor<TProps>): JSXNode;
+}
 
 const NS_HTML = 'http://www.w3.org/1999/xhtml';
 const NS_SVG = 'http://www.w3.org/2000/svg';
 const NS_MATH_ML = 'http://www.w3.org/1998/Math/MathML';
 
 export function template<TProps extends JSXProps>(
-  createTemplate: DynamicTemplateCreator<TProps>,
+  constructJSX: JSXTemplateConstructor<TProps>,
   ns: typeof NS_HTML | typeof NS_SVG | typeof NS_MATH_ML = NS_HTML
 ): TemplateComponent<TProps> {
-  const [templateElement, nodeInitializers, initInstructions] =
-    createTemplateFromJSX(createTemplate(propProxy), ns);
+  const blueprints = createBlueprints(constructJSX(propProxy), ns);
 
-  return initInstructions.length === 0
-    ? () => templateElement.cloneNode(true) as Element
-    : (state, context, register) =>
-        createElementFromTemplate(
-          templateElement,
-          nodeInitializers,
-          initInstructions,
-          state,
-          context,
-          register
-        );
+  const component = ((state, context) =>
+    createElementFromTemplateBlueprints(
+      blueprints,
+      state,
+      context
+    )) as TemplateComponent<TProps>;
+  component[TEMPLATE_BLUEPRINTS] = blueprints;
+
+  return component;
 }
 
-type NodeInitializer = (
-  node: Node,
-  initState: Record<string, unknown>,
-  context: JSXContext,
-  register: Register
-) => undefined;
-
 // Base Instructions
-const INST_DOWN = 36;
-const INST_UP = 35;
-const INST_NEXT_SIBLING = 34;
-const INST_RUN = 33;
-const INST_RUN_N = 32;
+const INST_RUN_CONTEXT = 37;
+const INST_RUN = 36;
+const INST_RUN_N = 35;
+const INST_DOWN = 34;
+const INST_UP = 33;
+const INST_NEXT_SIBLING = 32;
 const INST_MAX_N = 31; // All numbers 0-31 are reserved for N values
 
 // TODO: Optimized Instructions
@@ -85,15 +85,14 @@ const INST_MAX_N = 31; // All numbers 0-31 are reserved for N values
 // const INST_USE_HISTORY = 10;
 // const INST_SET_X = 11;
 
-function createElementFromTemplate(
-  template: Element,
-  initializers: NodeInitializer[],
-  instructions: number[],
-  initState: Record<string, unknown>,
-  context: JSXContext,
-  register: Register
+export function createElementFromTemplateBlueprints(
+  blueprints: TemplateBlueprints,
+  initState: {},
+  context: Context
 ): Element {
-  const root = template.cloneNode(true) as Element;
+  const { element, initializers, instructions } = blueprints;
+  const { register } = context;
+  const root = element.cloneNode(true) as Element;
   const instEnd = instructions.length;
   let node: Node = root;
   let x = 0;
@@ -110,13 +109,16 @@ function createElementFromTemplate(
         node = node.parentNode!;
         break;
       case INST_RUN:
-        initializers[x++]!(node, initState, context, register);
+        (initializers[x++] as NodeInitializer)(node, initState, register);
         break;
       case INST_RUN_N:
         const last = x + instructions[++i]!;
         for (x; x <= last; x++) {
-          initializers[x]!(node, initState, context, register);
+          (initializers[x] as NodeInitializer)(node, initState, register);
         }
+        break;
+      case INST_RUN_CONTEXT:
+        (initializers[x++] as NodeContextInitializer)(node, initState, context);
         break;
     }
   }
@@ -127,6 +129,7 @@ type PropAccessor<TProps extends JSXProps> = {
   [K in keyof TProps]: Slot & TProps[K];
 };
 
+// TODO rename "propProxy" to "partAccessProxy" allow direct use of  in template instead of only props
 const noOpTrap = () => false;
 const empty = Object.create(null);
 const propProxy: PropAccessor<any> = new Proxy(empty, {
@@ -140,6 +143,7 @@ const propProxy: PropAccessor<any> = new Proxy(empty, {
   deleteProperty: noOpTrap,
 });
 
+// TODO rename Slot to part
 const IS_SLOT = Symbol();
 
 class Slot {
@@ -158,44 +162,35 @@ class Slot {
 
 const { isSlot, getSlotKey } = Slot;
 
-function createTemplateFromJSX(
+function createBlueprints(
   root: JSXNode,
   namespace: string
-): [
-  templateElement: Element,
-  nodeInitializers: NodeInitializer[],
-  initInstructions: number[]
-] {
+): TemplateBlueprints {
   if (root.nodeType !== NODE_TYPE_INTRINSIC) {
     throw TypeError('Template root must be a intrinsic node');
   }
-  const nodeInitializers: NodeInitializer[] = [];
-  const initInstructions: number[] = [];
-  const element = buildTemplate(
-    root,
-    namespace,
-    nodeInitializers,
-    initInstructions
-  );
+  const initializers: NodeInitializer[] = [];
+  const instructions: number[] = [];
+  const element = build(root, namespace, initializers, instructions);
 
   // Trim tail movement instructions
-  let i = initInstructions.length - 1;
+  let i = instructions.length - 1;
   let inst;
   while (i >= 0) {
-    inst = initInstructions[--i];
+    inst = instructions[--i];
     if (inst === INST_RUN) {
-      initInstructions.length = i + 1;
+      instructions.length = i + 1;
       break;
     } else if (inst === INST_RUN_N) {
-      initInstructions.length = i + 2;
+      instructions.length = i + 2;
       break;
     }
   }
 
-  return [element, nodeInitializers, initInstructions];
+  return { element, initializers, instructions };
 }
 
-function buildTemplate(
+function build(
   vNode: JSXIntrinsicNode,
   namespace: string,
   nodeInitializers: NodeInitializer[],
@@ -348,7 +343,7 @@ function buildTemplate(
         element.appendChild(document.createTextNode(''));
       } else if (isJSXNode(child)) {
         if (child.nodeType === NODE_TYPE_INTRINSIC) {
-          const childElement = buildTemplate(
+          const childElement = build(
             child,
             namespace,
             nodeInitializers,
@@ -386,7 +381,7 @@ function buildTemplate(
       initInstructions.push(INST_DOWN);
       const start = initInstructions.length;
       if (children.nodeType === NODE_TYPE_INTRINSIC) {
-        const childElement = buildTemplate(
+        const childElement = build(
           children,
           namespace,
           nodeInitializers,

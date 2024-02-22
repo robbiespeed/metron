@@ -1,9 +1,5 @@
 import { expect } from 'chai';
-import type { JSXIntrinsicNode } from './node.js';
-
-const Spread = (props: any) => {};
-const MapRender = (props: any) => {};
-const Foo = (props: any) => {};
+import { type JSXIntrinsicNode } from './node.js';
 
 describe('jsx', () => {
   it('should output a intrinsic jsx node', () => {
@@ -22,9 +18,3 @@ describe('jsx', () => {
     <ListItem i={1} />;
   });
 });
-
-const items: any[] = [];
-
-<>
-  <MapRender each={items} as={Foo} />
-</>;

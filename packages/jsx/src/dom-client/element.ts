@@ -4,17 +4,27 @@ import {
   type Atom,
   EMITTER,
 } from '@metron/core/atom.js';
-import type { JSXContext } from '../context.js';
-import type { Register } from '../node.js';
+import type { Context, Register } from '../context.js';
 import { assertOverride } from '../utils.js';
 import { run } from './runtime.js';
+
+export type NodeInitializer = (
+  node: Node,
+  initState: Record<string, unknown>,
+  register: Register
+) => undefined;
+
+export type NodeContextInitializer = (
+  node: Node,
+  initState: Record<string, unknown>,
+  context: Context
+) => undefined;
 
 export function initAttributeFromState(
   name: string,
   stateKey: string,
   element: Element,
   initState: Record<string, unknown>,
-  context: JSXContext,
   register: Register
 ): undefined {
   const value = initState[stateKey];
@@ -24,28 +34,6 @@ export function initAttributeFromState(
 
   if (isAtom(value)) {
     register(syncElementAttribute(element, name, value));
-    // const firstValue = initValue.unwrap();
-
-    // if (firstValue != null) {
-    //   element.setAttribute(name, firstValue as any);
-    // }
-
-    // register(
-    //   subscribe(initValue, () => {
-    //     const value = initValue.unwrap();
-    //     if (value != null) {
-    //       element.setAttribute(name, value as any);
-    //     } else {
-    //       element.removeAttribute(name);
-    //     }
-    //   })
-    // );
-    // register(
-    //   subscribe(
-    //     initValue,
-    //     handleAttributeChange.bind(undefined, element, name, initValue)
-    //   )
-    // );
   } else {
     // setAttribute casts to string
     element.setAttribute(name, value as any);
@@ -78,7 +66,6 @@ export function initSyncAttribute(
   atom: Atom<unknown>,
   element: Element,
   initState: Record<string, unknown>,
-  context: JSXContext,
   register: Register
 ) {
   register(syncElementAttribute(element, name, atom));
@@ -103,7 +90,6 @@ export function initAttributeToggleFromState(
   stateKey: string,
   element: Element,
   initState: Record<string, unknown>,
-  context: JSXContext,
   register: Register
 ): undefined {
   const value = initState[stateKey];
@@ -115,21 +101,6 @@ export function initAttributeToggleFromState(
     element.toggleAttribute(name, true);
   } else if (isAtom(value)) {
     register(syncElementAttributeToggle(element, name, value));
-    // const firstValue = initValue.unwrap();
-    // if (firstValue === true || firstValue) {
-    //   element.toggleAttribute(name, true);
-    // }
-    // register(
-    //   subscribe(
-    //     initValue,
-    //     handleToggleChange.bind(undefined, element, name, initValue)
-    //   )
-    // );
-    // register(
-    //   subscribe(initValue, () => {
-    //     element.toggleAttribute(name, !!initValue.unwrap());
-    //   })
-    // );
   }
 }
 
@@ -153,26 +124,16 @@ export function initSyncAttributeToggle(
   atom: Atom<unknown>,
   element: Element,
   initState: Record<string, unknown>,
-  context: JSXContext,
   register: Register
 ) {
   register(syncElementAttributeToggle(element, name, atom));
 }
-
-// function handleToggleChange(
-//   element: Element,
-//   name: string,
-//   atom: Atom<unknown>
-// ): undefined {
-//   element.toggleAttribute(name, !!atom.unwrap());
-// }
 
 export function initPropFromState(
   name: string,
   stateKey: string,
   element: Element,
   initState: Record<string, unknown>,
-  context: JSXContext,
   register: Register
 ): undefined {
   const value = initState[stateKey];
@@ -201,7 +162,6 @@ export function initProp(
   value: unknown,
   element: Element,
   initState: Record<string, unknown>,
-  context: JSXContext,
   register: Register
 ) {
   if (value != null && isAtom(value)) {
@@ -211,26 +171,6 @@ export function initProp(
     (element as any)[name] = value;
   }
 }
-
-// export function initDelegatedEventFromState(
-//   name: string,
-//   stateKey: string,
-//   element: Element,
-//   initState: Record<string, unknown>
-// ): undefined {
-//   const value = initState[stateKey];
-//   if (value == null) {
-//     return;
-//   }
-
-//   // TODO: Dev mode only, check if key is in delegatedEventTypes and warn if not
-
-//   assertOverride<DelegatedEventParams<unknown, EventTarget>>(value);
-//   assertOverride<DelegatedEventTarget>(element);
-
-//   element[`${EVENT_KEY_PREFIX}:${name}`] = value.handler;
-//   element[`${EVENT_DATA_KEY_PREFIX}:${name}`] = value.data;
-// }
 
 export function initEventFromState(
   name: string,
@@ -262,14 +202,13 @@ export function initEvent(
 }
 
 export interface Setup {
-  (element: Element, context: JSXContext, register: Register): undefined;
+  (element: Element, register: Register): undefined;
 }
 
 export function initSetupFromState(
   stateKey: string,
   element: Element,
   initState: Record<string, unknown>,
-  context: JSXContext,
   register: Register
 ) {
   const value = initState[stateKey];
@@ -278,24 +217,22 @@ export function initSetupFromState(
   }
 
   assertOverride<Setup>(value);
-  value(element, context, register);
+  value(element, register);
 }
 
 export function initSetup(
   setup: Setup,
   element: Element,
   initState: Record<string, unknown>,
-  context: JSXContext,
   register: Register
 ) {
-  setup(element, context, register);
+  setup(element, register);
 }
 
 export function initPlaceholderFromState(
   stateKey: string,
   placeHolder: Text,
   initState: Record<string, unknown>,
-  context: JSXContext,
   register: Register
 ) {
   const initValue = initState[stateKey];

@@ -1,7 +1,7 @@
-import type { Disposer } from '@metron/core/shared.js';
-import type { JSXContext, ContextProviderProps } from './context.js';
+import type { Context, ContextProviderProps } from './context.js';
 
 export interface JSXBaseNode {
+  // TODO remove IS_NODE and nodeType and replace with NODE_TYPE symbol
   readonly [IS_NODE]: true;
   readonly nodeType: number;
   readonly tag: unknown;
@@ -45,13 +45,11 @@ export type JSXNode =
 
 export type JSXProps = {};
 
-export type Register = (dispose: Disposer) => void;
-
 export interface Component<
   TProps extends JSXProps = JSXProps,
   TReturn = unknown
 > {
-  (props: TProps, context: JSXContext, register: Register): TReturn;
+  (props: TProps, context: Context): TReturn;
 }
 
 export interface StaticComponent<
@@ -69,8 +67,7 @@ export interface JSXRenderFn<
 > {
   (
     value: TValue,
-    context: JSXContext,
-    register: Register,
+    context: Context,
     append: (child: TChild) => void,
     parent: TParent
   ): undefined;
@@ -91,14 +88,12 @@ export function isStaticComponent(
   return (component as any)[IS_STATIC_COMPONENT] === true;
 }
 
-export function createStaticComponent<
+export function convertToStaticComponent<
   TProps extends JSXProps = JSXProps,
   TReturn = unknown
->(
-  component: (props: TProps, context?: undefined) => TReturn
-): StaticComponent<TProps, TReturn> {
-  (component as any)[IS_STATIC_COMPONENT] = true;
-  return component as any;
+>(render: (props: TProps) => TReturn) {
+  (render as StaticComponent)[IS_STATIC_COMPONENT] = true;
+  return render;
 }
 
 export function isJSXNode(maybeNode: {}): maybeNode is JSXNode {

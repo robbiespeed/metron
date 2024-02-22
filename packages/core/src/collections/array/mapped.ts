@@ -1,8 +1,8 @@
-// import { createRelayOrb } from 'metron-core/orb.js';
+// import { createRelayOrb } from '../../orb.js';
 // import type { AtomArray } from '../array.js';
 // import { Stabilizer } from '../stabilizer.js';
 // import { StabilizedAtomArray } from './stabilized.js';
-// import { ORB } from 'metron-core/atom.js';
+// import { ORB } from '../../atom.js';
 // import { ARRAY_CHANGE_STORE } from './change-store.js';
 
 // export function createMappedArray<TIn, TOut>(

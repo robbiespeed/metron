@@ -5,7 +5,6 @@ import {
   type Component,
   type JSXComponentNode,
   type JSXIntrinsicNode,
-  createStaticComponent,
   type StaticComponent,
   type JSXProps,
   IS_STATIC_COMPONENT,
@@ -33,11 +32,10 @@ declare namespace JSX {
 
 export type { JSX };
 
-export const Fragment = createStaticComponent<{ children?: unknown[] }>(
-  ({ children }) => {
-    return children;
-  }
-);
+export const Fragment = (({ children }) => children) as StaticComponent<{
+  children: unknown;
+}>;
+Fragment[IS_STATIC_COMPONENT] = true;
 
 export type PropsFromTag<TTag extends JSX.ElementType> = TTag extends string
   ? JSX.IntrinsicElements[TTag]
@@ -47,7 +45,7 @@ export type PropsFromTag<TTag extends JSX.ElementType> = TTag extends string
 
 function jsx(tag: JSX.ElementType, props: JSXProps): unknown {
   if (typeof tag === 'function') {
-    if ((tag as any)[IS_STATIC_COMPONENT] === true) {
+    if ((tag as StaticComponent)[IS_STATIC_COMPONENT] === true) {
       return (tag as StaticComponent)(props);
     }
     return {

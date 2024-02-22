@@ -1,4 +1,3 @@
-import type { Disposer } from '@metron/core/shared.js';
 import {
   NODE_TYPE_COMPONENT,
   NODE_TYPE_CONTEXT_PROVIDER,
@@ -8,14 +7,9 @@ import {
   type JSXIntrinsicNode,
   NODE_TYPE_ADVANCED,
   type JSXRenderFn,
-  type Register,
 } from '../node.js';
-import {
-  type JSXContext,
-  createRootContext,
-  createChildContext,
-} from '../context.js';
-import { isIterable, dispose } from '../utils.js';
+import { type Context, createRootContext, disposeContext } from '../context.js';
+import { isIterable } from '../utils.js';
 import { isAtom, subscribe } from '@metron/core/atom.js';
 import {
   initAttributeFromState,
@@ -23,6 +17,7 @@ import {
   initPropFromState,
   initSetupFromState,
 } from './element.js';
+import type { Disposer } from '@metron/core/shared.js';
 
 interface DomRenderContextProps {
   readonly root: ParentNode;
@@ -42,76 +37,79 @@ export const EVENT_HANDLER_PREFIX_LENGTH = EVENT_HANDLER_PREFIX.length;
 
 export function render(
   { root, children }: DomRenderContextProps,
-  context = createRootContext()
+  context?: Context
 ): Disposer {
   if (children == null) {
     throw new TypeError('Expected children');
   }
 
-  root.textContent = '';
+  if (context !== undefined) {
+    throw new Error('TODO');
+  }
 
-  const disposers: Disposer[] = [];
+  // const [renderContext, dispose] = createRootContext();
+  const renderContext = createRootContext();
+
+  root.textContent = '';
 
   renderInto(
     children,
-    context,
-    (d) => disposers.push(d),
+    renderContext,
     (child) => {
       root.appendChild(child);
     },
     root
   );
 
-  const disposeRoot: Disposer = () => {
-    dispose(disposers);
-    disposers.length = 0;
+  const dispose: Disposer = () => {
+    disposeContext(renderContext);
   };
 
-  (root as any)['__METRON_DISPOSE_ROOT'] = disposeRoot;
+  (root as any)['__METRON_RENDER_DISPOSE'] = dispose;
 
-  return disposeRoot;
+  return dispose;
 }
 
 /**
  * @private
  */
 export const jsxRender: JSXRender = {
-  [NODE_TYPE_COMPONENT](component, context, register, append, parent) {
+  [NODE_TYPE_COMPONENT](component, context, append, parent) {
     const { tag, props } = component;
 
-    const children = tag(props, context, register);
+    const children = tag(props, context);
 
     if (children != null) {
-      renderInto(children, context, register, append, parent);
+      renderInto(children, context, append, parent);
     }
   },
   [NODE_TYPE_INTRINSIC]: renderIntrinsic,
   [NODE_TYPE_CONTEXT_PROVIDER](
     { props: { children, assignments } },
     context,
-    register,
     append,
     parent
   ) {
     if (children != null) {
-      const childContext = createChildContext(context, assignments);
-      renderInto(children, childContext, register, append, parent);
+      throw new Error('TODO');
+      // const childContext = { ...context };
+      // renderInto(children, childContext, append, parent);
     }
   },
-  [NODE_TYPE_ADVANCED](node, context, register, append, parent) {
-    node.tag(node.props, context, register, append, parent);
+  [NODE_TYPE_ADVANCED](node, context, append, parent) {
+    node.tag(node.props, context, append, parent);
   },
 };
 
 export function renderIntrinsic(
   intrinsic: JSXIntrinsicNode,
-  context: JSXContext,
-  register: Register,
+  context: Context,
   append: (child: ChildNode) => void
 ): undefined {
   const { children, ...props } = intrinsic.props as Record<string, unknown>;
 
   const element = document.createElement(intrinsic.tag);
+  const { register } = context;
 
   for (const key of Object.keys(props)) {
     let [keySpecifier, keyName] = key.split(':', 2) as [string, string];
@@ -122,29 +120,22 @@ export function renderIntrinsic(
 
     switch (keySpecifier) {
       case 'setup':
-        initSetupFromState(key, element, props, context, register);
+        initSetupFromState(key, element, props, register);
         continue;
       case 'prop': {
-        initPropFromState(keyName, key, element, props, context, register);
+        initPropFromState(keyName, key, element, props, register);
         continue;
       }
       case 'attr': {
         if (key === 'class') {
-          initPropFromState(
-            'className',
-            key,
-            element,
-            props,
-            context,
-            register
-          );
+          initPropFromState('className', key, element, props, register);
           continue;
         }
-        initAttributeFromState(keyName, key, element, props, context, register);
+        initAttributeFromState(keyName, key, element, props, register);
         continue;
       }
       case 'toggle': {
-        initAttributeFromState(keyName, key, element, props, context, register);
+        initAttributeFromState(keyName, key, element, props, register);
         continue;
       }
       case 'on': {
@@ -160,7 +151,6 @@ export function renderIntrinsic(
     renderInto(
       children,
       context,
-      register,
       (child) => {
         element.appendChild(child);
       },
@@ -176,24 +166,17 @@ export function renderIntrinsic(
  */
 export function renderInto(
   value: {},
-  context: JSXContext,
-  register: (dispose: Disposer) => void,
+  context: Context,
   append: (child: ChildNode) => void,
   parent: ParentNode | undefined
 ): void {
   if (typeof value === 'object') {
     if (isJSXNode(value)) {
-      return jsxRender[value.nodeType](
-        value as any,
-        context,
-        register,
-        append,
-        parent
-      );
+      return jsxRender[value.nodeType](value as any, context, append, parent);
     } else if (isIterable(value)) {
       for (const child of value) {
         if (child != null) {
-          renderInto(child, context, register, append, undefined);
+          renderInto(child, context, append, undefined);
         }
       }
       return;
@@ -206,7 +189,7 @@ export function renderInto(
       );
       append(text);
 
-      register(
+      context.register(
         subscribe(value, () => {
           const newValue = value.unwrap();
           // Data casts to string
