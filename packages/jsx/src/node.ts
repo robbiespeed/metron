@@ -1,4 +1,4 @@
-import type { Context, ContextProviderProps } from './context.js';
+import type { Context } from './context.js';
 
 export interface JSXBaseNode {
   // TODO remove IS_NODE and nodeType and replace with NODE_TYPE symbol
@@ -20,28 +20,20 @@ export interface JSXComponentNode extends JSXBaseNode {
   readonly props: JSXProps;
 }
 
-// TODO: maybe if render logic is determined via context this could be converted to a advanced node
-export interface JSXContextProviderNode extends JSXBaseNode {
-  readonly nodeType: typeof NODE_TYPE_CONTEXT_PROVIDER;
-  readonly tag: undefined;
-  readonly props: ContextProviderProps;
-}
-
-export interface JSXAdvancedNode<
-  TProps extends JSXProps = JSXProps,
-  TChild = any,
-  TParent = any
-> extends JSXBaseNode {
-  readonly nodeType: typeof NODE_TYPE_ADVANCED;
-  readonly tag: JSXRenderFn<TProps, TChild, TParent>;
+export interface JSXUnsafeNode<TProps extends JSXProps = JSXProps>
+  extends JSXBaseNode {
+  readonly nodeType: typeof NODE_TYPE_UNSAFE;
+  readonly tag: RenderFn<TProps>;
   readonly props: TProps;
 }
 
-export type JSXNode =
-  | JSXIntrinsicNode
-  | JSXComponentNode
-  | JSXContextProviderNode
-  | JSXAdvancedNode;
+export type RenderFn<TProps extends {} = {}> = (
+  props: TProps,
+  context: Context,
+  ...rest: unknown[]
+) => undefined;
+
+export type JSXNode = JSXIntrinsicNode | JSXComponentNode | JSXUnsafeNode;
 
 export type JSXProps = {};
 
@@ -60,23 +52,9 @@ export interface StaticComponent<
   [IS_STATIC_COMPONENT]: true;
 }
 
-export interface JSXRenderFn<
-  TValue = unknown,
-  TChild = unknown,
-  TParent = unknown
-> {
-  (
-    value: TValue,
-    context: Context,
-    append: (child: TChild) => void,
-    parent: TParent
-  ): undefined;
-}
-
 export const NODE_TYPE_INTRINSIC = 0;
 export const NODE_TYPE_COMPONENT = 1;
-export const NODE_TYPE_CONTEXT_PROVIDER = 2;
-export const NODE_TYPE_ADVANCED = 3;
+export const NODE_TYPE_UNSAFE = 2;
 
 export const IS_NODE = Symbol('MetronJSXNodeBrand');
 

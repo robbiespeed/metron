@@ -46,6 +46,28 @@ bench('bind', () => {
   }
 });
 
+bench('array a', () => {
+  let i = count;
+  function foo(a, b, c) {
+    return a * b + c;
+  }
+  function bar(a, b, c, d) {
+    return (a * b + c) * d;
+  }
+  function flip(v) {
+    return -v;
+  }
+  const fooFn = [foo, flip(2), 3];
+  const barFn = [bar, flip(2), 3];
+  while (i--) {
+    if (i % 2) {
+      fooFn[0](fooFn[1], fooFn[2], i);
+    } else {
+      barFn[0](fooFn[1], fooFn[2], -i, i);
+    }
+  }
+});
+
 bench('manual wrap', () => {
   let i = count;
   function foo(a, b, c) {

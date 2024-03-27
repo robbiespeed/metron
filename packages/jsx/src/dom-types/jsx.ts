@@ -9,6 +9,10 @@ type ScopedProps = {
   [key: `prop:${string}`]: unknown;
 };
 
+type Parent = {
+  children?: unknown;
+};
+
 interface EventHandlerProps {
   [event: `on:${string}`]: AtomOrValue<undefined | EventHandler>;
 }
@@ -20,7 +24,8 @@ type ScopedGlobalAttributes = {
 export type BrowserHTMLAttributes = EventHandlerProps &
   ScopedProps &
   ScopedGlobalAttributes &
-  GlobalHTMLAttributes;
+  GlobalHTMLAttributes &
+  Parent;
 
 export interface IntrinsicElements {
   // HTML

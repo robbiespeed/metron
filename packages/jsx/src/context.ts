@@ -2,47 +2,60 @@ import type { Disposer } from '@metron/core/shared.js';
 import {
   convertToStaticComponent,
   IS_NODE,
-  NODE_TYPE_CONTEXT_PROVIDER,
-  type JSXContextProviderNode,
+  NODE_TYPE_UNSAFE,
+  type JSXUnsafeNode,
+  type RenderFn,
 } from './node.js';
 
-export interface ContextStore {
-  [stateKey: symbol]: unknown;
-}
+export const Render: ContextKey<RenderFn> = () => {
+  throw new Error('No Render Context');
+};
+
+// TODO: make this a Component (used to assign single Context value) with a symbol for fallback value fn
+// rename to ContextComponent
+export type ContextKey<TValue> = () => TValue;
+
+type ContextStore = Map<ContextKey<unknown>, unknown>;
 
 export interface ContextProviderProps {
-  assignments: Partial<ContextStore>;
+  assignments: [key: ContextKey<unknown>, value: unknown][];
   children?: unknown;
 }
 
-export const ContextProvider = convertToStaticComponent<
-  ContextProviderProps,
-  JSXContextProviderNode
->((props) => {
-  return {
-    [IS_NODE]: true,
-    nodeType: NODE_TYPE_CONTEXT_PROVIDER,
-    tag: undefined,
-    props,
-  };
-});
+export const ContextProvider = convertToStaticComponent(
+  (props: ContextProviderProps): JSXUnsafeNode<ContextProviderProps> => {
+    return {
+      [IS_NODE]: true,
+      nodeType: NODE_TYPE_UNSAFE,
+      tag: insertContextJSX,
+      props,
+    };
+  }
+);
+
+function insertContextJSX(
+  { children, assignments }: ContextProviderProps,
+  context: Context,
+  ...rest: unknown[]
+): undefined {
+  if (children != null) {
+    const childContext = extendContext(context, assignments);
+    childContext.use(Render)(children, childContext, ...rest);
+  }
+}
 
 export type Register = (disposer: Disposer) => undefined;
 
-// interface Context {
-//   // TODO: remove undefined (throw instead)
-//   use: <T extends symbol>(key: T) => ContextStore[T] | undefined;
-//   register: Register;
-// }
-
 export type { Context };
 
+// TODO: make this not a class and remove all dispose fns
+// fork and root should return a disposers along with the forked context
+// see notes/context-types.md for making extend and root type safe
 class Context {
   #disposers!: Disposer[];
   #store!: ContextStore;
-  // TODO: remove undefined (throw instead)
-  use = <T extends symbol>(key: T): ContextStore[T] | undefined => {
-    return this.#store[key];
+  use = <T>(key: ContextKey<T>): T => {
+    return (this.#store.get(key) as T | undefined) ?? key();
   };
   register = (disposer: Disposer): undefined => {
     this.#disposers.push(disposer);
@@ -59,16 +72,21 @@ class Context {
     context.#disposers = disposers;
     return context;
   }
-  static extend(parent: Context, assignments: Partial<ContextStore>): Context {
+  static extend(
+    parent: Context,
+    assignments: [key: ContextKey<unknown>, value: unknown][]
+  ): Context {
     const context = new Context();
-    context.#store = { ...parent.#store, ...assignments };
+    context.#store = new Map([...parent.#store, ...assignments]);
     context.#disposers = [];
     return context;
   }
-  static createRoot(): Context {
+  static createRoot(
+    assignments?: [key: ContextKey<unknown>, value: unknown][]
+  ): Context {
     const context = new Context();
     context.#disposers = [];
-    context.#store = {};
+    context.#store = new Map(assignments);
     return context;
   }
   static dispose(context: Context): undefined {
@@ -101,31 +119,9 @@ class Context {
 
 export const createRootContext = Context.createRoot;
 export const forkContext = Context.fork;
+export const extendContext = Context.extend;
 export const controlledForkContext = Context.controlledFork;
 
 export const disposeContext = Context.dispose;
 export const disposeContexts = Context.disposeMany;
 export const disposeSparseContexts = Context.disposeManySparse;
-
-// export type { Context };
-
-// const rootUse = () => {
-//   throw new Error('TODO');
-// };
-
-// export function createRootContext(): [Context, Disposer] {
-//   const disposers: Disposer[] = [];
-//   return [
-//     {
-//       use: rootUse,
-//       register: (disposer: Disposer) => {
-//         disposers.push(disposer);
-//       },
-//     },
-//     () => {
-//       for (let i = 0; i < disposers.length; i++) {
-//         disposers[i]!();
-//       }
-//     },
-//   ];
-// }

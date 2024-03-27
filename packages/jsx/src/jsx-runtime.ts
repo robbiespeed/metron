@@ -23,7 +23,7 @@ declare namespace JSX {
 
   type ElementType<TProps = unknown> =
     // JSX won't function unless any is the fallback type for TProps
-    | Component<TProps extends JSXProps ? TProps : any>
+    | Component<TProps extends JSXProps ? any : any>
     | StaticComponent<TProps extends JSXProps ? TProps : any>
     | string;
 
@@ -32,10 +32,8 @@ declare namespace JSX {
 
 export type { JSX };
 
-export const Fragment = (({ children }) => children) as StaticComponent<{
-  children: unknown;
-}>;
-Fragment[IS_STATIC_COMPONENT] = true;
+export const Fragment = ({ children }: { children: unknown }) => children;
+Fragment[IS_STATIC_COMPONENT] = true as const;
 
 export type PropsFromTag<TTag extends JSX.ElementType> = TTag extends string
   ? JSX.IntrinsicElements[TTag]

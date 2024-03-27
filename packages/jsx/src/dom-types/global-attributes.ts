@@ -1,28 +1,25 @@
 import type { AriaAttributes } from './aria.js';
-import type { AtomOrValue } from './shared.js';
+import type { SlottableAtomOrValue } from './shared.js';
 
 // spell-checker:disable
 export interface GlobalHTMLAttributes extends AriaAttributes {
-  [attribute: string]: AtomOrValue<
-    undefined | boolean | number | string | Function
-  >;
-  accesskey?: AtomOrValue<string>;
-  autocapitalize?: AtomOrValue<
+  accesskey?: SlottableAtomOrValue<string>;
+  autocapitalize?: SlottableAtomOrValue<
     undefined | 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'
   >;
   // Bad UX and would only be possible with server rendering
-  // autofocus?: AtomOrValue<string>;
-  class?: AtomOrValue<undefined | string>;
-  contenteditable?: AtomOrValue<string>;
-  [dataAttribute: `data-${string}`]: AtomOrValue<string>;
-  dir?: AtomOrValue<undefined | 'rtl' | 'ltr' | 'auto'>;
-  draggable?: AtomOrValue<undefined | 'true' | 'false'>;
-  enterkeyhint?: AtomOrValue<undefined | string>;
-  exportparts?: AtomOrValue<undefined | string>;
-  hidden?: AtomOrValue<undefined | boolean | 'until-found'>;
-  id?: AtomOrValue<undefined | string>;
-  inert?: AtomOrValue<undefined | boolean>;
-  inputmode?: AtomOrValue<
+  // autofocus?: SlottableAtomOrValue<string>;
+  class?: SlottableAtomOrValue<undefined | string>;
+  contenteditable?: SlottableAtomOrValue<string>;
+  [dataAttribute: `data-${string}`]: SlottableAtomOrValue<string>;
+  dir?: SlottableAtomOrValue<undefined | 'rtl' | 'ltr' | 'auto'>;
+  draggable?: SlottableAtomOrValue<undefined | 'true' | 'false'>;
+  enterkeyhint?: SlottableAtomOrValue<undefined | string>;
+  exportparts?: SlottableAtomOrValue<undefined | string>;
+  hidden?: SlottableAtomOrValue<undefined | boolean | 'until-found'>;
+  id?: SlottableAtomOrValue<undefined | string>;
+  inert?: SlottableAtomOrValue<undefined | boolean>;
+  inputmode?: SlottableAtomOrValue<
     | undefined
     | 'none'
     | 'text'
@@ -35,18 +32,18 @@ export interface GlobalHTMLAttributes extends AriaAttributes {
   >;
   // Not supported using setAttribute
   // is?: undefined | string;
-  itemid?: AtomOrValue<undefined | string>;
-  itemprop?: AtomOrValue<undefined | string>;
-  itemref?: AtomOrValue<undefined | string>;
-  itemscope?: AtomOrValue<undefined | string>;
-  itemtype?: AtomOrValue<undefined | string>;
-  lang?: AtomOrValue<undefined | string>;
-  nonce?: AtomOrValue<undefined | string>;
-  part?: AtomOrValue<undefined | string>;
-  slot?: AtomOrValue<undefined | string>;
-  spellcheck?: AtomOrValue<undefined | true | 'true' | 'false'>;
-  style?: AtomOrValue<undefined | string>;
-  tabindex?: AtomOrValue<undefined | `${number}`>;
-  title?: AtomOrValue<undefined | string>;
-  translate?: AtomOrValue<undefined | true | 'yes' | 'no'>;
+  itemid?: SlottableAtomOrValue<undefined | string>;
+  itemprop?: SlottableAtomOrValue<undefined | string>;
+  itemref?: SlottableAtomOrValue<undefined | string>;
+  itemscope?: SlottableAtomOrValue<undefined | string>;
+  itemtype?: SlottableAtomOrValue<undefined | string>;
+  lang?: SlottableAtomOrValue<undefined | string>;
+  nonce?: SlottableAtomOrValue<undefined | string>;
+  part?: SlottableAtomOrValue<undefined | string>;
+  slot?: SlottableAtomOrValue<undefined | string>;
+  spellcheck?: SlottableAtomOrValue<undefined | true | 'true' | 'false'>;
+  style?: SlottableAtomOrValue<undefined | string>;
+  tabindex?: SlottableAtomOrValue<undefined | `${number}`>;
+  title?: SlottableAtomOrValue<undefined | string>;
+  translate?: SlottableAtomOrValue<undefined | true | 'yes' | 'no'>;
 }

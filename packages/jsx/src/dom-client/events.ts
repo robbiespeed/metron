@@ -25,7 +25,7 @@ export type DataEvent<TData, TEventTarget extends EventTarget> = {
 
 export const EVENT_KEY_PREFIX = '__METRON_EVENT';
 
-type EventKey = `${typeof EVENT_KEY_PREFIX}:${string}`;
+export type EventKey = `${typeof EVENT_KEY_PREFIX}:${string}`;
 
 export interface DelegatedEventTarget extends EventTarget {
   [event: EventKey]:
@@ -53,7 +53,11 @@ function delegateListener(root: EventTarget, eventKey: EventKey, evt: Event) {
     isStopped = true;
   };
 
-  do {
+  for (
+    ;
+    node !== null && node !== root;
+    node = (node as ChildNode).parentNode as EventTarget | null
+  ) {
     const delegated = (node as DelegatedEventTarget)[eventKey];
     if (delegated !== undefined) {
       if (typeof delegated === 'object') {
@@ -61,14 +65,11 @@ function delegateListener(root: EventTarget, eventKey: EventKey, evt: Event) {
       } else {
         delegated(evt as any);
       }
-
       if (isStopped) {
         return;
       }
     }
-
-    node = (node as ChildNode).parentNode as EventTarget | null;
-  } while (node !== null && node !== root);
+  }
 }
 
 export function createEventDelegator(

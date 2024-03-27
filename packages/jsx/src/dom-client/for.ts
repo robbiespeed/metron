@@ -1,11 +1,5 @@
 import type { AtomArray } from '@metron/core/collections/array.js';
-import {
-  disposeContexts,
-  type Context,
-  disposeContext,
-  disposeSparseContexts,
-  forkContext,
-} from '../context.js';
+import { type Context, controlledForkContext } from '../context.js';
 import type { Disposer } from '@metron/core/shared.js';
 import { EMITTER } from '@metron/core/atom.js';
 import {
@@ -17,17 +11,28 @@ import {
   type ReadonlyArrayChangeStore,
 } from '@metron/core/collections/array/change-store.js';
 import {
-  NODE_TYPE_ADVANCED,
+  NODE_TYPE_UNSAFE,
   type Component,
   type JSXProps,
   IS_NODE,
-  type JSXAdvancedNode,
+  type JSXUnsafeNode,
 } from '../node.js';
 
 type Template<TValue> = (value: TValue, context: Context) => Element;
 
+function disposeIndexed(indexedDisposers: Disposer[][]) {
+  for (let i = 0; i < indexedDisposers.length; i++) {
+    const disposers = indexedDisposers[i]!;
+    for (let j = 0; j < disposers.length; j++) {
+      disposers[j]!();
+    }
+  }
+}
+
+const emptyArray: [] = [];
+
 class ElementChildrenSynchronizer<TValue> {
-  #indexedContexts: Context[] = [];
+  #indexedDisposers: Disposer[][] = [];
   #indexedElements: ChildNode[] = [];
   #array: AtomArray<TValue>;
   #changeStore: ReadonlyArrayChangeStore;
@@ -37,17 +42,17 @@ class ElementChildrenSynchronizer<TValue> {
   #context: Context;
   #parent: ParentNode;
   #template: Template<TValue>;
-  #marker: null | ChildNode;
+  #marker: null | Node;
   #disposeSubscription: Disposer;
   #range: Range | undefined;
-  #clear: () => void;
+  #isOnlyChild: boolean;
 
   private constructor(
     parent: ParentNode,
     array: AtomArray<TValue>,
     context: Context,
     template: Template<TValue>,
-    marker: null | ChildNode
+    marker: null | Node
   ) {
     this.#array = array;
     const changeStore = array[ARRAY_CHANGE_STORE];
@@ -58,8 +63,15 @@ class ElementChildrenSynchronizer<TValue> {
     this.#context = context;
     this.#parent = parent;
     this.#template = template;
-    this.#marker = marker;
-    this.#clear = marker === null ? this.#clearParent : this.#clearToTail;
+    if (marker === parent) {
+      this.#isOnlyChild = true;
+      this.#marker = null;
+    } else {
+      this.#isOnlyChild = false;
+      const internalMarker = document.createTextNode('');
+      parent.insertBefore(internalMarker, marker);
+      this.#marker = internalMarker;
+    }
 
     this.#disposeSubscription = array[EMITTER].subscribe(
       this.#changeHandler.bind(this)
@@ -71,7 +83,7 @@ class ElementChildrenSynchronizer<TValue> {
   }
   #dispose(): undefined {
     this.#disposeSubscription();
-    disposeContexts(this.#indexedContexts);
+    disposeIndexed(this.#indexedDisposers);
   }
   #changeHandler(): undefined {
     const next = this.#array.unwrap(),
@@ -87,9 +99,9 @@ class ElementChildrenSynchronizer<TValue> {
       if (prev.length === 0) {
         return;
       }
-      disposeContexts(this.#indexedContexts);
+      disposeIndexed(this.#indexedDisposers);
       this.#cache = [];
-      this.#indexedContexts.length = 0;
+      this.#indexedDisposers.length = 0;
       this.#indexedElements.length = 0;
       this.#clear();
       return;
@@ -100,7 +112,7 @@ class ElementChildrenSynchronizer<TValue> {
     if (this.#refreshToken !== changeStore.refreshToken) {
       this.#refreshToken = changeStore.refreshToken;
       if (prev.length > 0) {
-        disposeContexts(this.#indexedContexts);
+        disposeIndexed(this.#indexedDisposers);
         this.#clear();
       }
 
@@ -144,34 +156,35 @@ class ElementChildrenSynchronizer<TValue> {
     this.#fallback(start, prev);
   }
   #append(start: number) {
-    const indexedElements = this.#indexedElements,
-      cache = this.#cache,
-      indexedContexts = this.#indexedContexts,
-      context = this.#context,
-      parent = this.#parent,
-      template = this.#template,
-      marker = this.#marker;
+    const indexedElements = this.#indexedElements;
+    const cache = this.#cache;
+    const indexedDisposers = this.#indexedDisposers;
+    const context = this.#context;
+    const parent = this.#parent;
+    const template = this.#template;
+    const marker = this.#marker;
 
     const length = cache.length;
     indexedElements.length = length;
-    indexedContexts.length = length;
+    indexedDisposers.length = length;
     for (; start < length; start++) {
       const datum = cache[start]!;
-      const childContext = forkContext(context);
-      const element = template(datum, childContext);
+      const disposers: Disposer[] = [];
+      const element = template(
+        datum,
+        controlledForkContext(context, disposers)
+      );
       indexedElements[start] = element;
-      indexedContexts[start] = childContext;
+      indexedDisposers[start] = disposers;
       parent.insertBefore(element, marker);
     }
   }
-  #clearParent() {
-    this.#parent.textContent = '';
-  }
-  #clearToTail() {
-    const range = (this.#range ??= document.createRange());
-    range.setStartBefore(this.#indexedElements[0]!);
-    range.setEndBefore(this.#marker!);
-    range.deleteContents();
+  #clear() {
+    if (this.#isOnlyChild) {
+      this.#parent.textContent = '';
+      return;
+    }
+    this.#clearRange(0, this.#indexedElements.length);
   }
   #clearRange(start: number, end: number) {
     const range = (this.#range ??= document.createRange());
@@ -180,10 +193,13 @@ class ElementChildrenSynchronizer<TValue> {
     range.deleteContents();
   }
   #delete(index: number) {
-    disposeContext(this.#indexedContexts[index]!);
+    const disposers = this.#indexedDisposers[index]!;
+    for (let j = 0; j < disposers.length; j++) {
+      disposers[j]!();
+    }
     const element = this.#indexedElements[index]!;
     this.#indexedElements.splice(index, 1);
-    this.#indexedContexts.splice(index, 1);
+    this.#indexedDisposers.splice(index, 1);
     this.#parent.removeChild(element);
   }
   #fallback(start: number, prevValues: TValue[]) {
@@ -199,9 +215,9 @@ class ElementChildrenSynchronizer<TValue> {
 
       // Trim fast path
       if (start === size) {
-        disposeContexts(this.#indexedContexts.splice(start));
+        disposeIndexed(this.#indexedDisposers.splice(start));
         this.#indexedElements.length = size;
-        this.#indexedContexts.length = size;
+        this.#indexedDisposers.length = size;
         return;
       }
     } else if (start === size) {
@@ -213,10 +229,9 @@ class ElementChildrenSynchronizer<TValue> {
     // Use the lookup to append existing nodes back into the DOM
     // Nodes which share the same value get added back in order
 
-    const indexedContexts = this.#indexedContexts;
+    const indexedDisposers = this.#indexedDisposers;
     const indexedElements = this.#indexedElements;
-    const unstableContexts: (Context | undefined)[] =
-      indexedContexts.slice(start);
+    const unstableDisposers: Disposer[][] = indexedDisposers.slice(start);
     const unstableNodes = indexedElements.slice(start);
     const unstableSize = unstableNodes.length;
     const unstableLookup = new Map<TValue, number | undefined>();
@@ -227,7 +242,7 @@ class ElementChildrenSynchronizer<TValue> {
     const context = this.#context;
 
     indexedElements.length = size;
-    indexedContexts.length = size;
+    indexedDisposers.length = size;
 
     let i = prevSize - 1;
     for (let j = unstableSize - 1; i >= start; i--, j--) {
@@ -242,10 +257,13 @@ class ElementChildrenSynchronizer<TValue> {
       const value = values[i]!;
       const unstableIndex = unstableLookup.get(value);
       if (unstableIndex === undefined) {
-        const childContext = forkContext(context);
-        const element = template(values[i]!, childContext);
+        const disposers: Disposer[] = [];
+        const element = template(
+          values[i]!,
+          controlledForkContext(context, disposers)
+        );
         indexedElements[i] = element;
-        indexedContexts[i] = childContext;
+        indexedDisposers[i] = disposers;
         parent.insertBefore(element, marker);
 
         continue;
@@ -254,35 +272,44 @@ class ElementChildrenSynchronizer<TValue> {
       unstableLookup.set(value, unstableChain[unstableIndex]);
 
       const node = unstableNodes[unstableIndex]!;
-      const disposers = unstableContexts[unstableIndex]!;
-      unstableContexts[unstableIndex] = undefined;
+      const disposers = unstableDisposers[unstableIndex]!;
+      unstableDisposers[unstableIndex] = emptyArray;
       unstableUnusedCount--;
 
-      indexedContexts[i] = disposers;
+      indexedDisposers[i] = disposers;
       indexedElements[i] = node;
       parent.insertBefore(node, marker);
     }
 
     if (unstableUnusedCount > 0) {
-      disposeSparseContexts(unstableContexts);
+      disposeIndexed(unstableDisposers);
     }
   }
   #insert(index: number) {
-    const childContext = forkContext(this.#context);
-    const element = this.#template(this.#cache[index]!, childContext);
+    const disposers: Disposer[] = [];
+    const element = this.#template(
+      this.#cache[index]!,
+      controlledForkContext(this.#context, disposers)
+    );
     const next = this.#indexedElements[index]!;
     this.#indexedElements.splice(index, 0, element);
-    this.#indexedContexts.splice(index, 0, childContext);
+    this.#indexedDisposers.splice(index, 0, disposers);
 
     this.#parent!.insertBefore(element, next);
   }
   #set(index: number) {
-    disposeContext(this.#indexedContexts[index]!);
-    const childContext = forkContext(this.#context);
-    const element = this.#template(this.#cache[index]!, childContext);
+    const nextDisposers: Disposer[] = [];
+    const prevDisposers = this.#indexedDisposers[index]!;
+    for (let j = 0; j < prevDisposers.length; j++) {
+      prevDisposers[j]!();
+    }
+    const element = this.#template(
+      this.#cache[index]!,
+      controlledForkContext(this.#context, nextDisposers)
+    );
     const prevElement = this.#indexedElements[index]!;
     this.#indexedElements[index] = element;
-    this.#indexedContexts[index] = childContext;
+    this.#indexedDisposers[index] = nextDisposers;
 
     this.#parent!.replaceChild(element, prevElement);
   }
@@ -295,9 +322,9 @@ class ElementChildrenSynchronizer<TValue> {
     elements[a] = bNode;
     elements[b] = aNode;
 
-    const tmpD = this.#indexedContexts[a]!;
-    this.#indexedContexts[a] = this.#indexedContexts[b]!;
-    this.#indexedContexts[b] = tmpD;
+    const tmpD = this.#indexedDisposers[a]!;
+    this.#indexedDisposers[a] = this.#indexedDisposers[b]!;
+    this.#indexedDisposers[b] = tmpD;
 
     const afterB = bNode.nextSibling;
 
@@ -326,14 +353,14 @@ class ElementChildrenSynchronizer<TValue> {
     array: AtomArray<TValue>,
     context: Context,
     as: Template<TValue>,
-    marker?: null | ChildNode
+    marker: null | ChildNode
   ): Disposer {
     const synchronizer = new ElementChildrenSynchronizer(
       parent,
       array,
       context,
       as,
-      marker ?? null
+      marker
     );
     return synchronizer.#dispose.bind(synchronizer);
   }
@@ -348,16 +375,17 @@ interface ForProps<TValue extends JSXProps> {
 
 export function For<TValue extends JSXProps>(
   props: ForProps<TValue>
-): JSXAdvancedNode<ForProps<TValue>> {
+): JSXUnsafeNode<ForProps<TValue>> {
   return {
     [IS_NODE]: true,
-    nodeType: NODE_TYPE_ADVANCED,
+    nodeType: NODE_TYPE_UNSAFE,
     props,
-    tag: renderAtomArray,
+    // TODO
+    tag: renderAtomArray as any,
   };
 }
 
-function renderAtomArrayB<TValue extends {}>(
+function renderAtomArray<TValue extends {}>(
   props: ForProps<TValue>,
   context: Context,
   parent: ParentNode,
@@ -365,35 +393,5 @@ function renderAtomArrayB<TValue extends {}>(
 ): undefined {
   context.register(
     syncElementChildren(parent, props.each, context, props.as, marker)
-  );
-}
-
-function renderAtomArray<TValue extends {}>(
-  props: ForProps<TValue>,
-  context: Context,
-  append: (child: ChildNode) => void,
-  parent: ParentNode | undefined
-): undefined {
-  const array = props.each;
-  const createElement = props.as;
-
-  if (parent === undefined) {
-    const marker = document.createTextNode('');
-    append(marker);
-    parent = marker.parentElement!;
-
-    if (parent == null) {
-      throw Error('TODO: Hmm... need to rethink jsx rendering');
-    }
-
-    context.register(
-      syncElementChildren(parent, array, context, createElement, marker)
-    );
-
-    return;
-  }
-
-  context.register(
-    syncElementChildren(parent, array, context, createElement, null)
   );
 }
