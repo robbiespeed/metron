@@ -27,6 +27,8 @@ const Foo = template<{ className: string }>(({ className }) =>
   })
 );
 
+const templateX = x;
+
 const Baz = templateX`
   <div class={className}>
     <span>Hello World</span>
@@ -34,10 +36,26 @@ const Baz = templateX`
 `;
 
 const Fuz = template<{ className: string }>(({ className }) =>
-  x('div', {
-    class: className,
-  })
+  x('div', { class: className }, [x('span', {}, ['Hello World'])])
 );
+
+const Zaz = templateX((state: any) => (
+  <div class={state.className}>
+    <div>
+      {state.map(({ className }: any) => (
+        <Bar className={className} />
+      ))}
+    </div>
+  </div>
+));
+
+const dynamic = x;
+
+const Xoo = template<{ className: string }>(({ className }) => (
+  <div class={className}>
+    <div>{dynamic(Bar, { className })}</div>
+  </div>
+));
 
 render({
   root,

@@ -1,3 +1,5 @@
+import { type Disposer } from './shared.js';
+
 interface OrbLink {
   consumer: WeakRef<Orb>;
   consumerId: string;
@@ -7,15 +9,11 @@ interface OrbLink {
 }
 
 interface LinkArray extends Array<OrbLink> {}
-interface LinkRecord extends Record<string, OrbLink> {}
+interface LinkRecord extends Map<string, OrbLink> {}
 
-let scheduledNodeSourceTrims = new Set<WeakRef<Orb>>();
-
-// const afterTransmitQueue: (() => undefined)[] = [];
-
-let idCounter = 0n;
+let idCounter = 0;
 const emptyArray = [] as [];
-const emptySourceLinks: LinkRecord = Object.create(null);
+const emptySourceLinks: LinkRecord = new Map();
 
 function removeLinkFromConsumerLinks(link: OrbLink, links: LinkArray) {
   const sourceConsumerLastSlot = links.length - 1;
@@ -33,34 +31,53 @@ function removeLinkFromConsumerLinks(link: OrbLink, links: LinkArray) {
 }
 
 const MAX_VERSION = Number.MAX_SAFE_INTEGER;
+const MAX_ID = Number.MAX_SAFE_INTEGER;
 
-const ORB_FLAG_TRANSMIT = 0b0001 as const;
-const ORB_FLAG_RECEIVE = 0b0010 as const;
+const ORB_FLAG_TRANSMIT = 0b00001 as const;
+const ORB_FLAG_RECEIVE = 0b00010 as const;
+const ORB_FLAG_CAN_TRIM = 0b00100 as const;
+const ORB_FLAG_CAN_EMIT = 0b01000 as const;
+const ORB_FLAG_SKIP_EMIT = 0b10000 as const;
+
+const ORB_INIT_FLAGS_TRANSMITTER =
+  ORB_FLAG_TRANSMIT | ORB_FLAG_CAN_EMIT | ORB_FLAG_CAN_TRIM;
+const ORB_INIT_FLAGS_RECEIVER =
+  ORB_FLAG_RECEIVE | ORB_FLAG_CAN_EMIT | ORB_FLAG_CAN_TRIM;
+const ORB_INIT_FLAGS_RELAY =
+  ORB_FLAG_RECEIVE | ORB_FLAG_TRANSMIT | ORB_FLAG_CAN_EMIT | ORB_FLAG_CAN_TRIM;
 
 function defaultIntercept() {
   return true;
 }
 
+function disposedSub(): undefined {}
+
+interface Subscription {
+  handler: () => undefined;
+  next?: Subscription;
+  prev?: Subscription;
+}
+
 export class Orb<TData = unknown> {
-  #id = `o:${idCounter++}`;
+  #id: string;
   #version = 0;
   #weakRef = new WeakRef(this);
   #sourceLinks: LinkRecord = emptySourceLinks;
   #consumerLinks: LinkArray = emptyArray;
+  #subscriptionHead?: Subscription;
   /**
    * TTData generic needed to allow instance to be assignable to wider typed Orb
    * @see https://github.com/microsoft/TypeScript/issues/57209
    */
   #intercept: <TTData extends TData>(this: Orb<TTData>) => boolean;
-  // #intercept: (this: Orb<unknown>) => boolean;
   #flags = 0b0;
   data: TData;
 
-  get id() {
+  get id(): string {
     return this.#id;
   }
-  get weakRef() {
-    return (this.#weakRef ??= new WeakRef(this));
+  get weakRef(): WeakRef<Orb<TData>> {
+    return this.#weakRef;
   }
   get isTransmitter(): boolean {
     return !(this.#flags & ORB_FLAG_TRANSMIT);
@@ -70,9 +87,77 @@ export class Orb<TData = unknown> {
   }
 
   private constructor(data: TData, intercept?: () => boolean) {
+    if (idCounter === MAX_ID) {
+      throw new Error('Incremental id range exceeded');
+    }
+    this.#id = `${idCounter++}`;
     this.data = data;
     this.#intercept = intercept ?? defaultIntercept;
   }
+
+  subscribe(handler: () => undefined): Disposer {
+    const subHead = this.#subscriptionHead;
+    const sub: Subscription = {
+      handler,
+      next: subHead,
+      prev: undefined,
+    };
+    if (subHead !== undefined) {
+      subHead.prev = sub;
+    }
+    this.#subscriptionHead = sub;
+
+    return Orb.#subDispose.bind(this, sub);
+  }
+
+  static #scheduled: Orb[] = [];
+  static #emit(orb: Orb) {
+    if (orb.#flags & ORB_FLAG_CAN_EMIT && orb.#subscriptionHead !== undefined) {
+      orb.#flags ^= ORB_FLAG_CAN_EMIT;
+      this.#scheduled.push(orb);
+    }
+  }
+  static #subDispose(this: Orb, sub: Subscription): undefined {
+    if (sub.handler === disposedSub) {
+      return;
+    }
+    sub.handler = disposedSub;
+    const { prev } = sub;
+    if (prev === undefined) {
+      this.#subscriptionHead = sub.next;
+      if (
+        this.#subscriptionHead === undefined &&
+        (this.#flags & ORB_FLAG_CAN_EMIT) === 0
+      ) {
+        // If emit is scheduled then flag to skip it.
+        this.#flags |= ORB_FLAG_SKIP_EMIT;
+      }
+    } else {
+      prev.next = sub.next;
+    }
+  }
+  static runEmits = (): undefined => {
+    const scheduled = this.#scheduled;
+    for (let i = 0; i < scheduled.length; i++) {
+      const emitter = scheduled[i]!;
+      if (emitter.#flags & ORB_FLAG_SKIP_EMIT) {
+        emitter.#flags ^= ORB_FLAG_SKIP_EMIT | ORB_FLAG_CAN_EMIT;
+        continue;
+      }
+      let next = emitter.#subscriptionHead;
+      while (next) {
+        try {
+          next.handler();
+        } catch (err) {
+          // TODO report uncaught async err through global event system
+          // console.error(err);
+        }
+        next = next.next;
+      }
+      emitter.#flags ^= ORB_FLAG_CAN_EMIT;
+    }
+    scheduled.length = 0;
+  };
 
   #safeIntercept(): boolean {
     try {
@@ -90,15 +175,14 @@ export class Orb<TData = unknown> {
     if (sourceLinks === emptySourceLinks) {
       return;
     }
-    for (const sourceId in sourceLinks) {
-      const link = sourceLinks[sourceId]!;
+    for (const link of sourceLinks.values()) {
       const source = link.source;
 
       if (source !== undefined) {
         removeLinkFromConsumerLinks(link, source.#consumerLinks);
       }
     }
-    this.#sourceLinks = Object.create(null);
+    this.#sourceLinks.clear();
   }
 
   static link(consumer: Orb<unknown>, source: Orb<unknown>): undefined {
@@ -112,7 +196,7 @@ export class Orb<TData = unknown> {
 
     const sourceLinks = consumer.#sourceLinks;
     const sourceId = source.#id;
-    const existingLink = sourceLinks[sourceId];
+    const existingLink = sourceLinks.get(sourceId);
 
     if (existingLink !== undefined) {
       existingLink.source = source;
@@ -131,29 +215,30 @@ export class Orb<TData = unknown> {
     };
 
     sourceConsumers.push(link);
-    sourceLinks[sourceId] = link;
+    sourceLinks.set(sourceId, link);
   }
-  // TODO bench scheduledNodeSourceTrims as an array + added orb.#canScheduleTrim
+  static #scheduledNodeSourceTrims: WeakRef<Orb>[] = [];
   static runTrim = (): undefined => {
-    for (const ref of scheduledNodeSourceTrims) {
-      const orb = ref.deref();
+    const trims = Orb.#scheduledNodeSourceTrims;
+    for (let i = 0; i < trims.length; i++) {
+      const orb = trims[i]!.deref();
       if (orb) {
+        orb.#flags ^= ORB_FLAG_CAN_TRIM;
         const version = orb.#version;
         const sourceLinks = orb.#sourceLinks;
-        for (const sourceId in sourceLinks) {
-          const link = sourceLinks[sourceId]!;
+        for (const [sourceId, link] of sourceLinks) {
           const source = link.source;
 
           if (source === undefined) {
-            delete sourceLinks[sourceId];
+            sourceLinks.delete(sourceId);
           } else if (link.consumerVersion < version) {
-            delete sourceLinks[sourceId];
+            sourceLinks.delete(sourceId);
             removeLinkFromConsumerLinks(link, source.#consumerLinks);
           }
         }
       }
     }
-    scheduledNodeSourceTrims = new Set();
+    trims.length = 0;
   };
 
   // bench perf of making these constants outside of the class instead
@@ -163,10 +248,10 @@ export class Orb<TData = unknown> {
   static #propagationLinkStack: LinkArray[] = [];
 
   static #propagate(consumers: LinkArray): undefined {
-    Orb.#canStartPropagation = false;
-    const propagatedNodeIds = Orb.#propagatedNodeIds;
+    this.#canStartPropagation = false;
+    const propagatedNodeIds = this.#propagatedNodeIds;
     let links = consumers;
-    const linkStack: LinkArray[] = Orb.#propagationLinkStack;
+    const linkStack: LinkArray[] = this.#propagationLinkStack;
     let i = links.length - 1;
     while (i >= 0) {
       const link = links[i]!;
@@ -181,10 +266,12 @@ export class Orb<TData = unknown> {
           if (isDynamicallyLinked || link.consumerVersion === Infinity) {
             propagatedNodeIds.add(link.consumerId);
             if (consumer.#safeIntercept()) {
+              this.#emit(consumer);
               if (++consumer.#version >= MAX_VERSION) {
                 consumer.#rollVersion();
-              } else {
-                scheduledNodeSourceTrims.add(consumerRef);
+              } else if (consumer.#flags & ORB_FLAG_CAN_TRIM) {
+                consumer.#flags ^= ORB_FLAG_CAN_TRIM;
+                this.#scheduledNodeSourceTrims.push(consumerRef);
               }
               if (isDynamicallyLinked) {
                 link.source = undefined;
@@ -216,21 +303,17 @@ export class Orb<TData = unknown> {
         }
       }
     }
-    Orb.#propagatedNodeIds = new Set<string>();
+    this.#propagatedNodeIds = new Set();
     linkStack.length = 0;
-    Orb.#canStartPropagation = true;
+    this.#canStartPropagation = true;
   }
 
-  // TODO: (Pretty sure none of this is relevant anymore)
-  // collection/shared.ts OrbKeyMap might require that transmit be refactored to share a global propagation state
-  // should bench this to make sure it's not a major pref regression for happy paths
-
-  // alternatively could revert back and make the transmit for OrbKeyMap be added to the afterTransmitQueue?
   static #transmit(this: Orb<unknown>): undefined {
     Orb.#propagatedNodeIds.add(this.#id);
     if (++this.#version >= MAX_VERSION) {
       this.#rollVersion();
     }
+    Orb.#emit(this);
 
     const consumerLinks = this.#consumerLinks;
     if (consumerLinks.length) {
@@ -287,7 +370,7 @@ export class Orb<TData = unknown> {
   ): TransmitterPackage<TData> {
     const orb = new Orb(data as TData, intercept);
     orb.#consumerLinks = [];
-    orb.#flags = ORB_FLAG_TRANSMIT;
+    orb.#flags = ORB_INIT_FLAGS_TRANSMITTER;
     const transmit = Orb.#transmit.bind(orb);
 
     // A transmitters only means of propagation is through transmit
@@ -304,11 +387,10 @@ export class Orb<TData = unknown> {
     intercept: (this: Orb<TData>) => boolean,
     staticSources?: Orb[]
   ): Orb<TData> {
-    const orb = new Orb(data, intercept) as Orb<TData>;
-    orb.#weakRef = new WeakRef(orb);
+    const orb = new Orb(data, intercept);
     orb.#consumerLinks = [];
-    orb.#sourceLinks = Object.create(null);
-    orb.#flags = ORB_FLAG_TRANSMIT | ORB_FLAG_RECEIVE;
+    orb.#sourceLinks = new Map();
+    orb.#flags = ORB_INIT_FLAGS_RELAY;
 
     if (staticSources !== undefined) {
       Orb.#registerStaticSources(orb, staticSources);
@@ -321,10 +403,9 @@ export class Orb<TData = unknown> {
     intercept: (this: Orb<TData>) => boolean,
     staticSources?: Orb[]
   ): Orb<TData> {
-    const orb = new Orb(data, intercept) as Orb<TData>;
-    orb.#weakRef = new WeakRef(orb);
-    orb.#sourceLinks = Object.create(null);
-    orb.#flags = ORB_FLAG_RECEIVE;
+    const orb = new Orb(data, intercept);
+    orb.#sourceLinks = new Map();
+    orb.#flags = ORB_INIT_FLAGS_RECEIVER;
 
     if (staticSources !== undefined) {
       Orb.#registerStaticSources(orb, staticSources);
@@ -337,11 +418,10 @@ export class Orb<TData = unknown> {
     intercept: (this: Orb<TData>) => boolean,
     staticSources?: Orb[]
   ): TransmitterPackage<TData> {
-    const orb = new Orb(data, intercept) as Orb<TData>;
-    orb.#weakRef = new WeakRef(orb);
+    const orb = new Orb(data, intercept);
     orb.#consumerLinks = [];
-    orb.#sourceLinks = Object.create(null);
-    orb.#flags = ORB_FLAG_TRANSMIT | ORB_FLAG_RECEIVE;
+    orb.#sourceLinks = new Map();
+    orb.#flags = ORB_INIT_FLAGS_RELAY;
 
     if (staticSources !== undefined) {
       Orb.#registerStaticSources(orb, staticSources);

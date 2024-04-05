@@ -1,24 +1,20 @@
 import { isAtom, type Atom, EMITTER } from '@metron/core/atom.js';
-import { type Context, type Register } from '../context.js';
+import {
+  controlledForkContext,
+  type Context,
+  type Register,
+} from '../context.js';
 import { assertOverride } from '../utils.js';
 import { run } from './runtime.js';
 import {
   isJSXNode,
-  type Component,
   type JSXComponentNode,
   type JSXIntrinsicNode,
   NODE_TYPE_COMPONENT,
   NODE_TYPE_INTRINSIC,
   NODE_TYPE_UNSAFE,
-  type JSXProps,
-  type RenderFn,
 } from '../node.js';
-import {
-  initElementFromTemplateBlueprints,
-  type TemplateBlueprints,
-} from './template.js';
 import type { Disposer } from '@metron/core/shared.js';
-import { SLOT_TYPE, type PossibleSlot } from '../slot.js';
 
 // TODO: Explore adding new INST codes to reduce amount of init functions
 // nullish check is repeated in several places
@@ -141,10 +137,7 @@ export function syncElementAttributeToggle(
   name: string,
   atom: Atom<unknown>
 ): Disposer {
-  const firstValue = atom.unwrap();
-  if (firstValue === true || firstValue) {
-    element.toggleAttribute(name, true);
-  }
+  element.toggleAttribute(name, !!atom.unwrap());
 
   return atom[EMITTER].subscribe(() => {
     element.toggleAttribute(name, !!atom.unwrap());
@@ -359,10 +352,6 @@ export function initBlueprintChildValueFromKey(
   insertValue(initValue, context, marker.parentNode!, marker);
 }
 
-declare const a: [1, 2, [3], 4];
-
-a.flat();
-
 export function initBlueprintChildValueFromValueFn(
   valueFn: (state: unknown) => unknown,
   marker: ChildNode,
@@ -374,70 +363,6 @@ export function initBlueprintChildValueFromValueFn(
     return;
   }
   insertValue(initValue, context, marker.parentNode!, marker);
-}
-
-function buildSlottedProps(
-  propEntries: [key: string | symbol, value: unknown][],
-  state: Record<string, unknown>
-) {
-  const builtProps: Record<string | symbol, unknown> = {};
-  for (let i = 0; i < propEntries.length; i++) {
-    const [key, value] = propEntries[i]!;
-    assertOverride<PossibleSlot>(value);
-    const slotType = value?.[SLOT_TYPE];
-
-    builtProps[key] =
-      slotType === undefined
-        ? value
-        : slotType === 0
-        ? state[value!.key]
-        : value!.valueFn(state);
-  }
-  return builtProps;
-}
-
-export function initBlueprintComponent(
-  propEntries: [key: string | symbol, value: unknown][],
-  component: Component,
-  marker: ChildNode,
-  state: Record<string, unknown>,
-  context: Context
-) {
-  const res = component(buildSlottedProps(propEntries, state), context);
-  if (res == null) {
-    return;
-  }
-  insertValue(res, context, marker.parentNode!, marker);
-}
-
-export function initBlueprintUnsafeRender(
-  propEntries: [key: string | symbol, value: unknown][],
-  renderFn: RenderFn<JSXProps>,
-  marker: ChildNode,
-  state: Record<string, unknown>,
-  context: Context
-) {
-  renderFn(
-    buildSlottedProps(propEntries, state),
-    context,
-    marker.parentNode!,
-    marker
-  );
-}
-
-export function initBlueprintInnerTemplate(
-  propEntries: [key: string | symbol, value: unknown][],
-  innerBlueprints: TemplateBlueprints,
-  element: Element,
-  state: Record<string, unknown>,
-  context: Context
-) {
-  initElementFromTemplateBlueprints(
-    element,
-    innerBlueprints,
-    buildSlottedProps(propEntries, state),
-    context
-  );
 }
 
 const isArray: (value: unknown) => value is unknown[] = Array.isArray;
@@ -533,7 +458,12 @@ export function insertValue(
     if (isJSXNode(value)) {
       switch (value.nodeType) {
         case NODE_TYPE_INTRINSIC:
-          insertIntrinsicJSX(value, context, parent, marker);
+          insertIntrinsicJSX(
+            value,
+            context,
+            parent,
+            marker === parent ? null : marker
+          );
           return;
         case NODE_TYPE_COMPONENT:
           insertComponentJSX(value, context, parent, marker);
@@ -543,17 +473,24 @@ export function insertValue(
           return;
       }
       // TODO: report warning of ignored unknown nodeType
-    } else if (isArray(value)) {
-      const childMarker = marker === parent ? null : marker;
-      for (let i = 0; i < length; i++) {
-        const childValue = value[i];
-        if (childValue != null) {
-          insertValue(childValue, context, parent, childMarker);
-        }
-      }
       return;
     } else if (isAtom(value)) {
-      insertAtom(value, context, parent, marker);
+      if (parent === marker) {
+        insertAtomAsChildren(value, context, parent);
+      } else {
+        insertAtom(value, context, parent, marker);
+      }
+      return;
+    }
+
+    marker = marker === parent ? null : marker;
+    if (isArray(value)) {
+      for (let i = 0; i < value.length; i++) {
+        const childValue = value[i];
+        if (childValue != null) {
+          insertValue(childValue, context, parent, marker);
+        }
+      }
       return;
     } else if (value instanceof Node) {
       if (value.parentNode === null) {
@@ -565,29 +502,68 @@ export function insertValue(
   }
   // TODO: report warning on string conversion (option to ignore numeric?)
   // createTextNode casts to string
-  parent.insertBefore(document.createTextNode(value as any), marker);
+  parent.insertBefore(
+    document.createTextNode(String(value)),
+    marker === parent ? null : marker
+  );
 }
 
 export function insertAtom(
   atom: Atom<unknown>,
-  context: Context,
+  parentContext: Context,
   parent: ParentNode,
   marker: Node | null
 ) {
   const firstValue = atom.unwrap();
   const headMarker = document.createTextNode('');
+  const tailMarker = document.createTextNode('');
   parent.insertBefore(headMarker, marker);
+  parent.insertBefore(tailMarker, marker);
+
+  const disposers: Disposer[] = [];
+  const context = controlledForkContext(parentContext, disposers);
 
   if (firstValue != null) {
-    insertValue(firstValue, context, parent, marker);
+    insertValue(firstValue, context, parent, tailMarker);
   }
 
-  context.register(
+  parentContext.register(
     atom[EMITTER].subscribe(() => {
-      removeNodesBetween(headMarker, marker);
+      for (let i = 0; i < disposers.length; i++) {
+        disposers[i]!();
+      }
+      removeNodesBetween(headMarker, tailMarker);
       const value = atom.unwrap();
       if (value != null) {
-        insertValue(value, context, parent, marker);
+        insertValue(value, context, parent, tailMarker);
+      }
+    })
+  );
+}
+
+export function insertAtomAsChildren(
+  atom: Atom<unknown>,
+  parentContext: Context,
+  parent: ParentNode
+) {
+  const firstValue = atom.unwrap();
+
+  const disposers: Disposer[] = [];
+  const context = controlledForkContext(parentContext, disposers);
+
+  if (firstValue != null) {
+    insertValue(firstValue, context, parent, null);
+  }
+
+  parentContext.register(
+    atom[EMITTER].subscribe(() => {
+      for (let i = 0; i < disposers.length; i++) {
+        disposers[i]!();
+      }
+      parent.replaceChildren();
+      const value = atom.unwrap();
+      if (value != null) {
+        insertValue(value, context, parent, null);
       }
     })
   );

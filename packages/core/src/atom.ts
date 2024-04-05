@@ -1,5 +1,5 @@
 import type { Emitter } from './emitter.js';
-import type { TransmitterOrb } from './orb.js';
+import type { Orb } from './orb.js';
 import type { Disposer } from './shared.js';
 
 export const EMITTER = Symbol('Emitter');
@@ -8,7 +8,7 @@ export const IS_ATOM = Symbol('Atom');
 
 export interface Atom<TValue> {
   readonly [IS_ATOM]: true;
-  readonly [ORB]: TransmitterOrb<unknown>;
+  readonly [ORB]: Orb<unknown>;
   readonly [EMITTER]: Emitter;
   unwrap(): TValue;
 }

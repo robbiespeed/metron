@@ -24,4 +24,4 @@ export class MappedAtom<T, U> implements Atom<U> {
   }
 }
 
-export const mapped = MappedAtom.create;
+export const map = MappedAtom.create;

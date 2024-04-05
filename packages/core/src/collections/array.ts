@@ -1,6 +1,6 @@
 import { EMITTER, ORB, type Atom, IS_ATOM } from '../atom.js';
 import { createEmitter, type Emitter } from '../emitter.js';
-import { createTransmitterOrb, type TransmitterOrb } from '../orb.js';
+import { createTransmitterOrb, type Orb } from '../orb.js';
 import { emptyFn } from '../shared.js';
 import {
   ARRAY_CHANGE_STORE,
@@ -174,7 +174,7 @@ class AtomArrayWriter<TValue> {
   {
     #inner: TValue[];
     #writer: AtomArrayWriter<TValue>;
-    #orb: TransmitterOrb<PrimaryAtomArray<TValue>>;
+    #orb: Orb<PrimaryAtomArray<TValue>>;
     #emitter?: Emitter;
     constructor(inner: TValue[], writer: AtomArrayWriter<TValue>) {
       this.#inner = inner;
@@ -189,7 +189,7 @@ class AtomArrayWriter<TValue> {
     get [IS_ATOM_ARRAY](): true {
       return true;
     }
-    get [ORB](): TransmitterOrb {
+    get [ORB](): Orb {
       return this.#orb;
     }
     get [EMITTER](): Emitter {

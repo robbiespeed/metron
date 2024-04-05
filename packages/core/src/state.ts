@@ -1,10 +1,10 @@
 import { EMITTER, type Atom, ORB, IS_ATOM } from './atom.js';
-import { createEmitter, type Emitter } from './emitter.js';
-import { createTransmitterOrb, type TransmitterOrb } from './orb.js';
+import { Emitter, createEmitter } from './emitter.js';
+import { type Orb, createTransmitterOrb } from './orb.js';
 import { emptyFn } from './shared.js';
 
 export class StateAtom<T> implements Atom<T> {
-  #orb?: TransmitterOrb<undefined>;
+  #orb?: Orb<undefined>;
   #transmit = emptyFn;
   #emitter?: Emitter;
   #emit = emptyFn;
@@ -36,7 +36,7 @@ export class StateAtom<T> implements Atom<T> {
 
     return emitter;
   }
-  get [ORB](): TransmitterOrb<unknown> {
+  get [ORB](): Orb {
     const existingNode = this.#orb;
     if (existingNode !== undefined) {
       return existingNode;

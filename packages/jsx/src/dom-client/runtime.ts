@@ -1,4 +1,3 @@
-import { runEffects } from '@metron/core/effect.js';
 import { runEmits } from '@metron/core/emitter.js';
 // import { runOrbTrim } from '@metron/core/orb.js';
 
@@ -11,7 +10,6 @@ import { runEmits } from '@metron/core/emitter.js';
 
 export let run = () => {
   runEmits();
-  runEffects();
   // TODO: this should be part of a loop?
   // if (canScheduleOrbTrim) {
   //   requestIdleCallback(runScheduledOrbTrim);

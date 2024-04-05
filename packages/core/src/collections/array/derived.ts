@@ -1,4 +1,4 @@
-import { createRelayOrb, Orb, type TransmitterOrb } from '@metron/core/orb.js';
+import { createRelayOrb, type Orb } from '@metron/core/orb.js';
 import { IS_ATOM_ARRAY, type AtomArray } from '../array.js';
 import { Stabilizer } from '../stabilizer.js';
 import { ORB, type AtomReader, EMITTER, IS_ATOM } from '@metron/core/atom.js';
@@ -123,7 +123,7 @@ class DerivedAtomArray<TIn, TOut> implements AtomArray<TOut> {
   #fn: <TTIn extends TIn>(value: TTIn, read: AtomReader) => TOut | SkipToken;
 
   #stabilizer: Stabilizer;
-  #orb: TransmitterOrb;
+  #orb: Orb;
   constructor(
     input: AtomArray<TIn>,
     fn: (value: TIn, read: AtomReader) => TOut | SkipToken
@@ -143,7 +143,7 @@ class DerivedAtomArray<TIn, TOut> implements AtomArray<TOut> {
   get [IS_ATOM_ARRAY](): true {
     return true;
   }
-  get [ORB](): TransmitterOrb {
+  get [ORB](): Orb {
     return this.#orb;
   }
   get [EMITTER](): Emitter {

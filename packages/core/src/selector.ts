@@ -1,13 +1,7 @@
 import { ORB, type Atom, IS_ATOM, EMITTER } from './atom.js';
 import { emptyCacheToken, type EmptyCacheToken } from './cache.js';
 import { createEmitter, type Emitter } from './emitter.js';
-import {
-  createRelayOrb,
-  createTransmitterOrb,
-  Orb,
-  type RelayOrb,
-  type TransmitterOrb,
-} from './orb.js';
+import { createRelayOrb, createTransmitterOrb, type Orb } from './orb.js';
 import { emptyFn } from './shared.js';
 
 export interface ISelector<T> {
@@ -16,7 +10,7 @@ export interface ISelector<T> {
 }
 
 class SelectSubAtom {
-  #orb?: TransmitterOrb<undefined>;
+  #orb?: Orb<undefined>;
   #transmit = emptyFn;
   #emitter?: Emitter;
   #emit = emptyFn;
@@ -37,7 +31,7 @@ class SelectSubAtom {
   getIsSelected(): boolean {
     return this.#isSelected;
   }
-  getOrb(): TransmitterOrb {
+  getOrb(): Orb {
     const existingNode = this.#orb;
     if (existingNode !== undefined) {
       return existingNode;
@@ -118,7 +112,7 @@ class MapSelectAtom<T> implements Atom<T> {
 class Selector<TIn> {
   #prevValue: TIn | EmptyCacheToken = emptyCacheToken;
   #input: Atom<TIn>;
-  #orb: RelayOrb<this>;
+  #orb: Orb<this>;
   #subAtoms = new Map<TIn, WeakRef<SelectSubAtom>>();
   #finalReg = new FinalizationRegistry<TIn>((key) => {
     this.#subAtoms.delete(key);

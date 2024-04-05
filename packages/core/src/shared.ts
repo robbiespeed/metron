@@ -3,3 +3,12 @@ export interface Disposer {
 }
 
 export const emptyFn = (): undefined => {};
+
+/**
+ * @experimental
+ */
+export class ExpiredReadContext extends Error {
+  constructor() {
+    super('Expired read context');
+  }
+}

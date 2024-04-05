@@ -1,4 +1,4 @@
-import type { TransmitterOrb } from '@metron/core/orb.js';
+import type { Orb } from '@metron/core/orb.js';
 import { IS_ATOM_ARRAY, type AtomArray } from '../array.js';
 import type { Stabilizer } from '../stabilizer.js';
 import {
@@ -11,12 +11,12 @@ import { EMITTER, IS_ATOM, ORB } from '@metron/core/atom.js';
 export class StabilizedAtomArray<TValue> implements AtomArray<TValue> {
   #inner: TValue[];
   #stabilizer: Stabilizer;
-  #orb: TransmitterOrb;
+  #orb: Orb;
   #changeStore: ReadonlyArrayChangeStore;
   constructor(
     inner: TValue[],
     stabilizer: Stabilizer,
-    orb: TransmitterOrb,
+    orb: Orb,
     changeStore: ReadonlyArrayChangeStore
   ) {
     this.#inner = inner;
@@ -30,7 +30,7 @@ export class StabilizedAtomArray<TValue> implements AtomArray<TValue> {
   get [IS_ATOM_ARRAY](): true {
     return true;
   }
-  get [ORB](): TransmitterOrb {
+  get [ORB](): Orb {
     return this.#orb;
   }
   get [EMITTER](): Emitter {

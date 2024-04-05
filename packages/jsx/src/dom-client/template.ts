@@ -56,11 +56,6 @@ export interface TemplateComponent<TProps extends JSXProps>
   [TEMPLATE_BLUEPRINTS]: TemplateBlueprints;
 }
 
-interface PossibleTemplateComponent<TProps extends JSXProps>
-  extends Component<TProps, unknown> {
-  [TEMPLATE_BLUEPRINTS]?: TemplateBlueprints;
-}
-
 export interface JSXTemplateConstructor<TProps extends JSXProps> {
   (props: KeyedSlotAccessor<TProps>): unknown;
 }
@@ -158,7 +153,7 @@ function createBlueprints(
   const element = buildIntrinsic(root, namespace, instructData, instructions);
 
   // Trim tail walk instructions
-  let i = instructions.length - 1;
+  let i = instructions.length;
   let inst;
   while (i >= 0) {
     inst = instructions[--i]!;

@@ -11,7 +11,7 @@ const disposedHandler = (): undefined => {};
 // TODO: remove this!!!
 declare const console: any;
 
-class Emitter {
+export class Emitter {
   #canSchedule = true;
   #subscriptionHead?: Subscription;
   subscribe(handler: () => undefined): Disposer {
@@ -73,8 +73,6 @@ class Emitter {
     return { emitter, emit: Emitter.#emit.bind(emitter) };
   }
 }
-
-export type { Emitter };
 
 export const createEmitter = Emitter.create;
 

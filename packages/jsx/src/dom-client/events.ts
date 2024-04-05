@@ -1,3 +1,5 @@
+import { run } from './runtime.js';
+
 export interface TargetedEvent<TEventTarget extends EventTarget> extends Event {
   currentTarget: TEventTarget;
 }
@@ -70,6 +72,7 @@ function delegateListener(root: EventTarget, eventKey: EventKey, evt: Event) {
       }
     }
   }
+  run();
 }
 
 export function createEventDelegator(
