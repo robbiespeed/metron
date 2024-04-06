@@ -11,8 +11,6 @@ interface LinkRecord extends Record<string, OrbLink> {}
 
 let scheduledNodeSourceTrims = new Set<WeakRef<Orb>>();
 
-// const afterTransmitQueue: (() => undefined)[] = [];
-
 let idCounter = 0n;
 const emptyArray = [] as [];
 const emptySourceLinks: LinkRecord = Object.create(null);
