@@ -63,10 +63,10 @@ export class Orb<TData = unknown> {
     return (this.#weakRef ??= new WeakRef(this));
   }
   get isTransmitter(): boolean {
-    return !(this.#flags & ORB_FLAG_TRANSMIT);
+    return (this.#flags & ORB_FLAG_TRANSMIT) === ORB_FLAG_TRANSMIT;
   }
   get isReceiver(): boolean {
-    return !(this.#flags & ORB_FLAG_RECEIVE);
+    return (this.#flags & ORB_FLAG_RECEIVE) === ORB_FLAG_RECEIVE;
   }
 
   private constructor(data: TData, intercept?: () => boolean) {
