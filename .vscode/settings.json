@@ -2,9 +2,7 @@
   "cSpell.words": [
     "Computeds",
     "Deno",
-    "esbenp",
     "fedoraproject",
-    "jsxs",
     "lcov",
     "Metron",
     "mocharc",
@@ -13,7 +11,6 @@
     "typecheck",
     "userns"
   ],
-  "cSpell.enableFiletypes": ["dockerfile", "ignore", "shellscript"],
   "cSpell.ignorePaths": [
     "pnpm-lock.yaml",
     "node_modules",
@@ -22,5 +19,6 @@
     ".vscode"
   ],
   "editor.tabSize": 2,
-  "typescript.tsdk": "node_modules/typescript/lib"
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "denoland.vscode-deno"
 }
