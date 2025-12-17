@@ -7,10 +7,6 @@ export type Source<TValue> = Atomic<TValue> | (TValue extends (...args: any[]) =
 
 export interface Reader {
   <TValue>(readable: Atom<TValue>): TValue;
-  // <TValue>(readable: Atomic<TValue>): TValue;
-  // <TValue>(readable: TValue):
-  //   TValue extends (...args: any[]) => unknown ? never :
-  //   TValue;
 }
 
 export type Setter<TValue> = <TNextValue extends TValue>(value: TNextValue) => TNextValue;
@@ -37,8 +33,6 @@ interface RecycledLink {
   prevConsumer: undefined;
 }
 
-// TODO: Can I modify Relay to add back in static deps feature?
-// Can Relay and Receiver be combined? Maybe if version is tracked by reader ref so it never overflows?
 interface Relay<TValue = unknown> {
   depth: number;
   nextDirty: Relay | undefined;
@@ -73,9 +67,6 @@ const ATOM_FLAG_NON_FALLBACK = ATOM_FLAG_TYPE_SPACE | ATOM_FLAG_CAN_HEAP | ATOM_
 
 const disposedHandler = () => { };
 
-// TODO: Could alternatively try special #value wrapper for owned Atoms
-// Yeah Map and more so WeakMap is incredibly slow
-// Needs to be replaced either by explicit #owner or the wrapper for ownable Atoms
 const owners = new WeakMap<Atom, Atom>();
 
 let cleanRelay: (relay: Relay) => undefined;
@@ -96,13 +87,6 @@ let subHeadSet: (atom: Atom, subscription: AtomSubscription | undefined) => unde
 
 class AtomStateController<TValue = unknown> {
   #atom!: Atom<TValue>;
-  // constructor (atom: Atom<TValue>) {
-  //   if (flagsGet(atom) !== 0) {
-  //     throw new Error("Atom is already initialized");
-  //   }
-  //   flagsSet(ATOM_TYPE_STATE);
-  //   this.#atom = atom;
-  // }
   get atom(): Atom<TValue> {
     return this.#atom;
   }
@@ -119,7 +103,6 @@ class AtomStateController<TValue = unknown> {
     transmit(this.#atom);
   }
   static {
-    // TODO maybe not needed if constructor accepts uninitialized Atom and initializes it as a state Atom
     initStateController = function initStateController<TValue>(controller: AtomStateController<TValue>, atom: Atom<TValue>) {
       controller.#atom = atom;
     }
@@ -213,12 +196,9 @@ export class AtomSubscriptionChannel {
   }
 }
 
-
-// let nextId = 0;
 let heapCount = 0;
 
 export class Atom<TValue = unknown> {
-  // __id = nextId++;
   #flags = ATOM_TYPE_NONE;
   #state: unknown;
   #subscriptionHead: AtomSubscription | undefined;
@@ -236,7 +216,6 @@ export class Atom<TValue = unknown> {
         return this.#state as TValue;
       case ATOM_TYPE_DERIVE:
       case ATOM_TYPE_COMPUTE: {
-        // TODO check ATOM_FLAG_IN_RECEIVE and throw
         const relay = this.#state as Relay<TValue>;
         stabilizeRelay(relay, this);
         if (this.#flags & ATOM_FLAG_HAS_ERROR) {
@@ -292,28 +271,13 @@ export class Atom<TValue = unknown> {
       transmitAtom: new WeakRef(atom),
       value: undefined,
     } as Relay<TValue>;
-    // TODO not sure whether to do lazy or eager initialization
-    // Lazy tends to hit fallback more unless it's made eager by the user in fan-in/out cases
-    // Lazy also means that certain setups like creating the output children inside
-    // the computed aren't available right away, so either manual eager computed.unwrap() or
-    // restructuring to initialize children outside the computed is required
-    // Could be an option defaulting to eager?
-    // atom.#flags = ATOM_TYPE_COMPUTE | ATOM_FLAG_CAN_HEAP;
-    // insertIntoHeap(atom);
+
     atom.#flags = ATOM_TYPE_COMPUTE | ATOM_FLAG_CAN_HEAP | ATOM_FLAG_DIRTY;
     heapCount++; // Because unwrap will reduce the count
     receive(atom);
     return atom;
   }
-  // TODO:
-  // Need createAsyncComputed with asyncReceive. Otherwise consumers will always dirty because Promise<T> !== Promise<T>.
-  // asyncReceive should await the result and if it is different from oldVal the atom should transmit.
-  // If the result fulfills before old result it should also transmit. Transmit should be block if the asyncReceive is not the current result.
-  // Alternatively it could be up to memoization to handle this.
-  // static createAsyncComputed<TValue>() { }
 
-  // TODO
-  // static createDerivedController<TValue>() { }
   static {
     setOwner = function (atom, owner) {
       if ((owner.#flags & ATOM_FLAG_CAN_HEAP) === 0) {
@@ -479,26 +443,12 @@ export class Atom<TValue = unknown> {
         if (read !== relay.reader) {
           throw new Error("Attempted to use expired read");
         }
-        // // TODO: Bench cost of this vs read.maybeRaw(v), read.polymorphic(v), or polyAtom(read, v)
-        // switch (typeof atom) {
-        //   case "function": return (atom as AtomAccessor)(read);
-        //   case "object": {
-        //     if (atom) {
-        //       if (#flags in atom) {
-        //         break;
-        //       }
-        //     }
-        //     return atom;
-        //   }
-        //   default: return atom;
-        // }
         if (atom.#flags & ATOM_FLAG_IN_RECEIVE) {
           throw new Error("Cannot read cyclicly");
         }
         if (atom.#flags & ATOM_FLAG_OWNED) {
           const owner = owners.get(atom)!;
           const ownerRelay = (owner.#state as Relay);
-          // TODO this needs to recursively stabilize owner owners
           const error = stabilizeRelay(ownerRelay, owner);
           if (error) {
             throw error;
@@ -610,14 +560,6 @@ export class Atom<TValue = unknown> {
 
       if (sourcesTail === undefined) {
         relay.sourceHead = undefined;
-        // TODO add back if/when disposal is added
-        // if (
-        //   relay.transmitAtom === undefined &&
-        //   relay.reader === undefined
-        // ) {
-        //   relay.nextDirty = recycledRelayPool;
-        //   recycledRelayPool = relay;
-        // }
       } else {
         sourcesTail.nextSource = undefined;
       }
@@ -663,18 +605,9 @@ export class Atom<TValue = unknown> {
       fallbackStack.push(atom);
     }
 
-    // function deleteFromHeap(atom: ReceiveAtom) {
-    //   const flags = atom.#flags;
-    //   if (!(flags & ATOM_FLAG_IN_HEAP)) return;
-    //   heapSize--;
-    //   atom.#flags = flags & ATOM_FLAG_NON_HEAP;
-    // }
-
     let fallbackDepth = -1;
     function stabilizeFallback(rootAtom: Atom): undefined {
       fallbackDepth++;
-      // TODO: Remove log
-      // console.warn("Stabilize Fallback");
       const linkStack: Link[] = [];
       const receiveStack: Atom[] = [];
       let link = (rootAtom.#state as Relay).sourceHead ?? undefined;
@@ -684,7 +617,6 @@ export class Atom<TValue = unknown> {
           atom = link.source;
           if (atom.#flags & ATOM_FLAG_OWNED) {
             if (atom.#flags >= ATOM_TYPE_DERIVE) {
-              // TODO validate this works and if possible make it non recursive
               stabilizeFallback(owners.get(atom)!);
             } else {
               atom = owners.get(atom)!;
@@ -794,53 +726,6 @@ function scheduleRelayCleaning(relay: Relay) {
   }
 }
 
-// TODO try adding this back to use disposed Relays
-// let recycledReceiverPool: Receiver | undefined;
-// function createReceiver(atom: Atom | WeakRef<Atom>): Receiver {
-//   if (recycledReceiverPool === undefined) {
-//     return new Receiver(atom);
-//   }
-//   const receiver = recycledReceiverPool;
-//   recycledReceiverPool = recycledReceiverPool.nextDirty;
-//   receiver.transmitAtom = atom;
-//   receiver.nextDirty = undefined;
-//   return receiver;
-// }
-
-// function disposeReceiver(relay: Relay) {
-//   const receiver = relay.receiver as Receiver | undefined;
-//   if (receiver === undefined) {
-//     return;
-//   }
-//   relay.receiver = undefined;
-//   receiver.version++;
-//   receiver.transmitAtom = undefined;
-//   receiver.sourceTail = undefined;
-//   receiver.scheduleCleaning();
-//   // Likely bad perf if used with DEFER atoms or if deeper consumer atoms are weak themselves
-//   // because it will still propagate down the tree, where as with only non-DEFER and strong atoms,
-//   // they can be disposed in deep -> shallow order and since no receive happens in that disposal cascade
-//   // the last atoms to be disposed have nothing to propagate too.
-//   ///
-//   // In either case if DEFER flag this should be insertIntoHeap instead of transmit 
-//   // transmit(atom);
-
-//   // An alternative could be to destroy the atom so it cannot be revived
-//   // would be as simple as adding a DESTROYED flag
-//   // This may be the way to go...
-//   // Or possibly it's okay to allow revive it, without transmitting/heaping when it gets disposed
-//   //
-//   // An issue with either of these alternatives is it would allow weak receivers to be hijacked and forced to break
-//   // by any part of the program that chooses to, by simply managing then disposing.
-//   //
-//   // Perhaps only specific kinds of atoms can be managed, and must be managed first before they become functional.
-//   // This would be paired with the DESTROYED flag approach, rather than allowing revives.
-//   // Maybe also taking an approach like Preact where effects (managed atoms in this case)
-//   // trigger strongly holding all up stream sources
-//   //
-//   // Or all source -> consumer links are always weak
-// }
-
 export function clean(): undefined {
   const first = dirtyRelayPool;
   if (first === undefined) {
@@ -887,58 +772,3 @@ export const derive: <TValue>(derivation: (read: Reader) => TValue) => Atom<TVal
  * Create a reactive {@link Atom} computed from the provided callback
  */
 export const compute: <TValue>(computation: (this: Atom<never>, read: Reader) => TValue) => Atom<TValue> = Atom.createComputed.bind(Atom);
-
-// TODO can this be replaced with derived collections?
-
-// TODO would a WeakAtomStateController be useful?
-// It could simplify these kinds of collection item atoms (select, set.has(v), array.at(i), map.get(key))
-// Alternatively a Ref type Atom (with static link to parent) would allow similar easy setup,
-// and future hard source -> consumer links when leafs are subscribed
-// a regular static derived would also work but take up more memory
-
-export function selector<TKey>(input: Atom<TKey>): (key: TKey) => Atom<boolean> {
-  const controllers = new WeakMap<Atom, AtomStateController<boolean>>();
-  const atomRefs = new Map<TKey, WeakRef<Atom<boolean>>>();
-  let activeKey: TKey | undefined;
-
-  const projector = compute((read) => {
-    const nextKey = read(input);
-    if (activeKey !== nextKey) {
-      controllers.get(atomRefs.get(activeKey!)?.deref()!)?.setState(false);
-      controllers.get(atomRefs.get(nextKey)?.deref()!)?.setState(true);
-      activeKey = nextKey;
-    }
-  });
-
-  const finalizer = new FinalizationRegistry<TKey>((key) => {
-    atomRefs.delete(key);
-  });
-
-  const select = (key: TKey): Atom<boolean> => {
-    let atomRef = atomRefs.get(key);
-    let atom = atomRef?.deref();
-    if (atom === undefined) {
-      if (atomRef) {
-        finalizer.unregister(atomRef);
-      }
-      const controller = Atom.createStateController(key === activeKey);
-      controller.setOwner(projector);
-      atom = controller.atom;
-      atomRef = new WeakRef(atom);
-      controllers.set(atom, controller);
-      atomRefs.set(key, atomRef);
-      finalizer.register(atom, key, atomRef);
-      return atom;
-    }
-
-    return atom;
-  };
-
-  return select;
-}
-
-
-// TODO how to deal with nested collections? Ex: AtomArray<AtomArray<number>>
-// If one does `outer.at(0)` that is a wrapper around the inner array of type Atom<AtomArray<number>>
-// how would one use the inner array inside a map operation, or otherwise gain access to it's ChangeStore?
-// Maybe `(read) => read(outer.at(0)).map((v) => v * 2)`?
