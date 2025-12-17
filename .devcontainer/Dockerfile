@@ -1,4 +1,4 @@
-FROM registry.fedoraproject.org/fedora-toolbox:37
+FROM registry.fedoraproject.org/fedora-toolbox:43
 
 # Update base software
 RUN dnf upgrade -y
@@ -21,6 +21,12 @@ RUN dnf clean all -y
 
 # Set the default user. Omit if you want to keep the default as root.
 USER $USERNAME
+
+# Install deno
+RUN curl -fsSL https://deno.land/install.sh | sh
+
+# Add Deno to PATH
+RUN printf "export DENO_INSTALL=\"\$HOME/.deno\"\nexport PATH=\"\$DENO_INSTALL/bin:\$PATH\"\n" >> $HOME/.bashrc
 
 # Install pnpm
 RUN curl -fsSL https://get.pnpm.io/install.sh | sh -

@@ -1,6 +1,6 @@
 {
   "recommendations": [
-    "esbenp.prettier-vscode",
+    "denoland.vscode-deno",
     "ms-vscode-remote.remote-containers",
     "redhat.vscode-yaml",
     "streetsidesoftware.code-spell-checker"

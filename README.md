@@ -1,6 +1,7 @@
 # Metron
 
-Reactivity library, using observable atomic units.
+Metron is a general purpose reactivity library with a focus on explicit APIs, and performance.
+
+## Packages
 
 - [core](./packages/core/README.md)
-- [jsx](./packages/jsx/README.md)

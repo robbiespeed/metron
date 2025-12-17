@@ -3,9 +3,8 @@ node_modules
 .pnpm-store
 .nyc_output
 /coverage
+/docs
 /notes
-/packages/*/lib
+/npm
 
 # Files
-tsconfig.tsbuildinfo
-tsconfig.*.tsbuildinfo
