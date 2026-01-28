@@ -13,14 +13,12 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
 
-# Install node
-RUN dnf install -y nodejs
-
 # Clean package manager
 RUN dnf clean all -y
 
 # Set the default user. Omit if you want to keep the default as root.
 USER $USERNAME
+WORKDIR /home/${USERNAME}
 
 # Install deno
 RUN curl -fsSL https://deno.land/install.sh | sh
@@ -30,3 +28,6 @@ RUN printf "export DENO_INSTALL=\"\$HOME/.deno\"\nexport PATH=\"\$DENO_INSTALL/b
 
 # Install pnpm
 RUN curl -fsSL https://get.pnpm.io/install.sh | sh -
+
+# Install node
+RUN source ~/.bashrc && pnpm env use -g 24

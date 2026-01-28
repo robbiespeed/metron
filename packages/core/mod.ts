@@ -90,7 +90,7 @@ let transmit: (atom: Atom) => undefined;
 let stateSet: <TValue>(atom: Atom<TValue>, value: TValue) => TValue;
 let bindableSetter: <TValue>(this: Atom<TValue>, value: TValue) => TValue;
 let insertIntoHeap: (atom: Atom) => undefined;
-let createSubscription: (atom: Atom, handler: () => unknown, queue: AtomSubscription[]) => AtomSubscription;
+let createSubscription: (this: AtomSubscription[], atom: Atom, handler: () => unknown) => AtomSubscription;
 let subHeadGet: (atom: Atom) => AtomSubscription | undefined;
 let subHeadSet: (atom: Atom, subscription: AtomSubscription | undefined) => undefined;
 
@@ -164,11 +164,11 @@ class AtomSubscription {
         item = item.#next;
       }
     }
-    createSubscription = function createSubscription(atom, handler, queue) {
+    createSubscription = function createSubscription(atom, handler) {
       const sub = new AtomSubscription();
       sub.#atom = atom;
       sub.#handler = handler;
-      sub.#channelQueue = queue;
+      sub.#channelQueue = this;
       const subHead = subHeadGet(atom);
       sub.#next = subHead;
       if (subHead !== undefined) {
@@ -189,9 +189,6 @@ export class AtomSubscriptionChannel {
   constructor(errorHandler: (cause: unknown) => undefined) {
     this.#errorHandler = errorHandler;
   }
-  subscribe(atom: Atom, handler: () => unknown): AtomSubscription {
-    return createSubscription(atom, handler, this.#queue);
-  }
   run(): undefined {
     const queue = this.#queue;
     if (queue.length === 0) {
@@ -208,8 +205,8 @@ export class AtomSubscriptionChannel {
     this.#i = 0;
     queue.length = 0;
   }
-  clear(): undefined {
-    this.#queue.length = 0;
+  static createSubscriber(channel: AtomSubscriptionChannel): (atom: Atom, handler: () => unknown) => AtomSubscription {
+    return createSubscription.bind(channel.#queue);
   }
 }
 
